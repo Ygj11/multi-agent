@@ -1,0 +1,29 @@
+---
+skill_id: troubleshooting.missing_field
+name: 字段缺失排查
+description: 用于排查 submitProposal 报文字段缺失、必填字段为空、appId 不能为空、字段映射不一致等问题
+agent: troubleshooting_agent
+intent_tags:
+  - troubleshooting
+  - missing_field
+  - 字段缺失
+  - 必填
+  - submitProposal
+business_domain:
+  - health_insurance_onboarding
+required_context:
+  - interface_name
+enabled: true
+is_default: false
+---
+
+# 字段缺失排查 Skill
+
+当问题包含字段缺失、不能为空、必填字段、字段映射或请求报文不完整时，使用本 skill。
+
+执行步骤：
+
+1. 先确认接口名和缺失字段名。
+2. 对照接口文档或知识库中的字段要求。
+3. 检查渠道报文字段映射、空值处理和字段命名大小写。
+4. 输出缺失字段、影响接口、疑似责任方和补充字段建议。
