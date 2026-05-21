@@ -1,0 +1,8 @@
+agent-development/questions/Q1.md
+agent-development/app/adapters/__pycache__/request_adapter.cpython-312.pyc
+agent-development/app/observability/__pycache__/logger.cpython-312.pyc
+agent-development/app/__pycache__/main.cpython-312.pyc
+
+
+
+agent-development/.data/agent_mvp.sqlite3
