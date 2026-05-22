@@ -79,14 +79,51 @@ class SQLiteDatabase:
 
                 CREATE INDEX IF NOT EXISTS idx_tool_call_logs_request
                 ON tool_call_logs(request_id);
+
+                CREATE TABLE IF NOT EXISTS tool_execution_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    request_id TEXT,
+                    trace_id TEXT,
+                    session_key TEXT,
+                    agent_name TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    arguments_json TEXT NOT NULL,
+                    success INTEGER NOT NULL,
+                    result_json TEXT,
+                    error TEXT,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    source TEXT,
+                    server_name TEXT,
+                    original_tool_name TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_tool_execution_logs_session
+                ON tool_execution_logs(session_key, id);
+
+                CREATE INDEX IF NOT EXISTS idx_tool_execution_logs_agent
+                ON tool_execution_logs(agent_name);
+
+                CREATE INDEX IF NOT EXISTS idx_tool_execution_logs_request
+                ON tool_execution_logs(request_id);
                 """
             )
+            self._ensure_column(conn, "tool_execution_logs", "source", "TEXT")
+            self._ensure_column(conn, "tool_execution_logs", "server_name", "TEXT")
+            self._ensure_column(conn, "tool_execution_logs", "original_tool_name", "TEXT")
 
     def connect(self) -> sqlite3.Connection:
         """创建 SQLite 连接，并返回 dict-like row。"""
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    @staticmethod
+    def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     async def run(self, func: Callable[[sqlite3.Connection], T]) -> T:
         """在线程池中执行同步 sqlite3 操作。"""

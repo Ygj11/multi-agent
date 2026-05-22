@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.llm.base import LLMProvider
 from app.schemas.query_rewrite import QueryRewriteResult
 
 
@@ -13,6 +14,9 @@ FOLLOW_UP_MARKERS = ("这个", "那个", "一般是谁", "谁的问题", "继续
 
 class QueryRewriteNode:
     """把用户原始输入改写为更适合识别意图和调用工具的标准查询。"""
+
+    def __init__(self, llm_provider: LLMProvider | None = None) -> None:
+        self.llm_provider = llm_provider
 
     async def rewrite(
         self,

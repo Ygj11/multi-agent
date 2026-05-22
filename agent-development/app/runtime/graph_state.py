@@ -20,6 +20,7 @@ class AgentGraphState(TypedDict, total=False):
     rewritten_query: str
     intent: str
     confidence: float
+    entities: dict[str, Any]
     target_subagent: str | None
     required_tools: list[str]
 
@@ -27,7 +28,14 @@ class AgentGraphState(TypedDict, total=False):
     short_summary: str | None
 
     orchestrator_context: dict[str, Any]
+    available_agents: list[dict[str, Any]]
+    agent_selection: dict[str, Any]
+    selected_agent: str | None
+    selected_agent_card: dict[str, Any] | None
+    assembled_task: dict[str, Any] | None
     subagent_result: dict[str, Any] | None
+    final_compliance_result: dict[str, Any] | None
+    retry_count: int
     selected_skill_id: str | None
     selected_skill_metadata: dict[str, Any] | None
     skill_selection_score: float | None

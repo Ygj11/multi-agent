@@ -8,10 +8,12 @@ from pydantic import BaseModel, Field
 
 from app.observability.logger import log_event, preview_text
 from app.runtime.context_builder import ContextBuilder
+from app.schemas.agent_card import AgentCard
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.subagent import SubAgentResult, SubAgentTask
 from app.schemas.tool import ToolCall
 from app.tools.broker import ToolBroker
+from app.tools.executor import ToolExecutor
 
 
 class ChangeImpactInput(BaseModel):
@@ -40,10 +42,16 @@ class ChangeImpactAnalysisAgent:
 
     name = "change_impact_analysis_agent"
 
-    def __init__(self, context_builder: ContextBuilder, tool_broker: ToolBroker) -> None:
+    def __init__(
+        self,
+        context_builder: ContextBuilder,
+        tool_broker: ToolBroker | None = None,
+        tool_executor: ToolExecutor | None = None,
+    ) -> None:
         """注入 ContextBuilder 和 ToolBroker，知识查询也必须经过统一工具通道。"""
         self.context_builder = context_builder
         self.tool_broker = tool_broker
+        self.tool_executor = tool_executor
 
     async def run(self, task: SubAgentTask, parent_context: OrchestratorContext) -> SubAgentResult:
         """执行变更影响分析。"""
@@ -58,6 +66,7 @@ class ChangeImpactAnalysisAgent:
             message="Change impact analysis agent running",
             data={"query_preview": preview_text(task.query)},
         )
+        agent_card = self._card_from_task(task)
         sub_context = await self.context_builder.build_for_subagent(
             task=task,
             parent_context=parent_context,
@@ -71,14 +80,11 @@ class ChangeImpactAnalysisAgent:
                 trace_id=trace_id or None,
             )
         )
-        knowledge_result = await self.tool_broker.call(
-            ToolCall(
-                name="get_knowledge",
-                arguments={"query": task.query, "top_k": 3, "selected_skill_id": sub_context.selected_skill_id},
-                request_id=request_id or None,
-                trace_id=trace_id or None,
-                session_key=task.session_key,
-            )
+        knowledge_result = await self._call_tool(
+            task=task,
+            agent_card=agent_card,
+            name="get_knowledge",
+            arguments={"query": task.query, "top_k": 3, "selected_skill_id": sub_context.selected_skill_id},
         )
         evidence = [
             {
@@ -107,9 +113,12 @@ class ChangeImpactAnalysisAgent:
         )
         return SubAgentResult(
             name=self.name,
+            agent_name=self.name,
+            task_id=task.task_id,
             answer=answer,
             diagnosis=output.summary,
             evidence=evidence,
+            tool_calls=[knowledge_result.model_dump()],
             recommendation="请优先补充契约测试、签名回归测试和渠道联调样例，再同步知识库文档。",
             responsibility="接口提供方负责变更说明和兼容策略，渠道方负责按新规则完成适配。",
             confidence=0.84,
@@ -118,6 +127,35 @@ class ChangeImpactAnalysisAgent:
             skill_selection_score=sub_context.skill_selection_score,
             skill_selection_reason=sub_context.skill_selection_reason,
         )
+
+    async def _call_tool(self, *, task: SubAgentTask, agent_card: AgentCard | None, name: str, arguments: dict[str, Any]):
+        if self.tool_executor is not None:
+            return await self.tool_executor.execute(
+                agent_name=self.name,
+                tool_name=name,
+                arguments=arguments,
+                agent_card=agent_card,
+                request_id=str(task.metadata.get("request_id") or ""),
+                trace_id=str(task.metadata.get("trace_id") or ""),
+                session_key=task.session_key,
+            )
+        if self.tool_broker is None:
+            raise RuntimeError("no tool executor configured")
+        return await self.tool_broker.call(
+            ToolCall(
+                name=name,
+                arguments=arguments,
+                request_id=str(task.metadata.get("request_id") or ""),
+                trace_id=str(task.metadata.get("trace_id") or ""),
+                session_key=task.session_key,
+                agent_name=self.name,
+            )
+        )
+
+    @staticmethod
+    def _card_from_task(task: SubAgentTask) -> AgentCard | None:
+        data = task.metadata.get("agent_card")
+        return AgentCard(**data) if isinstance(data, dict) else None
 
     @staticmethod
     def _analyze(payload: ChangeImpactInput) -> ChangeImpactOutput:
@@ -138,7 +176,7 @@ class ChangeImpactAnalysisAgent:
             recommended_tests.append("E102 错误码解释回归测试")
         elif "签名" in text or "timestamp" in text:
             change_type = "signature_rule_change"
-            affected_tools.extend(["query_internal_log", "partner_trace.get_request_detail"])
+            affected_tools.extend(["query_internal_log", "mcp.workflow.query_refund_task"])
             recommended_tests.extend(["签名 base string 回归测试", "渠道侧 timestamp 参与签名联调测试"])
         elif "字段" in text:
             change_type = "field_change"

@@ -15,13 +15,16 @@ class ToolCall(BaseModel):
     request_id: str | None = None
     trace_id: str | None = None
     session_key: str | None = None
+    agent_name: str | None = None
 
 
 class ToolResult(BaseModel):
-    """ToolBroker 标准化后的工具执行结果。"""
+    """Standardized tool execution result."""
 
     name: str
-    allowed: bool
+    allowed: bool = True
     success: bool
     result: Any = None
     error: str | None = None
+    agent_name: str | None = None
+    duration_ms: int | None = None

@@ -5,7 +5,6 @@ import pytest
 from app.integrations.base_http_client import BaseIntegrationHTTPClient, IntegrationAPIError
 from app.integrations.knowledge_api_client import KnowledgeAPIClient
 from app.integrations.log_api_client import LogAPIClient
-from app.integrations.partner_trace_api_client import PartnerTraceAPIClient
 from app.integrations.mcp_http_client import MCPHTTPClient
 from app.integrations.llm_api_client_example import LLMAPIClientExample
 from app.integrations.long_term_memory_api_client import LongTermMemoryAPIClient
@@ -43,7 +42,6 @@ def test_future_api_client_methods_keep_request_and_trace_parameters():
         KnowledgeAPIClient.search,
         KnowledgeAPIClient.pre_search,
         LogAPIClient.query_internal_log,
-        PartnerTraceAPIClient.get_request_detail,
         MCPHTTPClient.list_tools,
         MCPHTTPClient.call_tool,
         LLMAPIClientExample.chat,

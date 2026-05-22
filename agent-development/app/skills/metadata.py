@@ -3,6 +3,7 @@ from __future__ import annotations
 """SKILL.md frontmatter 解析工具。"""
 
 from pathlib import Path
+import json
 from typing import Any
 
 from app.schemas.skill import SkillMetadata
@@ -39,6 +40,8 @@ def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata | N
         intent_tags=[str(item) for item in data.get("intent_tags", [])],
         business_domain=[str(item) for item in data.get("business_domain", [])],
         required_context=[str(item) for item in data.get("required_context", [])],
+        required_entities=[str(item) for item in data.get("required_entities", [])],
+        private_tools=[str(item) for item in data.get("private_tools", [])],
         enabled=_as_bool(data.get("enabled"), True),
         is_default=_as_bool(data.get("is_default"), False),
         source_path=source_path,
@@ -74,6 +77,11 @@ def _parse_scalar(value: str) -> Any:
         return True
     if value.lower() == "false":
         return False
+    if value.startswith(("[", "{")):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     return value

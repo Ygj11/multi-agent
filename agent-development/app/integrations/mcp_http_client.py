@@ -8,7 +8,7 @@ from app.integrations.base_http_client import BaseIntegrationHTTPClient
 
 
 class MCPHTTPClient:
-    """未来用于替换 FakeMCPConnector。"""
+    """Example future HTTP client for an MCP gateway."""
 
     def __init__(self, http_client: BaseIntegrationHTTPClient) -> None:
         self.http = http_client
@@ -26,4 +26,3 @@ class MCPHTTPClient:
             request_id=request_id,
             trace_id=trace_id,
         )
-

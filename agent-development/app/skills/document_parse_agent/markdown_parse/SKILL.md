@@ -1,5 +1,5 @@
 ---
-skill_id: document_parse.markdown_parse
+skill_id: document_parse_agent.markdown_parse
 name: Markdown 文档解析
 description: 用于解析 markdown 标题、表格、列表、代码块和字段说明
 agent: document_parse_agent

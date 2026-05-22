@@ -24,7 +24,7 @@ async def test_graph_final_state_contains_structured_evidence(app_factory):
     assert subagent_result["diagnosis"]
     assert subagent_result["recommendation"]
     assert subagent_result["responsibility"]
-    assert {item["type"] for item in evidence} >= {"internal_log", "knowledge", "partner_trace"}
+    assert {item["type"] for item in evidence} >= {"internal_log", "knowledge"}
     for item in evidence:
         assert {"type", "source", "tool_name", "summary", "confidence"}.issubset(item)
         assert "result_preview" in item or "raw_ref" in item

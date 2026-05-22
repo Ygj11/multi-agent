@@ -1,5 +1,5 @@
 ---
-skill_id: troubleshooting.callback_failure
+skill_id: troubleshooting_agent.callback_failure
 name: 回调失败排查
 description: 用于排查回调失败、回调超时、渠道未收到回调、回调验签失败、回调地址异常等问题
 agent: troubleshooting_agent

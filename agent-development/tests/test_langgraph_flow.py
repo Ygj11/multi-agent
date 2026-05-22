@@ -1,11 +1,10 @@
-"""LangGraph 真实状态机流转验收测试。"""
+"""LangGraph task-level orchestration flow tests."""
 
 from app.adapters.request_adapter import RequestAdapter
 from app.schemas.message import ChatMessage, ChatRequest
 
 
-async def test_langgraph_flow_routes_to_troubleshooting(app_factory):
-    """troubleshooting 意图应经过 route_intent 并进入子 Agent 分支。"""
+async def test_langgraph_flow_selects_and_dispatches_troubleshooting_agent(app_factory):
     app = app_factory()
     inbound = RequestAdapter().adapt(
         ChatRequest(
@@ -20,7 +19,13 @@ async def test_langgraph_flow_routes_to_troubleshooting(app_factory):
     state = await app.state.orchestrator.run(inbound)
 
     assert state["intent"] == "troubleshooting"
-    assert "route_intent" in state["graph_path"]
-    assert "call_troubleshooting_agent" in state["graph_path"]
-    assert "direct_answer" not in state["graph_path"]
+    assert state["entities"]["request_id"] == "REQ_001"
+    assert state["selected_agent"] == "troubleshooting_agent"
+    assert "discover_agents" in state["graph_path"]
+    assert "select_agent" in state["graph_path"]
+    assert "assemble_task" in state["graph_path"]
+    assert "dispatch_agent" in state["graph_path"]
+    assert "final_compliance_check" in state["graph_path"]
+    assert "route_intent" not in state["graph_path"]
+    assert "call_troubleshooting_agent" not in state["graph_path"]
     assert state["graph_path"][-1] == "finalize_response"

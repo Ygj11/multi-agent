@@ -19,7 +19,7 @@ class PolicyGate:
 
     async def allow(self, call: ToolCall) -> tuple[bool, str | None]:
         """返回工具是否允许调用以及拒绝原因。"""
-        if call.name in {"get_knowledge", "query_internal_log", "partner_trace.get_request_detail"}:
+        if call.name in {"get_knowledge", "query_internal_log"}:
             self._log_checked(call, True, None)
             return True, None
 

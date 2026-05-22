@@ -1,5 +1,5 @@
 ---
-skill_id: document_parse.api_doc_parse
+skill_id: document_parse_agent.api_doc_parse
 name: 接口文档解析
 description: 用于解析 submitProposal 等接口文档，提取接口名、请求字段、响应字段、签名规则和错误码
 agent: document_parse_agent

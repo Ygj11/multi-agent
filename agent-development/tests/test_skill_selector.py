@@ -29,7 +29,7 @@ async def test_skill_selector_selects_signature_error_for_e102():
     """E102 请求应选择签名失败 skill。"""
     result = await _select_for_troubleshooting("REQ_001 为什么返回 E102？", error_code="E102")
 
-    assert result.selected_skill_id == "troubleshooting.signature_error"
+    assert result.selected_skill_id == "troubleshooting_agent.signature_error"
     assert result.score > 0
 
 
@@ -37,14 +37,14 @@ async def test_skill_selector_selects_missing_field():
     """字段缺失问题应选择 missing_field skill。"""
     result = await _select_for_troubleshooting("submitProposal 报文字段缺失，提示 appId 不能为空")
 
-    assert result.selected_skill_id == "troubleshooting.missing_field"
+    assert result.selected_skill_id == "troubleshooting_agent.missing_field"
 
 
 async def test_skill_selector_selects_callback_failure():
     """回调失败问题应选择 callback_failure skill。"""
     result = await _select_for_troubleshooting("REQ_001 回调失败，渠道未收到回调，帮我排查")
 
-    assert result.selected_skill_id == "troubleshooting.callback_failure"
+    assert result.selected_skill_id == "troubleshooting_agent.callback_failure"
 
 
 async def test_skill_selector_falls_back_to_default_for_unclear_query():
@@ -65,5 +65,5 @@ async def test_skill_selector_falls_back_to_default_for_unclear_query():
         candidates=catalog.list_skills("troubleshooting_agent"),
     )
 
-    assert result.selected_skill_id == "troubleshooting.signature_error"
+    assert result.selected_skill_id == "troubleshooting_agent.signature_error"
     assert result.fallback is True

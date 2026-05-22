@@ -36,8 +36,8 @@ async def test_context_builder_injects_only_selected_skill_content():
         allowed_tools=["query_internal_log", "get_knowledge"],
     )
 
-    assert context.selected_skill_id == "troubleshooting.signature_error"
+    assert context.selected_skill_id == "troubleshooting_agent.signature_error"
     assert "签名失败排查 Skill" in context.skill_content
     assert "字段缺失排查 Skill" not in context.skill_content
     assert "回调失败排查 Skill" not in context.skill_content
-    assert task.metadata["selected_skill_id"] == "troubleshooting.signature_error"
+    assert task.metadata["selected_skill_id"] == "troubleshooting_agent.signature_error"

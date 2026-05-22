@@ -3,7 +3,7 @@ from app.schemas.message import ChatMessage, ChatRequest
 
 
 async def test_troubleshooting_req_001_selects_signature_error_skill(app_factory):
-    """REQ_001 端到端应选择 troubleshooting.signature_error。"""
+    """REQ_001 端到端应选择 troubleshooting_agent.signature_error。"""
     app = app_factory("skill-e2e.sqlite3")
     inbound = RequestAdapter().adapt(
         ChatRequest(
@@ -18,8 +18,8 @@ async def test_troubleshooting_req_001_selects_signature_error_skill(app_factory
     state = await app.state.orchestrator.run(inbound)
 
     assert state["intent"] == "troubleshooting"
-    assert state["selected_skill_id"] == "troubleshooting.signature_error"
-    assert state["subagent_result"]["selected_skill_id"] == "troubleshooting.signature_error"
+    assert state["selected_skill_id"] == "troubleshooting_agent.signature_error"
+    assert state["subagent_result"]["selected_skill_id"] == "troubleshooting_agent.signature_error"
     assert "E102" in state["answer"]
 
 
@@ -44,5 +44,5 @@ async def test_change_impact_selects_signature_rule_change_skill(app_factory):
     state = await app.state.orchestrator.run(inbound)
 
     assert state["intent"] == "change_impact_analysis"
-    assert state["selected_skill_id"] == "change_impact.signature_rule_change"
-    assert state["subagent_result"]["selected_skill_id"] == "change_impact.signature_rule_change"
+    assert state["selected_skill_id"] == "change_impact_analysis_agent.signature_rule_change"
+    assert state["subagent_result"]["selected_skill_id"] == "change_impact_analysis_agent.signature_rule_change"

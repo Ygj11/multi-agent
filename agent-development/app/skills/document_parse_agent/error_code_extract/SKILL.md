@@ -1,5 +1,5 @@
 ---
-skill_id: document_parse.error_code_extract
+skill_id: document_parse_agent.error_code_extract
 name: 错误码提取
 description: 用于从文档中提取 E102 等错误码、错误说明、排查提示和错误映射
 agent: document_parse_agent

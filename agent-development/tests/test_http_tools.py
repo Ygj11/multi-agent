@@ -63,7 +63,7 @@ async def test_mcp_http_call_tool_posts_tool_name_and_arguments():
 
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/mcp/tools/call"
-        assert b"partner_trace.get_request_detail" in request.content
+        assert b"mcp.workflow.query_refund_task" in request.content
         assert b"REQ_001" in request.content
         return httpx.Response(200, json={"found": True, "summary": "ok"})
 
@@ -82,7 +82,7 @@ async def test_mcp_http_call_tool_posts_tool_name_and_arguments():
             name="mcp_http.call_tool",
             arguments={
                 "base_url": "https://mcp.example.test",
-                "tool_name": "partner_trace.get_request_detail",
+                "tool_name": "mcp.workflow.query_refund_task",
                 "arguments": {"request_id": "REQ_001"},
             },
         )

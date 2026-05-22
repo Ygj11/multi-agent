@@ -26,6 +26,9 @@ class SkillCatalog:
         metadata_by_id: dict[str, SkillMetadata] = {}
         if self.skills_root.exists():
             for path in sorted(self.skills_root.rglob("SKILL.md")):
+                relative = path.relative_to(self.skills_root)
+                if len(relative.parts) != 3 or relative.parts[0] == "deprecated":
+                    continue
                 metadata = metadata_from_skill_file(path, self.skills_root)
                 if metadata is not None:
                     metadata_by_id[metadata.skill_id] = metadata

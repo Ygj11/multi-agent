@@ -57,27 +57,17 @@ def test_api_chat_emits_runtime_execution_events(app_factory, caplog):
         "request_received",
         "request_adapted",
         "session_key_created",
-        "session_loaded",
         "user_message_saved",
         "original_query",
-        "query_rewrite_started",
-        "query_rewrite_finished",
-        "intent_recognition_started",
-        "intent_recognition_finished",
         "memory_context_loaded",
         "knowledge_hint_loaded",
-        "orchestrator_context_built",
         "langgraph_node_enter",
         "langgraph_node_exit",
-        "route_decision",
+        "agent_cards_loaded",
+        "agent_selected",
         "subagent_selected",
         "troubleshooting_started",
-        "tool_call_requested",
-        "policy_gate_checked",
-        "tool_call_started",
-        "tool_call_finished",
-        "mcp_call_started",
-        "mcp_call_finished",
+        "tool_execution_finished",
         "evidence_built",
         "assistant_message_saved",
         "short_memory_compressed",
@@ -86,7 +76,7 @@ def test_api_chat_emits_runtime_execution_events(app_factory, caplog):
     }
     assert expected.issubset(event_names)
 
-    contextual_events = [event for event in events if event["event"] in {"request_adapted", "tool_call_finished"}]
+    contextual_events = [event for event in events if event["event"] in {"request_adapted", "tool_execution_finished"}]
     assert contextual_events
     assert all("request_id" in event for event in contextual_events)
     assert any(event["session_key"] == "pingan_health:web:u001:s001" for event in events)
@@ -121,4 +111,3 @@ async def test_shell_exec_rejected_emits_runtime_logs(tmp_path, caplog):
     serialized = "\n".join(json.dumps(event, ensure_ascii=False) for event in events)
     assert "plain-token" not in serialized
     assert '"token": "***"' in serialized
-

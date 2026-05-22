@@ -1,5 +1,5 @@
 ---
-skill_id: change_impact.signature_rule_change
+skill_id: change_impact_analysis_agent.signature_rule_change
 name: 签名规则变更影响分析
 description: 用于分析 timestamp、base string、字段排序、密钥版本、签名算法变更对接口和错误码的影响
 agent: change_impact_analysis_agent

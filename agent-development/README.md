@@ -1,349 +1,99 @@
-# 健康险个险业务对接 Agent MVP
+# 健康险个险业务对接 Multi-Agent MVP
 
-这是第三阶段增强版 MVP，用于验证健康险个险业务对接 Agent 的核心运行时思想：固定主干流程、主 Agent 协调、子 Agent 深度执行、工具调用受控、多用户多会话隔离、SQLite 本地持久化、InMemory RAG 雏形和 Fake MCP 外部能力雏形。
+本项目是一个可本地运行、可测试的企业级健康险个险业务对接 Agent 平台 MVP。当前版本已经从旧的固定 intent 路由升级为 **AgentCard 驱动的任务级编排架构**：主 Agent 负责任务理解、Agent 发现与选择、上下文组装、子 Agent 分派、最终合规检查；子 Agent 负责具体业务任务执行，并通过自己的 AgentCard、Skill 和可用工具完成任务。
 
-## 架构简图
+当前默认使用本地 MVP 能力与测试替身：
 
-```text
-FastAPI /api/chat
--> RequestAdapter
--> AgentOrchestrator
--> LangGraph StateGraph
-   -> load_session
-   -> save_user_message
-   -> query_rewrite
-   -> intent_recognition
-   -> build_orchestrator_context
-   -> route_intent
-      -> troubleshooting: call_troubleshooting_agent
-      -> other: direct_answer
-   -> save_assistant_message
-   -> compress_short_memory
-   -> finalize_response
--> ResponseAdapter
+- Python 3.12 + uv
+- FastAPI / uvicorn
+- LangGraph StateGraph
+- Pydantic
+- SQLite 本地持久化
+- FakeLLMProvider 默认启用
+- InMemoryKnowledgeService 作为 RAG fallback
+- MCPClientManager 作为 MCP Client / Consumer 入口
 
-TroubleshootingAgent
--> query_internal_log 内部日志
--> get_knowledge / InMemoryKnowledgeService 知识依据
--> partner_trace.get_request_detail / FakeMCPConnector 渠道侧 trace
--> 汇总内部证据、知识依据、渠道侧证据、初步归属和建议动作
-```
-
-## 安装方式
+## 快速开始
 
 ```bash
 uv sync
-```
-
-## 测试命令
-
-```bash
 uv run pytest
-```
-
-## 启动命令
-
-```bash
 uv run uvicorn app.main:app --reload
 ```
 
-## SQLite 本地持久化
-
-第二阶段默认使用 SQLite 保存消息、短期记忆和项目内 checkpoint。
-
-默认数据库路径：
+默认 SQLite 文件：
 
 ```text
 .data/agent_mvp.sqlite3
 ```
 
-可以通过环境变量修改：
+可通过环境变量覆盖：
 
 ```powershell
 $env:SQLITE_DB_PATH="D:\tmp\agent_mvp.sqlite3"
 ```
 
-数据库初始化由 `app/storage/sqlite.py` 幂等完成，目录不存在时会自动创建。
+## 一次完整调用链
 
-当前表：
-
-```text
-messages
-short_term_memory
-graph_checkpoints
-tool_call_logs
-```
-
-`messages` 保存 user/assistant 消息和 metadata JSON；`short_term_memory` 保存每个 `session_key` 的 session_summary；`graph_checkpoints` 保存每个 `thread_id=session_key` 的最新 LangGraph state；`tool_call_logs` 保存每次工具调用审计记录。
-
-清理本地开发数据：
-
-```powershell
-Remove-Item -LiteralPath ".data\agent_mvp.sqlite3" -Force
-```
-
-## Tool Audit
-
-第四阶段新增工具调用审计。所有经过 `ToolBroker` 的工具调用都会写入 SQLite：
+用户请求从 `/api/chat` 进入后，会经历下面的完整链路：
 
 ```text
-tool_call_logs
+POST /api/chat
+-> RequestAdapter.adapt()
+-> AgentOrchestrator.run()
+   -> LangGraph StateGraph
+      -> load_session
+      -> save_user_message
+      -> query_rewrite
+      -> intent_recognition
+      -> build_orchestrator_context
+      -> discover_agents
+      -> select_agent
+      -> assemble_task
+      -> dispatch_agent
+      -> final_compliance_check
+         -> passed: save_assistant_message
+         -> retry: regenerate_compliant_answer -> final_compliance_check
+         -> fallback: fallback_answer
+      -> compress_short_memory
+      -> finalize_response
+-> ResponseAdapter.adapt()
+-> ChatResponse
 ```
 
-字段包括：
+Mermaid 视图：
 
-```text
-request_id
-trace_id
-session_key
-tool_name
-arguments_json
-allowed
-success
-result_json
-error
-started_at
-finished_at
-duration_ms
-created_at
+```mermaid
+flowchart TD
+    A["POST /api/chat"] --> B["RequestAdapter"]
+    B --> C["AgentOrchestrator"]
+    C --> D["load_session"]
+    D --> E["save_user_message"]
+    E --> F["query_rewrite"]
+    F --> G["intent_recognition"]
+    G --> H["build_orchestrator_context"]
+    H --> I["discover_agents"]
+    I --> J["select_agent"]
+    J --> K["assemble_task"]
+    K --> L["dispatch_agent"]
+    L --> M["final_compliance_check"]
+    M -->|passed| N["save_assistant_message"]
+    M -->|retry once| O["regenerate_compliant_answer"]
+    O --> M
+    M -->|fallback| P["fallback_answer"]
+    P --> N
+    N --> Q["compress_short_memory"]
+    Q --> R["finalize_response"]
+    R --> S["ResponseAdapter"]
 ```
 
-覆盖范围：
+### select_agent 和 dispatch_agent 的区别
 
-```text
-query_internal_log 成功调用
-get_knowledge 成功调用
-partner_trace.get_request_detail MCP 工具调用
-shell_exec 默认拒绝
-shell_exec allowlist 命令执行
-shell_exec 非 allowlist 命令拒绝
-未知工具或未授权工具拒绝
-```
+`select_agent` 只做“选谁”：根据 intent、entities、query 和 AgentCard 打分，输出 `selected_agent`、候选列表、置信度和原因。
 
-审计链路：
+`dispatch_agent` 才做“调用谁执行”：把 `assemble_task` 生成的任务交给对应子 Agent，子 Agent 再选择 skill、读取 SKILL.md、拿到允许的工具并执行任务，最后返回统一的 `SubAgentResult`。
 
-```text
-ToolBroker
--> PolicyGate
--> ToolRegistry / Tool
--> ToolCallLogStore
--> SQLite tool_call_logs
-```
-
-PolicyGate 只负责允许或拒绝，审计写入统一由 ToolBroker 完成。即使 PolicyGate 拒绝调用，也会记录 `allowed=false`、`success=false` 和拒绝原因。
-
-`arguments_json` 会对常见敏感字段做最小脱敏，例如：
-
-```text
-secret
-token
-password
-api_key
-authorization
-```
-
-查询示例：
-
-```powershell
-sqlite3 .data\agent_mvp.sqlite3 "select tool_name, allowed, success, error from tool_call_logs order by id;"
-```
-
-## Runtime Execution Logging
-
-当前阶段新增 Runtime Execution Logging，用于开发时观察一次 `/api/chat` 请求从入口到最终响应的执行链路。它和 `tool_call_logs` 不同：
-
-```text
-Runtime Execution Logging -> 控制台结构化日志，帮助开发调试链路
-tool_call_logs            -> SQLite 持久化审计，帮助回放工具调用
-```
-
-日志使用 Python `logging`，统一入口在：
-
-```text
-app/observability/logger.py
-```
-
-所有关键模块通过 `log_event(...)` 输出 JSON line 风格日志。字段包括：
-
-```text
-timestamp
-level
-event
-request_id
-trace_id
-session_key
-user_id
-tenant_id
-node
-message
-data
-```
-
-一次 `REQ_001 为什么返回 E102？` 请求中，可以看到类似事件：
-
-```text
-request_received
-request_adapted
-session_key_created
-session_loaded
-query_rewrite_started
-query_rewrite_finished
-intent_recognition_started
-intent_recognition_finished
-memory_context_loaded
-knowledge_hint_loaded
-orchestrator_context_built
-langgraph_node_enter
-langgraph_node_exit
-route_decision
-subagent_selected
-troubleshooting_started
-tool_call_requested
-policy_gate_checked
-tool_call_started
-tool_call_finished
-mcp_call_started
-mcp_call_finished
-evidence_built
-assistant_message_saved
-short_memory_compressed
-response_finalized
-response_returned
-```
-
-日志 data 只放摘要，并会递归脱敏常见敏感字段：
-
-```text
-password
-secret
-token
-api_key
-authorization
-id_card
-phone
-mobile
-bank_card
-health_info
-medical_record
-```
-
-本阶段不接 OpenTelemetry、不接真实审计平台、不做分布式 trace。生产级可观测后续可以在 `log_event` 外层替换或扩展。
-
-## InMemoryKnowledgeService
-
-第三阶段新增独立知识服务：
-
-```text
-app/knowledge/service.py
-app/knowledge/in_memory_service.py
-```
-
-`KnowledgeService` 是抽象接口，`InMemoryKnowledgeService` 是当前默认实现。它只做本地 keyword search，不接 Milvus、Elasticsearch，也不做 embedding。
-
-内置 mock knowledge 包括：
-
-```text
-E102 签名校验失败
-submitProposal 接口说明
-timestamp 参与签名规则
-密钥版本不一致
-字段排序不一致
-空值字段处理不一致
-```
-
-知识片段返回结构包含：
-
-```text
-content
-source
-score
-metadata
-```
-
-`ContextBuilder.build_for_orchestrator()` 会调用 KnowledgeService 生成 `lightweight_knowledge_hints`，主干流程只使用轻量提示，不加载复杂 RAG 上下文。
-
-## get_knowledge Tool
-
-`get_knowledge` 仍是 ToolRegistry 中的内部 tool，但已改为调用 `KnowledgeService`。
-
-调用路径：
-
-```text
-TroubleshootingAgent
--> ToolBroker
--> PolicyGate
--> get_knowledge
--> InMemoryKnowledgeService.search()
-```
-
-这样知识检索仍然受 ToolBroker / PolicyGate 管控。
-
-## FakeMCPConnector
-
-第三阶段保留 `MCPConnector` 抽象，并新增：
-
-```text
-app/mcp/fake_connector.py
-```
-
-当前 fake MCP tool：
-
-```text
-partner_trace.get_request_detail
-```
-
-能力：
-
-```text
-REQ_001 -> 渠道侧 trace 显示仍使用旧版 v1 签名规则，签名原文未包含 timestamp
-REQ_002 -> 渠道侧 trace 显示 timestamp 过期或渠道侧时间窗口异常
-未知 requestId -> found=false
-```
-
-MCP 工具不会被子 Agent 直接调用，而是通过 wrapper 注册进 ToolRegistry：
-
-```text
-ToolBroker -> PolicyGate -> partner_trace.get_request_detail wrapper -> FakeMCPConnector.call_tool()
-```
-
-MCP 工具调用同样写入 `tool_call_logs`。对 `REQ_001`，日志中会记录 `partner_trace.get_request_detail` 的调用参数和渠道侧 trace 结果摘要。
-
-## Structured Evidence
-
-`TroubleshootingAgent` 现在不仅生成 answer，还会在 graph final state 的 `subagent_result` 中返回结构化证据。
-
-`subagent_result` 至少包含：
-
-```text
-diagnosis
-evidence
-recommendation
-responsibility
-confidence
-```
-
-每条 evidence 至少包含：
-
-```text
-type
-source
-tool_name
-summary
-result_preview
-confidence
-```
-
-对 `REQ_001`，结构化 evidence 会包含：
-
-```text
-internal_log      -> query_internal_log
-knowledge         -> get_knowledge / InMemoryKnowledgeService
-partner_trace     -> partner_trace.get_request_detail / FakeMCPConnector
-```
-
-`/api/chat` 当前仍保持核心响应格式兼容，默认不暴露完整 evidence；测试和内部调用可以从 LangGraph final state 或 checkpoint 中读取 `subagent_result.evidence`。
-
-## curl 验证示例
+## 示例请求
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/chat \
@@ -356,13 +106,28 @@ curl -X POST http://127.0.0.1:8000/api/chat \
     "messages": [
       {
         "role": "user",
-        "content": "REQ_001 为什么返回 E102？"
+        "content": "保单9201344266为什么退保没有成功"
       }
     ]
   }'
 ```
 
-响应会包含：
+典型链路结果：
+
+```text
+intent_recognition -> intent=troubleshooting, entities.policy_no=9201344266
+discover_agents    -> 加载 enabled=true 的 AgentCard
+select_agent       -> troubleshooting_agent
+assemble_task      -> 生成 AgentTaskEnvelope
+dispatch_agent     -> TroubleshootingAgent.run()
+tool_executor      -> 只允许 troubleshooting_agent 的私有工具和允许的公用工具
+final_compliance   -> 返回 sanitized_answer
+messages           -> 写入 user / assistant 消息
+short_memory       -> 更新 short_summary
+tool_execution_logs-> 写入工具执行日志
+```
+
+响应包含核心字段：
 
 ```text
 request_id
@@ -373,112 +138,466 @@ intent
 answer
 ```
 
-对 `REQ_001 为什么返回 E102？`，`answer` 应包含：
-
-```text
-E102
-签名校验失败
-timestamp
-渠道侧 trace
-旧版签名规则 或 timestamp 未参与签名
-```
-
-其中 `session_key` 格式为：
+`session_key` 格式：
 
 ```text
 {tenant_id}:{channel}:{user_id}:{session_id}
 ```
 
-## LangGraph 状态机流程说明
-
-本项目使用真实 `langgraph.graph.StateGraph`，不是普通函数串联。节点包括：
+## 当前目录结构
 
 ```text
-load_session
-save_user_message
-query_rewrite
-intent_recognition
-build_orchestrator_context
-route_intent
-call_troubleshooting_agent
-direct_answer
-save_assistant_message
-compress_short_memory
-finalize_response
+app/
+  main.py                         FastAPI 入口和依赖装配
+  runtime/
+    graph.py                      LangGraph StateGraph 主链路
+    orchestrator.py               图执行入口，使用 session_key 作为 thread_id
+    context_builder.py            主 Agent / 子 Agent 上下文构造
+  agents/
+    card_loader.py                AgentCard 加载、匹配、一致性校验
+    selection.py                  Agent 选择节点
+    task_assembler.py             任务上下文组装
+    dispatcher.py                 子 Agent 分派节点
+    cards/*.yaml                  结构化 AgentCard
+  subagents/
+    base.py                       BaseSubAgent 统一执行模板
+    troubleshooting_agent.py      问题排查子 Agent
+    claim_agent.py                理赔查询子 Agent
+    policy_query_agent.py         保单查询子 Agent
+    compliance_security_agent.py  合规子 Agent，AgentCard 名称为 compliance_agent
+  skills/
+    {agent_name}/{skill_name}/SKILL.md
+  tools/
+    registry.py                   公用工具 / 私有工具注册表
+    executor.py                   AgentCard 驱动的工具执行器
+    public_tools.py               公用工具注册
+    agent_tools.py                子 Agent 私有工具注册
+    audit_store.py                tool_execution_logs 持久化
+  compliance/
+    final_checker.py              最终返回前合规检查
+  storage/
+    sqlite.py                     SQLite 表初始化
+docs/
+  current_architecture.md
+  target_architecture.md
+  architecture_acceptance_checklist.md
+tests/
+  test_agent_card_loader.py
+  test_tool_executor_authorization.py
+  test_final_compliance_check.py
+  test_architecture_acceptance.py
 ```
 
-条件路由：
+## AgentCard
+
+每个可被主 Agent 发现和选择的子 Agent 都有自己的 AgentCard：
 
 ```text
-intent = troubleshooting -> call_troubleshooting_agent
-intent != troubleshooting -> direct_answer
+app/agents/cards/troubleshooting_agent.yaml
+app/agents/cards/claim_agent.yaml
+app/agents/cards/policy_query_agent.yaml
+app/agents/cards/compliance_agent.yaml
 ```
 
-执行图时使用 `session_key` 作为 LangGraph config 的 `thread_id`：
+AgentCard 核心 schema：
 
 ```python
-config = {
-    "configurable": {
-        "thread_id": session_key
-    }
-}
+class AgentCard(BaseModel):
+    agent_name: str
+    display_name: str
+    description: str
+    capabilities: list[str]
+    supported_intents: list[str]
+    required_entities: list[str]
+    output_schema: str
+    private_tools: list[str]
+    public_tools_allowed: bool = False
+    skills: list[str]
+    rag_namespaces: list[str]
+    memory_policy: MemoryPolicy = MemoryPolicy()
+    examples: list[dict[str, Any]] = []
+    enabled: bool = True
+    version: str
 ```
 
-LangGraph 编译阶段当前仍使用 `MemorySaver`，同时项目内通过 `SQLiteCheckpointStore` 将每次图执行后的最终 state 持久化到 `graph_checkpoints` 表。这个类位于：
+AgentCardLoader 提供：
+
+```python
+loader = AgentCardLoader(cards_root=Path("app/agents/cards"))
+
+cards = loader.list_available_agents()          # 只返回 enabled=true
+card = loader.get_agent_card("claim_agent")
+candidates = loader.match_candidates(
+    intent="troubleshooting",
+    entities={"policy_no": "9201344266"},
+    query="保单9201344266为什么退保没有成功",
+)
+loader.validate_with_skill_catalog(skill_catalog)
+```
+
+匹配逻辑当前是规则打分，后续可替换为 LLM JSON 选择：
+
+```python
+score = 0.0
+if intent in card.supported_intents:
+    score += 5
+score += matched_required_entities * 2
+score += capability_keyword_hits * 1.5
+score += query_keyword_hits
+if card.enabled:
+    score += 0.5
+```
+
+## LangGraph 主链路关键代码
+
+`app/runtime/graph.py` 中使用真实 `StateGraph`：
+
+```python
+graph = StateGraph(AgentGraphState)
+graph.add_node("load_session", self.load_session)
+graph.add_node("save_user_message", self.save_user_message)
+graph.add_node("query_rewrite", self.query_rewrite)
+graph.add_node("intent_recognition", self.intent_recognition)
+graph.add_node("build_orchestrator_context", self.build_orchestrator_context)
+graph.add_node("discover_agents", self.discover_agents)
+graph.add_node("select_agent", self.select_agent)
+graph.add_node("assemble_task", self.assemble_task)
+graph.add_node("dispatch_agent", self.dispatch_agent)
+graph.add_node("final_compliance_check", self.final_compliance_check)
+graph.add_node("regenerate_compliant_answer", self.regenerate_compliant_answer)
+graph.add_node("fallback_answer", self.fallback_answer)
+graph.add_node("save_assistant_message", self.save_assistant_message)
+graph.add_node("compress_short_memory", self.compress_short_memory)
+graph.add_node("finalize_response", self.finalize_response)
+
+graph.set_entry_point("load_session")
+graph.add_edge("load_session", "save_user_message")
+graph.add_edge("save_user_message", "query_rewrite")
+graph.add_edge("query_rewrite", "intent_recognition")
+graph.add_edge("intent_recognition", "build_orchestrator_context")
+graph.add_edge("build_orchestrator_context", "discover_agents")
+graph.add_edge("discover_agents", "select_agent")
+graph.add_edge("select_agent", "assemble_task")
+graph.add_edge("assemble_task", "dispatch_agent")
+graph.add_edge("dispatch_agent", "final_compliance_check")
+graph.add_conditional_edges(
+    "final_compliance_check",
+    self.compliance_route,
+    {
+        "passed": "save_assistant_message",
+        "retry": "regenerate_compliant_answer",
+        "fallback": "fallback_answer",
+    },
+)
+```
+
+Orchestrator 执行时使用 `session_key` 作为 LangGraph `thread_id`，保证多用户、多会话隔离：
+
+```python
+state = await graph.ainvoke(
+    inbound_state,
+    config={"configurable": {"thread_id": inbound_state["session_key"]}},
+)
+```
+
+## FastAPI 依赖装配关键代码
+
+`app/main.py` 中把 AgentCard、工具、SkillCatalog、子 Agent、LangGraph 组装起来：
+
+```python
+tool_registry = ToolRegistry()
+register_public_tools(tool_registry, knowledge_service)
+register_agent_private_tools(tool_registry, mcp_connector)
+
+tool_executor = ToolExecutor(
+    registry=tool_registry,
+    log_store=tool_execution_log_store,
+)
+
+skill_catalog = SkillCatalog(skills_root=skills_root)
+context_builder = ContextBuilder(
+    skills_root=skills_root,
+    knowledge_service=knowledge_service,
+    skill_catalog=skill_catalog,
+    skill_selector=SkillSelector(),
+)
+
+subagent_manager = SubAgentManager(skill_catalog=skill_catalog)
+subagent_manager.register(
+    "troubleshooting_agent",
+    TroubleshootingAgent(context_builder=context_builder, tool_executor=tool_executor),
+)
+subagent_manager.register(
+    "policy_query_agent",
+    PolicyQueryAgent(context_builder=context_builder, tool_executor=tool_executor),
+)
+subagent_manager.register(
+    "claim_agent",
+    ClaimAgent(context_builder=context_builder, tool_executor=tool_executor),
+)
+subagent_manager.register(
+    "compliance_agent",
+    ComplianceSecurityAgent(context_builder=context_builder, tool_executor=tool_executor),
+)
+
+agent_card_loader = AgentCardLoader(cards_root=cards_root)
+agent_card_loader.validate_with_skill_catalog(skill_catalog)
+```
+
+## 子 Agent 统一执行模板
+
+`BaseSubAgent` 统一处理 AgentCard、Skill、工具可见性和上下文构造，子类只实现 `do_run()`：
+
+```python
+class BaseSubAgent(ABC):
+    async def run(
+        self,
+        task: SubAgentTask,
+        parent_context: OrchestratorContext,
+    ) -> SubAgentResult:
+        agent_card = self.get_agent_card(task)
+        allowed_tools = self.get_available_tools(agent_card)
+        sub_context = await self.context_builder.build_for_subagent(
+            task=task,
+            parent_context=parent_context,
+            allowed_tools=allowed_tools,
+        )
+        result = await self.do_run(
+            task=task,
+            parent_context=parent_context,
+            sub_context=sub_context,
+            agent_card=agent_card,
+        )
+        result.agent_name = result.agent_name or self.name
+        result.task_id = result.task_id or task.task_id
+        return result
+```
+
+统一返回协议：
+
+```python
+class SubAgentResult(BaseModel):
+    agent_name: str
+    task_id: str
+    answer: str
+    evidence: list[dict[str, Any]]
+    tool_calls: list[dict[str, Any]]
+    confidence: float
+    needs_human_approval: bool = False
+    risk_level: Literal["low", "medium", "high"] = "low"
+    metadata: dict[str, Any] = {}
+```
+
+## 工具系统
+
+当前主链路不再使用旧的 `ToolBroker / PolicyGate` 作为核心链路。旧文件保留用于兼容和迁移观察，新工具系统由两层组成：
+
+- `ToolRegistry`：注册公用工具和子 Agent 私有工具
+- `ToolExecutor`：执行工具、做 AgentCard 可用性校验、写入工具执行日志
+
+工具分层：
 
 ```text
-app/runtime/checkpoint.py
+公用工具：
+  rag_search_tool
+  log_search_tool
+  calculator_tool
+  current_time_tool
+
+troubleshooting_agent 私有工具：
+  query_task_status
+  query_node_status
+  query_internal_log
+  mcp.workflow.query_refund_task
+  mcp.logs.query_trace
+
+policy_query_agent 私有工具：
+  query_policy_info
+  query_policy_status
+
+claim_agent 私有工具：
+  query_claim_case
+  query_claim_progress
 ```
 
-它是后续替换官方 SQLite/PostgreSQL checkpointer 的清晰接入点。无论当前项目内 checkpoint store，还是未来官方 checkpointer，都必须继续使用 `thread_id=session_key` 隔离。
+工具越权会被 `ToolExecutor` 直接拒绝：
 
-## 多轮对话说明
+```python
+if not self.registry.is_tool_available_for_agent(agent_name, tool_name, agent_card):
+    result = ToolResult(
+        name=tool_name,
+        agent_name=agent_name,
+        allowed=False,
+        success=False,
+        error="tool_not_available_for_agent",
+    )
+    await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf)
+    return result
+```
 
-`MessageStore` 和 `ShortTermMemoryManager` 都以 `session_key` 为隔离键，并持久化到 SQLite。`SessionManager` 默认读取最近 30 轮消息，也就是最多 60 条 user/assistant 消息，并同时读取 `short_summary`。
+写操作工具当前不会直接执行，而是返回人工审批扩展点：
 
-第一轮：
+```python
+if definition.is_write:
+    result = ToolResult(
+        name=tool_name,
+        agent_name=agent_name,
+        allowed=False,
+        success=False,
+        error="human_approval_required",
+    )
+```
+
+SQLite 表 `tool_execution_logs` 记录：
 
 ```text
-REQ_001 为什么返回 E102？
+request_id
+trace_id
+session_key
+agent_name
+tool_name
+arguments_json
+success
+result_json
+error
+started_at
+finished_at
+duration_ms
 ```
 
-第二轮：
+## final_compliance_check
+
+所有子 Agent 返回用户前必须经过主 Agent 的 `final_compliance_check`。
+
+当前 `FinalComplianceChecker` 会处理：
+
+- 手机号脱敏
+- 身份证号脱敏
+- 银行卡号脱敏
+- token / secret / password / api_key / authorization 脱敏
+- 内部日志字段隐藏
+- 原始工具返回拦截
+- 健康隐私内容风险标记
+- 不通过时最多重试 1 次，仍不通过则返回兜底回复
+
+关键代码：
+
+```python
+async def final_compliance_check(self, state: AgentGraphState) -> dict[str, Any]:
+    result = await self.final_compliance_checker.check(state.get("answer", ""))
+    updates = {"final_compliance_result": result.model_dump()}
+    if result.passed:
+        updates["answer"] = result.sanitized_answer
+    return updates
+
+def compliance_route(self, state: AgentGraphState) -> str:
+    result = FinalComplianceResult(**state["final_compliance_result"])
+    if result.passed:
+        return "passed"
+    if result.retry_required and state.get("retry_count", 0) < 1:
+        return "retry"
+    return "fallback"
+```
+
+输出 schema：
+
+```python
+class FinalComplianceResult(BaseModel):
+    passed: bool
+    sanitized_answer: str
+    violations: list[ComplianceViolation]
+    risk_level: Literal["low", "medium", "high"]
+    retry_required: bool
+    fallback_answer: str
+```
+
+## Skills
+
+Skill 目录只扫描统一格式：
 
 ```text
-那这个一般是谁的问题？
+app/skills/{agent_name}/{skill_name}/SKILL.md
 ```
 
-第二轮会从同一 `session_key` 的 recent messages 和 short summary 中恢复上一轮 E102 / requestId 上下文。即使重启服务，只要 SQLite 文件仍在，同一个 `session_key` 也可以继续多轮对话。
+示例 frontmatter：
 
-多用户隔离规则：
+```markdown
+---
+skill_id: troubleshooting_agent.signature_error
+name: 签名错误排查
+description: 用于排查接口签名校验失败、E102、验签失败等问题
+agent: troubleshooting_agent
+intent_tags:
+  - troubleshooting
+required_entities:
+  - policy_no
+private_tools:
+  - query_internal_log
+enabled: true
+is_default: true
+---
+
+这里写该 skill 的执行步骤。
+```
+
+一致性校验在应用启动时执行：
+
+```python
+agent_card_loader.validate_with_skill_catalog(skill_catalog)
+```
+
+校验规则：
+
+- `AgentCard.skills` 声明的 `skill_id` 必须存在
+- `skill.agent` 必须对应真实 AgentCard
+- `skill.private_tools` 必须是该 AgentCard 私有工具的子集
+- 每个 Agent 至少有一个 enabled default skill
+- disabled skill 不参与选择
+
+## 记忆和持久化
+
+主 Agent 构造上下文时只使用轻量信息：
+
+- `short_summary`
+- 最近 N 轮完整对话
+- 当前 query 提取出的 entities
+- AgentCard 候选摘要
+- 轻量 knowledge hints
+
+SQLite 表：
 
 ```text
-u001 + s001 -> pingan_health:web:u001:s001
-u002 + s001 -> pingan_health:web:u002:s001
+messages
+short_term_memory
+graph_checkpoints
+tool_execution_logs
+tool_call_logs        # legacy 兼容表
 ```
 
-不同 `session_key` 的 messages、summary 和 checkpoint 均不会互相读取。
+`messages` 的 metadata 会保留：
 
-## 真实 LLM 启用方式
+```text
+request_id
+trace_id
+original_query
+rewritten_query
+intent
+entities
+selected_agent
+session_key
+```
 
-默认使用 `FakeLLMProvider`，不依赖网络和 API key。
+## 真实 LLM Provider
 
-真实 OpenAI-compatible Provider 位于：
+默认使用 `FakeLLMProvider`，无需网络和 API key。
+
+OpenAI-compatible Provider 已保留在：
 
 ```text
 app/llm/openai_provider.py
 ```
 
 启用方式：
-
-```bash
-set ENABLE_REAL_LLM=true
-set OPENAI_API_KEY=your_api_key
-set OPENAI_BASE_URL=https://your-compatible-endpoint/v1
-set OPENAI_MODEL=your-model
-```
-
-PowerShell 可使用：
 
 ```powershell
 $env:ENABLE_REAL_LLM="true"
@@ -487,272 +606,45 @@ $env:OPENAI_BASE_URL="https://your-compatible-endpoint/v1"
 $env:OPENAI_MODEL="your-model"
 ```
 
-如果 `ENABLE_REAL_LLM=true` 但未安装 openai 或未配置 API key，会抛出清晰错误。默认测试不会启用真实 LLM。
+默认测试不会启用真实 LLM。
 
-## shell_exec 安全说明
+## 架构验收测试
 
-`shell_exec` 已实现但默认禁用。
-
-安全边界：
+核心验收覆盖：
 
 ```text
-默认禁用
-必须 ENABLE_SHELL_EXEC=true 才允许
-必须经过 PolicyGate 和 ToolBroker
-不使用 shell=True
-只允许 echo、pwd、ls
-timeout 最多 5 秒
-工作目录限制在项目根目录
-拒绝 rm、curl、wget、ssh、scp 等高风险命令
+tests/test_agent_card_loader.py              AgentCard 加载、校验、匹配、一致性
+tests/test_tool_executor_authorization.py    工具越权拒绝、公用工具权限、执行日志
+tests/test_final_compliance_check.py         脱敏、retry、fallback
+tests/test_architecture_acceptance.py        完整主链路验收
 ```
 
-启用示例：
-
-```powershell
-$env:ENABLE_SHELL_EXEC="true"
-```
-
-## HTTP / MCP HTTP 工具说明
-
-当前除了 fake MCP wrapper，也提供可供子 Agent 后续调用真实接口的受控工具入口：
-
-```text
-http_request
-mcp_http.call_tool
-```
-
-安全边界：
-
-```text
-默认禁用
-必须 ENABLE_HTTP_TOOLS=true 才允许
-必须经过 PolicyGate 和 ToolBroker
-只允许 GET / POST
-只允许 http / https URL
-如配置 ALLOWED_HTTP_TOOL_HOSTS，则 host 必须命中白名单
-timeout 不得超过 HTTP_TOOL_TIMEOUT，默认 5 秒
-工具调用会进入 tool_call_logs 审计链路
-```
-
-启用示例：
-
-```powershell
-$env:ENABLE_HTTP_TOOLS="true"
-$env:ALLOWED_HTTP_TOOL_HOSTS="api.example.internal,mcp.example.internal"
-$env:HTTP_TOOL_TIMEOUT="5"
-```
-
-`http_request` 参数示例：
-
-```json
-{
-  "method": "GET",
-  "url": "https://api.example.internal/logs",
-  "params": {"requestId": "REQ_001"}
-}
-```
-
-`mcp_http.call_tool` 参数示例：
-
-```json
-{
-  "base_url": "https://mcp.example.internal",
-  "tool_name": "partner_trace.get_request_detail",
-  "arguments": {"request_id": "REQ_001"}
-}
-```
-
-当前排障主链路仍默认使用 `FakeMCPConnector`，不会主动调用真实 HTTP / MCP HTTP 接口。
-
-## 当前 mock/stub 能力列表
-
-## TASK5 真实 API 示例代码
-
-本阶段新增 `app/integrations/`，为当前 mock/stub 能力提供未来真实 API 接入示例，但默认不启用、不会主动请求外部系统。
-
-```text
-base_http_client.py              统一 httpx client 示例，支持 request_id / trace_id、timeout、异常处理和脱敏
-knowledge_api_client.py          未来替换 InMemoryKnowledgeService
-log_api_client.py                未来替换 query_internal_log mock tool
-partner_trace_api_client.py      未来替换 partner_trace.get_request_detail fake MCP tool
-mcp_http_client.py               未来接真实 MCP HTTP 网关
-llm_api_client_example.py        未来接真实模型服务示例，当前默认仍使用 FakeLLMProvider
-long_term_memory_api_client.py   未来接长期记忆服务
-audit_api_client.py              未来接真实审计平台
-checkpoint_backend_examples.py   未来替换项目内 SQLite checkpoint store
-vector_search_api_client.py      未来接 Milvus / Elasticsearch / OpenSearch
-insurance_core_api_client.py     未来接保险核心系统
-observability_api_client.py      未来接 OpenTelemetry collector 或内部观测平台
-```
-
-这些示例代码都保留 TODO，用来标注真实地址、真实鉴权、字段映射、脱敏和权限控制的替换点。当前主流程仍走本地 mock/stub，避免测试依赖外部环境。
-
-## TASK6 固定子 Agent Catalog
-
-当前通过 `SubAgentManager` 固定注册以下子 Agent，不支持自由 spawn：
-
-```text
-troubleshooting_agent
-compliance_security_agent
-document_parse_agent
-change_impact_analysis_agent
-```
-
-新增子 Agent：
-
-```text
-compliance_security_agent
-  检查手机号、身份证号、凭据、健康/医疗信息和外发风险，输出脱敏建议。
-
-document_parse_agent
-  解析 markdown / text / json / yaml 文档内容，提取标题、接口、字段、错误码和摘要。
-
-change_impact_analysis_agent
-  分析接口字段、错误码、签名规则、知识文档变更影响，必要时通过 get_knowledge 查询 mock 知识库。
-```
-
-每个子 Agent 都有输入 schema、输出 schema，并且必须经由 LangGraph 条件路由和 `SubAgentManager` 调用。需要工具时仍通过 `ToolBroker / PolicyGate`，本阶段没有引入策略治理和工具元数据化。
-
-### 多 Skill 动态选择
-
-当前已经支持“一个子 Agent 拥有多个 skills，并按请求上下文动态选择一个 skill”。
-
-目录结构示例：
-
-```text
-app/skills/troubleshooting_agent/signature_error/SKILL.md
-app/skills/troubleshooting_agent/missing_field/SKILL.md
-app/skills/troubleshooting_agent/callback_failure/SKILL.md
-
-app/skills/compliance_security_agent/privacy_check/SKILL.md
-app/skills/compliance_security_agent/external_message_review/SKILL.md
-app/skills/compliance_security_agent/sensitive_data_redaction/SKILL.md
-
-app/skills/document_parse_agent/api_doc_parse/SKILL.md
-app/skills/document_parse_agent/markdown_parse/SKILL.md
-app/skills/document_parse_agent/error_code_extract/SKILL.md
-
-app/skills/change_impact_analysis_agent/api_field_change/SKILL.md
-app/skills/change_impact_analysis_agent/signature_rule_change/SKILL.md
-app/skills/change_impact_analysis_agent/error_code_change/SKILL.md
-```
-
-每个 `SKILL.md` 必须包含 YAML frontmatter，例如 `skill_id`、`name`、`description`、`agent`、`intent_tags`、`business_domain`、`required_context`、`enabled`、`is_default`。
-
-运行时流程：
-
-```text
-IntentRecognitionNode 识别 intent
-LangGraph route_intent 路由到固定子 Agent
-ContextBuilder.build_skill_selection_context 构建最小选择上下文
-SkillCatalog 只加载该子 Agent 的 skill metadata
-SkillSelector 用规则 + 关键词相似度选择 selected_skill_id
-SkillCatalog.load_skill_content 只加载选中 skill 的完整 SKILL.md
-ContextBuilder.build_for_subagent 只把 selected skill 正文注入 SubAgentContext
-子 Agent 执行任务并在 subagent_result / graph state 中返回 selected_skill_id
-```
-
-渐进式披露边界：
-
-```text
-主流程和主 Agent 只看到 skill metadata summary
-未选中的 skill 不加载完整正文
-不允许根据用户输入动态读取任意本地文件
-候选 skill 必须来自固定 SkillCatalog
-selected_skill_id 会进入 subagent_result 和 graph state，便于日志、测试和回放
-```
-
-当前选择算法：
-
-```text
-intent_tags 命中 intent 加权
-intent_tags / description 命中 original_query、rewritten_query、short_summary 加权
-required_context 存在 request_id、error_code、interface_name 时加权
-business_domain 匹配加权
-error_code / interface_name 命中 skill metadata 加权
-没有明显匹配时回退到 is_default=true 的 skill
-```
-
-当前不会接真实 embedding、Milvus、Elasticsearch 或真实 LLM 做 skill selection。
-
-示例：
-
-```text
-REQ_001 为什么返回 E102？ -> troubleshooting.signature_error
-submitProposal 报文字段缺失，appId 不能为空 -> troubleshooting.missing_field
-REQ_001 回调失败，渠道未收到回调 -> troubleshooting.callback_failure
-签名规则变更：timestamp 必须加入签名原文 -> change_impact.signature_rule_change
-```
-
-新增意图路由：
-
-```text
-compliance_review -> call_compliance_security_agent
-document_parse -> call_document_parse_agent
-change_impact_analysis -> call_change_impact_analysis_agent
-troubleshooting -> call_troubleshooting_agent
-其他 -> direct_answer
-```
-
-示例请求：
+运行：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d "{\"tenant_id\":\"pingan_health\",\"user_id\":\"u001\",\"session_id\":\"s-agent\",\"messages\":[{\"role\":\"user\",\"content\":\"请做合规检查：手机号13800138000，健康告知能不能外发给渠道？\"}]}"
+uv run pytest
 ```
 
-mock tools：
+当前验收关注的完整场景：
 
 ```text
-get_knowledge
-query_internal_log
-partner_trace.get_request_detail
-http_request（默认禁用）
-mcp_http.call_tool（默认禁用）
+用户输入“保单9201344266为什么退保没有成功”
+-> intent_recognition 输出 intent/entities/confidence
+-> discover_agents 发现 AgentCard
+-> select_agent 选择 troubleshooting_agent
+-> assemble_task 生成任务
+-> dispatch_agent 调用子 Agent
+-> 子 Agent 只能看到自己的工具
+-> 返回 SubAgentResult
+-> final_compliance_check 必须执行
+-> 最终返回 sanitized_answer
+-> messages / short_term_memory / tool_execution_logs 正常写入
 ```
 
-stub：
+更多细节见：
 
 ```text
-LongTermMemoryManager
-官方 LangGraph SQLite checkpointer
-真实审计系统 / OpenTelemetry
-```
-
-mock/stub 服务：
-
-```text
-InMemoryKnowledgeService
-FakeMCPConnector
-MCPConnector 抽象
-```
-
-默认 LLM：
-
-```text
-FakeLLMProvider
-```
-
-当前固定注册的子 Agent：
-
-```text
-troubleshooting_agent
-compliance_security_agent
-document_parse_agent
-change_impact_analysis_agent
-```
-
-## 下一阶段建议
-
-下一阶段可以逐步替换 mock/stub：
-
-```text
-将项目内 SQLiteCheckpointStore 替换为官方 SQLite/PostgreSQL checkpointer
-将 InMemoryKnowledgeService 替换为真实知识库和版本过滤
-接入真实日志查询工具
-完善 Audit/Trace
-将 FakeMCPConnector 替换为真实 MCP Connector
-扩展接口映射、对接方案、产品规则和更多业务子 Agent
-增加权限、脱敏和人工审批能力
+docs/current_architecture.md
+docs/target_architecture.md
+docs/architecture_acceptance_checklist.md
 ```

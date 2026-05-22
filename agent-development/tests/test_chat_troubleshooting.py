@@ -23,4 +23,4 @@ def test_chat_troubleshooting_req_001(client):
     assert "签名校验失败" in data["answer"]
     assert "timestamp" in data["answer"]
     assert "密钥版本" in data["answer"] or "字段排序" in data["answer"]
-    assert "渠道侧 trace" in data["answer"]
+    assert "MCP workflow" in data["answer"]

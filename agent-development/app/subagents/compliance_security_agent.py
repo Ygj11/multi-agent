@@ -8,10 +8,10 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.observability.logger import log_event, preview_text
-from app.runtime.context_builder import ContextBuilder
-from app.schemas.runtime import OrchestratorContext
+from app.schemas.agent_card import AgentCard
+from app.schemas.runtime import OrchestratorContext, SubAgentContext
 from app.schemas.subagent import SubAgentResult, SubAgentTask
-from app.tools.broker import ToolBroker
+from app.subagents.base import BaseSubAgent
 
 
 class ComplianceSecurityInput(BaseModel):
@@ -41,17 +41,19 @@ class ComplianceSecurityOutput(BaseModel):
     can_send_external: bool
 
 
-class ComplianceSecurityAgent:
+class ComplianceSecurityAgent(BaseSubAgent):
     """检查文本中的隐私、敏感信息和外发风险。"""
 
-    name = "compliance_security_agent"
+    name = "compliance_agent"
 
-    def __init__(self, context_builder: ContextBuilder, tool_broker: ToolBroker) -> None:
-        """保留 ToolBroker 依赖，后续合规工具接入时仍走统一工具通道。"""
-        self.context_builder = context_builder
-        self.tool_broker = tool_broker
-
-    async def run(self, task: SubAgentTask, parent_context: OrchestratorContext) -> SubAgentResult:
+    async def do_run(
+        self,
+        *,
+        task: SubAgentTask,
+        parent_context: OrchestratorContext,
+        sub_context: SubAgentContext,
+        agent_card: AgentCard | None,
+    ) -> SubAgentResult:
         """执行合规安全检查并返回结构化结论。"""
         request_id = str(task.metadata.get("request_id") or "")
         trace_id = str(task.metadata.get("trace_id") or "")
@@ -63,11 +65,6 @@ class ComplianceSecurityAgent:
             node=self.name,
             message="Compliance security agent running",
             data={"query_preview": preview_text(task.query)},
-        )
-        sub_context = await self.context_builder.build_for_subagent(
-            task=task,
-            parent_context=parent_context,
-            allowed_tools=[],
         )
         output = self._inspect(
             ComplianceSecurityInput(
@@ -91,6 +88,8 @@ class ComplianceSecurityAgent:
         answer = self._build_answer(output)
         return SubAgentResult(
             name=self.name,
+            agent_name=self.name,
+            task_id=task.task_id,
             answer=answer,
             diagnosis=f"合规安全风险等级：{output.risk_level}",
             evidence=evidence,

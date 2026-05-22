@@ -17,6 +17,8 @@ class SkillMetadata(BaseModel):
     intent_tags: list[str] = Field(default_factory=list)
     business_domain: list[str] = Field(default_factory=list)
     required_context: list[str] = Field(default_factory=list)
+    required_entities: list[str] = Field(default_factory=list)
+    private_tools: list[str] = Field(default_factory=list)
     enabled: bool = True
     is_default: bool = False
     source_path: str

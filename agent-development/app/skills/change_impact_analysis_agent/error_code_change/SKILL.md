@@ -1,5 +1,5 @@
 ---
-skill_id: change_impact.error_code_change
+skill_id: change_impact_analysis_agent.error_code_change
 name: 错误码变更影响分析
 description: 用于分析 E102 等错误码含义、错误映射、排障建议和知识文档变更影响
 agent: change_impact_analysis_agent

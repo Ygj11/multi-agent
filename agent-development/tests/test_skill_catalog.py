@@ -8,7 +8,7 @@ def test_skill_catalog_scans_metadata_without_body():
     catalog = SkillCatalog(Path("app/skills"))
 
     skills = catalog.scan()
-    signature = catalog.get_skill_metadata("troubleshooting.signature_error")
+    signature = catalog.get_skill_metadata("troubleshooting_agent.signature_error")
 
     assert len(skills) >= 12
     assert signature is not None
@@ -20,9 +20,9 @@ def test_skill_catalog_loads_full_skill_content_by_id():
     """选中 skill 后才能按 skill_id 加载完整 SKILL.md。"""
     catalog = SkillCatalog(Path("app/skills"))
 
-    content = catalog.load_skill_content("troubleshooting.signature_error")
+    content = catalog.load_skill_content("troubleshooting_agent.signature_error")
 
-    assert content.metadata.skill_id == "troubleshooting.signature_error"
+    assert content.metadata.skill_id == "troubleshooting_agent.signature_error"
     assert "签名失败排查 Skill" in content.content
     assert "query_internal_log" in content.content
 

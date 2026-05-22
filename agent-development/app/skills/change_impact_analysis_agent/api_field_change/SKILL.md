@@ -1,5 +1,5 @@
 ---
-skill_id: change_impact.api_field_change
+skill_id: change_impact_analysis_agent.api_field_change
 name: 接口字段变更影响分析
 description: 用于分析新增字段、删除字段、必填字段、字段类型或字段映射变更的影响
 agent: change_impact_analysis_agent

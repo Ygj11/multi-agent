@@ -13,6 +13,7 @@ from app.runtime.context_builder import ContextBuilder
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.subagent import SubAgentResult, SubAgentTask
 from app.tools.broker import ToolBroker
+from app.tools.executor import ToolExecutor
 
 
 class DocumentParseInput(BaseModel):
@@ -38,10 +39,16 @@ class DocumentParseAgent:
 
     name = "document_parse_agent"
 
-    def __init__(self, context_builder: ContextBuilder, tool_broker: ToolBroker) -> None:
+    def __init__(
+        self,
+        context_builder: ContextBuilder,
+        tool_broker: ToolBroker | None = None,
+        tool_executor: ToolExecutor | None = None,
+    ) -> None:
         """保留 ToolBroker 依赖，后续 OCR、PDF 或文档服务工具接入时继续走统一通道。"""
         self.context_builder = context_builder
         self.tool_broker = tool_broker
+        self.tool_executor = tool_executor
 
     async def run(self, task: SubAgentTask, parent_context: OrchestratorContext) -> SubAgentResult:
         """执行文档解析并返回统一 SubAgentResult。"""
@@ -82,6 +89,8 @@ class DocumentParseAgent:
         )
         return SubAgentResult(
             name=self.name,
+            agent_name=self.name,
+            task_id=task.task_id,
             answer=answer,
             diagnosis=parsed.summary,
             evidence=evidence,

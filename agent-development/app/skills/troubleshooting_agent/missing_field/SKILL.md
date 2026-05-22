@@ -1,5 +1,5 @@
 ---
-skill_id: troubleshooting.missing_field
+skill_id: troubleshooting_agent.missing_field
 name: 字段缺失排查
 description: 用于排查 submitProposal 报文字段缺失、必填字段为空、appId 不能为空、字段映射不一致等问题
 agent: troubleshooting_agent

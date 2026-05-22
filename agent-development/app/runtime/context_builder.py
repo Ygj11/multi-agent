@@ -39,26 +39,31 @@ class ContextBuilder:
         original_query: str,
         rewritten_query: str,
         intent: str,
+        entities: dict[str, Any] | None = None,
         session_key: str,
         recent_messages: list[dict[str, Any]],
         short_summary: str | None,
         available_subagents: list[str],
         available_tools: list[str],
+        agent_candidate_summaries: list[dict[str, Any]] | None = None,
     ) -> OrchestratorContext:
         """构建主 Agent 协调用轻量上下文。"""
         hints = await self._build_lightweight_hints(
             query=f"{original_query} {rewritten_query}",
             intent=intent,
         )
+        compact_recent_messages = recent_messages[-10:]
         return OrchestratorContext(
             original_query=original_query,
             rewritten_query=rewritten_query,
             intent=intent,
+            entities=entities or {},
             session_key=session_key,
-            recent_messages=recent_messages,
+            recent_messages=compact_recent_messages,
             short_summary=short_summary,
             available_subagents=available_subagents,
             available_tools=available_tools,
+            agent_candidate_summaries=agent_candidate_summaries or [],
             lightweight_knowledge_hints=hints,
         )
 

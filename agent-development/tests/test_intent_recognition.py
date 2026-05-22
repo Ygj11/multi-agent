@@ -1,22 +1,23 @@
-"""IntentRecognitionNode 验收测试。"""
+"""IntentRecognitionNode tests."""
 
 from app.query.intent_recognition_node import IntentRecognitionNode
 
 
-async def test_e102_is_troubleshooting():
-    """E102/requestId 应识别为 troubleshooting 并指向问题排查子 Agent。"""
+async def test_e102_is_troubleshooting_with_entities():
     node = IntentRecognitionNode()
     result = await node.recognize(
         original_query="REQ_001 为什么返回 E102？",
         rewritten_query="排查 requestId=REQ_001 的健康险个险接口 E102 错误原因",
     )
+
     assert result.intent == "troubleshooting"
-    assert result.target_subagent == "troubleshooting_agent"
-    assert "query_internal_log" in result.required_tools
+    assert result.entities["request_id"] == "REQ_001"
+    assert result.entities["error_code"] == "E102"
+    assert result.target_subagent is None
+    assert result.required_tools == []
 
 
 async def test_follow_up_with_summary_is_troubleshooting():
-    """追问在存在 E102 摘要时仍应识别为 troubleshooting。"""
     node = IntentRecognitionNode()
     result = await node.recognize(
         original_query="那这个一般是谁的问题？",
@@ -27,7 +28,6 @@ async def test_follow_up_with_summary_is_troubleshooting():
 
 
 async def test_product_rule_intent():
-    """产品条款关键词应识别为 product_rule_qa。"""
     node = IntentRecognitionNode()
     result = await node.recognize(original_query="等待期责任条款是什么？", rewritten_query="等待期责任条款是什么？")
     assert result.intent == "product_rule_qa"

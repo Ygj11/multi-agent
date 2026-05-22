@@ -1,0 +1,36 @@
+agent_name: troubleshooting_agent
+display_name: Troubleshooting Agent
+description: Diagnose policy onboarding, refund, callback, interface, and production integration failures.
+capabilities:
+  - task_status_diagnosis
+  - internal_log_analysis
+  - workflow_mcp_diagnosis
+  - error_code_diagnosis
+supported_intents:
+  - troubleshooting
+  - refund_failure
+  - callback_failure
+required_entities:
+  - request_id
+output_schema: SubAgentResult
+private_tools:
+  - query_task_status
+  - query_node_status
+  - query_internal_log
+public_tools_allowed: true
+mcp_tools:
+  - mcp.workflow.query_refund_task
+  - mcp.logs.query_trace
+mcp_tool_scopes:
+  - mcp.workflow
+skills:
+  - troubleshooting_agent.signature_error
+  - troubleshooting_agent.missing_field
+  - troubleshooting_agent.callback_failure
+rag_namespaces:
+  - troubleshooting
+  - integration_errors
+memory_policy: {"use_short_summary": true, "recent_turns": 5}
+examples: [{"query": "REQ_001 returned E102 during submitProposal", "intent": "troubleshooting"}]
+enabled: true
+version: "1.0.0"

@@ -1,10 +1,4 @@
-"""问题排查 Agent 综合内部日志、知识和 MCP trace 的测试。"""
-
-from fastapi.testclient import TestClient
-
-
-def test_chat_req_001_mentions_partner_trace(client):
-    """REQ_001 端到端回答应包含渠道侧 trace 和旧版签名规则证据。"""
+def test_chat_req_001_mentions_local_evidence_and_mcp_client_boundary(client):
     response = client.post(
         "/api/chat",
         json={
@@ -21,5 +15,5 @@ def test_chat_req_001_mentions_partner_trace(client):
     assert "E102" in answer
     assert "签名校验失败" in answer
     assert "timestamp" in answer
-    assert "渠道侧 trace" in answer
-    assert "旧版" in answer or "未包含 timestamp" in answer
+    assert "MCP workflow" in answer or "密钥版本" in answer
+
