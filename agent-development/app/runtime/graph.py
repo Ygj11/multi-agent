@@ -12,6 +12,7 @@ from app.agents.dispatcher import DispatchAgentNode
 from app.agents.selection import AgentSelectionNode
 from app.agents.task_assembler import AgentTaskAssembler
 from app.compliance.final_checker import FinalComplianceChecker
+from app.approval.service import ApprovalService
 from app.observability.logger import log_event, preview_text
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.query.query_rewrite_node import QueryRewriteNode
@@ -47,6 +48,7 @@ class AgentGraphFactory:
         task_assembler: AgentTaskAssembler | None = None,
         dispatch_agent_node: DispatchAgentNode | None = None,
         final_compliance_checker: FinalComplianceChecker | None = None,
+        approval_service: ApprovalService | None = None,
         checkpointer: MemorySaver | None = None,
     ) -> None:
         self.session_manager = session_manager
@@ -62,6 +64,7 @@ class AgentGraphFactory:
         self.task_assembler = task_assembler or AgentTaskAssembler()
         self.dispatch_agent_node = dispatch_agent_node or DispatchAgentNode(subagent_manager)
         self.final_compliance_checker = final_compliance_checker or FinalComplianceChecker()
+        self.approval_service = approval_service
         self.checkpointer = checkpointer or MemorySaver()
 
     def build(self):
@@ -76,6 +79,10 @@ class AgentGraphFactory:
         graph.add_node("select_agent", self.select_agent)
         graph.add_node("assemble_task", self.assemble_task)
         graph.add_node("dispatch_agent", self.dispatch_agent)
+        graph.add_node("check_human_approval_required", self.check_human_approval_required)
+        graph.add_node("create_approval_request", self.create_approval_request)
+        graph.add_node("submit_approval_request", self.submit_approval_request)
+        graph.add_node("pause_for_approval", self.pause_for_approval)
         graph.add_node("final_compliance_check", self.final_compliance_check)
         graph.add_node("regenerate_compliant_answer", self.regenerate_compliant_answer)
         graph.add_node("fallback_answer", self.fallback_answer)
@@ -92,7 +99,18 @@ class AgentGraphFactory:
         graph.add_edge("discover_agents", "select_agent")
         graph.add_edge("select_agent", "assemble_task")
         graph.add_edge("assemble_task", "dispatch_agent")
-        graph.add_edge("dispatch_agent", "final_compliance_check")
+        graph.add_edge("dispatch_agent", "check_human_approval_required")
+        graph.add_conditional_edges(
+            "check_human_approval_required",
+            self.human_approval_route,
+            {
+                "required": "create_approval_request",
+                "not_required": "final_compliance_check",
+            },
+        )
+        graph.add_edge("create_approval_request", "submit_approval_request")
+        graph.add_edge("submit_approval_request", "pause_for_approval")
+        graph.add_edge("pause_for_approval", "final_compliance_check")
         graph.add_conditional_edges(
             "final_compliance_check",
             self.compliance_route,
@@ -246,6 +264,97 @@ class AgentGraphFactory:
             "skill_selection_score": result.skill_selection_score,
             "skill_selection_reason": result.skill_selection_reason,
             "graph_path": self._append_path(state, "dispatch_agent"),
+        }
+
+    async def check_human_approval_required(self, state: AgentGraphState) -> dict[str, Any]:
+        self._log_node_enter(state, "check_human_approval_required")
+        result = state.get("subagent_result") or {}
+        approval_payloads = result.get("approval_payloads") or []
+        approval_required = bool(result.get("needs_human_approval") or approval_payloads)
+        self._log_node_exit(state, "check_human_approval_required")
+        return {
+            "approval_required": approval_required,
+            "approval_payloads": approval_payloads,
+            "graph_path": self._append_path(state, "check_human_approval_required"),
+        }
+
+    def human_approval_route(self, state: AgentGraphState) -> str:
+        return "required" if state.get("approval_required") else "not_required"
+
+    async def create_approval_request(self, state: AgentGraphState) -> dict[str, Any]:
+        self._log_node_enter(state, "create_approval_request")
+        if self.approval_service is None:
+            raise RuntimeError("approval_service_not_configured")
+        payload = (state.get("approval_payloads") or [{}])[0]
+        runner_meta = ((state.get("subagent_result") or {}).get("metadata") or {}).get("tool_calling_runner") or {}
+        pending_tool_call = runner_meta.get("pending_tool_call") or payload.get("pending_tool_call") or {
+            "name": payload.get("tool_name"),
+            "arguments": payload.get("arguments", {}),
+        }
+        approval_request = await self.approval_service.create_approval_request(
+            session_key=state["session_key"],
+            request_id=state["request_id"],
+            trace_id=state.get("trace_id"),
+            agent_name=payload.get("agent_name") or state.get("selected_agent") or "unknown",
+            tool_name=payload.get("tool_name") or pending_tool_call.get("name") or "unknown",
+            operation_type=payload.get("operation_type") or "write",
+            risk_level=payload.get("risk_level") or "high",
+            arguments=payload.get("arguments") or pending_tool_call.get("arguments") or {},
+            reason=payload.get("reason") or "Write-side tool call requires human approval.",
+            pending_state=dict(state),
+            pending_messages=runner_meta.get("pending_messages") or [],
+            pending_tools=runner_meta.get("pending_tools") or [],
+            pending_tool_call=pending_tool_call,
+        )
+        self._log_node_exit(state, "create_approval_request")
+        return {
+            "approval_id": approval_request.approval_id,
+            "approval_status": approval_request.status,
+            "approval_request": approval_request.model_dump(),
+            "graph_path": self._append_path(state, "create_approval_request"),
+        }
+
+    async def submit_approval_request(self, state: AgentGraphState) -> dict[str, Any]:
+        self._log_node_enter(state, "submit_approval_request")
+        if self.approval_service is None:
+            raise RuntimeError("approval_service_not_configured")
+        from app.schemas.approval import ApprovalRequest
+
+        approval_request = ApprovalRequest(**state["approval_request"])
+        submit_result = await self.approval_service.submit_to_external_approval_system(approval_request)
+        refreshed = await self.approval_service.store.get(approval_request.approval_id)
+        self._log_node_exit(state, "submit_approval_request")
+        return {
+            "approval_status": refreshed.status if refreshed else submit_result.status,
+            "approval_request": refreshed.model_dump() if refreshed else approval_request.model_dump(),
+            "approval_submit_result": submit_result.model_dump(),
+            "graph_path": self._append_path(state, "submit_approval_request"),
+        }
+
+    async def pause_for_approval(self, state: AgentGraphState) -> dict[str, Any]:
+        self._log_node_enter(state, "pause_for_approval")
+        approval_id = state.get("approval_id")
+        submit_result = state.get("approval_submit_result") or {}
+        if not submit_result.get("accepted"):
+            answer = "审批系统提交失败，操作未执行。"
+            if self.approval_service is not None and state.get("approval_request"):
+                from app.schemas.approval import ApprovalRequest
+
+                approval_request = ApprovalRequest(**state["approval_request"])
+                approval_request.final_answer = answer
+                approval_request.error = submit_result.get("error") or "approval_submit_failed"
+                await self.approval_service.store.update(
+                    approval_request,
+                    event_type="submit_failed_answer_prepared",
+                    payload={"answer": answer, "error": approval_request.error},
+                )
+        else:
+            answer = f"该操作需要人工审批，审批请求已提交，approval_id={approval_id}。当前操作尚未执行。"
+        self._log_node_exit(state, "pause_for_approval")
+        return {
+            "answer": answer,
+            "approval_status": state.get("approval_status") or "pending",
+            "graph_path": self._append_path(state, "pause_for_approval"),
         }
 
     async def final_compliance_check(self, state: AgentGraphState) -> dict[str, Any]:

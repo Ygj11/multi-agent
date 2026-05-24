@@ -57,6 +57,16 @@ class Settings:
     enable_http_tools: bool = _as_bool(os.getenv("ENABLE_HTTP_TOOLS"), False)
     allowed_http_tool_hosts: tuple[str, ...] = _as_tuple(os.getenv("ALLOWED_HTTP_TOOL_HOSTS"))
     http_tool_timeout: float = float(os.getenv("HTTP_TOOL_TIMEOUT", "5"))
+    approval_system_url: str = os.getenv(
+        "APPROVAL_SYSTEM_URL",
+        "http://mock-approval-system.local/api/approval/requests",
+    )
+    approval_callback_url: str = os.getenv(
+        "APPROVAL_CALLBACK_URL",
+        "http://localhost:8000/api/approval/callback",
+    )
+    approval_system_timeout: float = float(os.getenv("APPROVAL_SYSTEM_TIMEOUT", "30"))
+    enable_external_approval: bool = _as_bool(os.getenv("ENABLE_EXTERNAL_APPROVAL"), True)
 
 
 def get_settings() -> Settings:

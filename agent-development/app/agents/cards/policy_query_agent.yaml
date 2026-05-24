@@ -15,6 +15,7 @@ output_schema: SubAgentResult
 private_tools:
   - query_policy_info
   - query_policy_status
+  - update_policy_status
 public_tools_allowed: true
 mcp_tools:
   - mcp.policy.query_policy_detail

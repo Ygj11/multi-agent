@@ -34,6 +34,7 @@ class SubAgentResult(BaseModel):
     responsibility: str | None = None
     confidence: float = 0.8
     needs_human_approval: bool = False
+    approval_payloads: list[dict[str, Any]] = Field(default_factory=list)
     risk_level: str = "low"
     metadata: dict[str, Any] = Field(default_factory=dict)
     selected_skill_id: str | None = None

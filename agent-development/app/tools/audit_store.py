@@ -171,6 +171,7 @@ class ToolExecutionLogStore:
         source: str | None = None,
         server_name: str | None = None,
         original_tool_name: str | None = None,
+        approval_id: str | None = None,
     ) -> None:
         arguments_json = ToolCallLogStore._to_json(ToolCallLogStore._mask_sensitive(arguments))
         result_json = ToolCallLogStore._to_json(result) if result is not None else None
@@ -181,9 +182,10 @@ class ToolExecutionLogStore:
                 INSERT INTO tool_execution_logs(
                     request_id, trace_id, session_key, agent_name, tool_name,
                     arguments_json, success, result_json, error, started_at,
-                    finished_at, duration_ms, source, server_name, original_tool_name
+                    finished_at, duration_ms, source, server_name, original_tool_name,
+                    approval_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     request_id,
@@ -201,6 +203,7 @@ class ToolExecutionLogStore:
                     source,
                     server_name,
                     original_tool_name,
+                    approval_id,
                 ),
             )
 
@@ -247,4 +250,5 @@ class ToolExecutionLogStore:
             "source": row["source"] if "source" in row.keys() else None,
             "server_name": row["server_name"] if "server_name" in row.keys() else None,
             "original_tool_name": row["original_tool_name"] if "original_tool_name" in row.keys() else None,
+            "approval_id": row["approval_id"] if "approval_id" in row.keys() else None,
         }

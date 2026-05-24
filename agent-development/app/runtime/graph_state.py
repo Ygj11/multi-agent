@@ -35,6 +35,12 @@ class AgentGraphState(TypedDict, total=False):
     assembled_task: dict[str, Any] | None
     subagent_result: dict[str, Any] | None
     final_compliance_result: dict[str, Any] | None
+    approval_required: bool
+    approval_payloads: list[dict[str, Any]]
+    approval_id: str | None
+    approval_status: str | None
+    approval_request: dict[str, Any] | None
+    approval_submit_result: dict[str, Any] | None
     retry_count: int
     selected_skill_id: str | None
     selected_skill_metadata: dict[str, Any] | None

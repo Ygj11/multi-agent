@@ -7,6 +7,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
+from app.approval.client import ApprovalSystemClient
+from app.approval.service import ApprovalService
+from app.approval.store import SQLiteApprovalStore
 from app.agents.card_loader import AgentCardLoader
 from app.agents.dispatcher import DispatchAgentNode
 from app.agents.selection import AgentSelectionNode
@@ -28,6 +31,7 @@ from app.runtime.checkpoint import SQLiteCheckpointStore
 from app.runtime.context_builder import ContextBuilder
 from app.runtime.graph import AgentGraphFactory
 from app.runtime.orchestrator import AgentOrchestrator
+from app.schemas.approval import ApprovalCallbackRequest, ApprovalCallbackResponse
 from app.schemas.message import ChatRequest, ChatResponse
 from app.session.message_store import MessageStore
 from app.session.session_manager import SessionManager
@@ -60,6 +64,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     checkpoint_store = SQLiteCheckpointStore(db=db)
     tool_call_log_store = ToolCallLogStore(db=db)
     tool_execution_log_store = ToolExecutionLogStore(db=db)
+    approval_store = SQLiteApprovalStore(db=db)
     _long_memory = LongTermMemoryManager()
     llm_provider = build_llm_provider(settings)
     knowledge_service = InMemoryKnowledgeService()
@@ -91,8 +96,20 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         registry=tool_registry,
         log_store=tool_execution_log_store,
         mcp_client_manager=mcp_client_manager,
+        approval_store=approval_store,
     )
     tool_calling_runner = ToolCallingRunner(llm_provider=llm_provider, tool_executor=tool_executor)
+    final_compliance_checker = FinalComplianceChecker(llm_provider=llm_provider)
+    approval_service = ApprovalService(
+        store=approval_store,
+        client=ApprovalSystemClient(settings=settings),
+        tool_executor=tool_executor,
+        tool_calling_runner=tool_calling_runner,
+        final_compliance_checker=final_compliance_checker,
+        message_store=message_store,
+        short_memory=short_memory,
+        callback_url=settings.approval_callback_url,
+    )
     skills_root = Path(__file__).resolve().parent / "skills"
     skill_catalog = SkillCatalog(skills_root=skills_root)
     context_builder = ContextBuilder(
@@ -161,7 +178,8 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         agent_selection_node=AgentSelectionNode(agent_card_loader, llm_provider=llm_provider),
         task_assembler=AgentTaskAssembler(),
         dispatch_agent_node=DispatchAgentNode(subagent_manager),
-        final_compliance_checker=FinalComplianceChecker(llm_provider=llm_provider),
+        final_compliance_checker=final_compliance_checker,
+        approval_service=approval_service,
     ).build()
     orchestrator = AgentOrchestrator(graph, checkpoint_store=checkpoint_store)
 
@@ -192,6 +210,8 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     app.state.legacy_tool_call_log_store = tool_call_log_store
     app.state.tool_call_log_store = tool_execution_log_store
     app.state.tool_execution_log_store = tool_execution_log_store
+    app.state.approval_store = approval_store
+    app.state.approval_service = approval_service
     app.state.knowledge_service = knowledge_service
     app.state.mcp_client_manager = mcp_client_manager
     app.state.mcp_capability_registry = mcp_capability_registry
@@ -238,6 +258,37 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             return response
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/approval/callback", response_model=ApprovalCallbackResponse)
+    async def approval_callback(request: ApprovalCallbackRequest) -> ApprovalCallbackResponse:
+        """Receive external approval decisions and resume the paused flow."""
+        try:
+            result = await approval_service.handle_callback(request)
+            return ApprovalCallbackResponse(
+                approval_id=result.approval_request.approval_id,
+                status=result.approval_request.status,
+                resumed=result.resumed,
+                final_answer=result.final_answer,
+                error=result.error,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"approval not found: {request.approval_id}") from exc
+
+    @app.get("/api/approval/{approval_id}")
+    async def get_approval(approval_id: str) -> dict:
+        """Return the current approval result for frontend polling."""
+        item = await approval_store.get(approval_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail=f"approval not found: {approval_id}")
+        return {
+            "approval_id": item.approval_id,
+            "status": item.status,
+            "final_answer": item.final_answer,
+            "error": item.error,
+            "created_at": item.created_at,
+            "updated_at": item.updated_at,
+            "decided_at": item.decided_at,
+        }
 
     return app
 

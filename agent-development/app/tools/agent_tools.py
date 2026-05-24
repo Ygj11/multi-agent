@@ -23,6 +23,10 @@ async def query_policy_status(policy_no: str | None = None, **kwargs: Any) -> di
     return {"found": bool(policy_no), "policy_no": policy_no, "status": "active" if policy_no else "unknown"}
 
 
+async def update_policy_status(policy_no: str | None = None, status: str | None = None, **kwargs: Any) -> dict[str, Any]:
+    return {"success": True, "policy_no": policy_no, "status": status or "updated"}
+
+
 async def query_claim_case(claim_no: str | None = None, **kwargs: Any) -> dict[str, Any]:
     return {"found": bool(claim_no), "claim_no": claim_no, "status": "processing"}
 
@@ -38,5 +42,6 @@ def register_agent_private_tools(registry) -> None:
     registry.register_private(agent_name="troubleshooting_agent", name="query_internal_log", tool=query_internal_log)
     registry.register_private(agent_name="policy_query_agent", name="query_policy_info", tool=query_policy_info)
     registry.register_private(agent_name="policy_query_agent", name="query_policy_status", tool=query_policy_status)
+    registry.register_private(agent_name="policy_query_agent", name="update_policy_status", tool=update_policy_status, is_write=True)
     registry.register_private(agent_name="claim_agent", name="query_claim_case", tool=query_claim_case)
     registry.register_private(agent_name="claim_agent", name="query_claim_progress", tool=query_claim_progress)

@@ -166,7 +166,12 @@ class BaseSubAgent(ABC):
     ) -> SubAgentResult:
         """Convert a generic tool loop result into the SubAgentResult contract."""
         evidence = [self._tool_call_to_evidence(item) for item in run_result.tool_calls]
-        answer = run_result.final_answer or (run_result.error or "Agent loop failed.")
+        needs_approval = run_result.needs_human_approval or run_result.stopped_reason == "human_approval_required"
+        answer = (
+            "该操作需要人工审批，当前尚未执行。"
+            if needs_approval
+            else run_result.final_answer or (run_result.error or "Agent loop failed.")
+        )
         return SubAgentResult(
             name=self.name,
             agent_name=self.name,
@@ -178,13 +183,18 @@ class BaseSubAgent(ABC):
             recommendation=self._recommendation_from_runner(run_result),
             responsibility=self._responsibility_from_runner(run_result),
             confidence=0.88 if run_result.stopped_reason == "final" else 0.3,
-            risk_level="medium" if run_result.stopped_reason != "final" else "low",
+            needs_human_approval=needs_approval,
+            approval_payloads=[run_result.approval_payload] if run_result.approval_payload else [],
+            risk_level="high" if needs_approval else "medium" if run_result.stopped_reason != "final" else "low",
             metadata={
                 "tool_calling_runner": {
                     "stopped_reason": run_result.stopped_reason,
                     "iterations": run_result.iterations,
                     "error": run_result.error,
                     "visible_tools": self.get_available_tool_names(agent_card),
+                    "pending_tool_call": run_result.pending_tool_call,
+                    "pending_messages": run_result.messages,
+                    "pending_tools": run_result.tools,
                 }
             },
             selected_skill_id=sub_context.selected_skill_id,

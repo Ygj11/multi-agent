@@ -12,6 +12,8 @@ The main Agent is responsible for:
 - task context assembly
 - sub-agent dispatch
 - receiving `SubAgentResult`
+- branching into human approval when a sub agent reports `needs_human_approval=true`
+- creating and submitting approval requests for write-side tools
 - final compliance check before responding
 - retry or fallback when compliance fails
 
@@ -24,7 +26,38 @@ Each sub agent owns task execution:
 - select and load a Skill through `ContextBuilder`
 - see only its card-authorized tools
 - call tools through `ToolExecutor`
+- stop and return `needs_human_approval=true` when a write-side tool requires approval
 - return a structured `SubAgentResult`
+
+## Human Approval
+
+High-risk tools are tool executions, not model messages. The approval object is:
+
+- `agent_name`
+- `tool_name`
+- `arguments`
+- `operation_type`
+- `risk_level`
+
+The main graph does not block `/api/chat` while waiting for a human. When `ToolExecutor` detects `is_write=true`, it returns `human_approval_required` with a pending tool call. `ToolCallingRunner` stops, `BaseSubAgent` returns `SubAgentResult.needs_human_approval=true`, and `AgentGraphFactory` enters:
+
+```text
+check_human_approval_required
+-> create_approval_request
+-> submit_approval_request
+-> pause_for_approval
+-> final_compliance_check
+-> save_assistant_message
+```
+
+`ApprovalSystemClient` submits the approval request to `APPROVAL_SYSTEM_URL` with `APPROVAL_CALLBACK_URL`. The URL can point to a mock approval system in the MVP.
+
+The external system resumes the flow by calling `POST /api/approval/callback`:
+
+- `approved`: `ApprovalService` calls `ToolExecutor.execute_approved_tool`, appends the tool observation, continues `ToolCallingRunner`, runs final compliance, saves the assistant message, compresses memory, and marks the approval `completed`.
+- `rejected`: the pending tool is not executed. The system returns and saves a rejection answer after final compliance.
+
+`GET /api/approval/{approval_id}` exposes the current approval status and final result for frontend polling.
 
 ## Memory And Context
 
@@ -60,5 +93,7 @@ The MVP uses SQLite for:
 - short_term_memory
 - graph_checkpoints
 - tool_execution_logs
+- approval_requests
+- approval_events
 
 Future checkpointer and persistence backends remain replaceable behind the current abstractions.

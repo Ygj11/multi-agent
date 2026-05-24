@@ -28,3 +28,7 @@ class ToolResult(BaseModel):
     error: str | None = None
     agent_name: str | None = None
     duration_ms: int | None = None
+    needs_human_approval: bool = False
+    approval_payload: dict[str, Any] | None = None
+    pending_tool_call: dict[str, Any] | None = None
+    approval_id: str | None = None

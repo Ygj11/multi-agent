@@ -48,3 +48,6 @@ class ChatResponse(BaseModel):
     rewritten_query: str
     intent: str
     answer: str
+    approval_required: bool = False
+    approval_id: str | None = None
+    approval_status: str | None = None

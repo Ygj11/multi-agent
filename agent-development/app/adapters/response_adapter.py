@@ -29,4 +29,7 @@ class ResponseAdapter:
             rewritten_query=state.get("rewritten_query") or state["original_query"],
             intent=state.get("intent") or "unknown",
             answer=state.get("answer") or "",
+            approval_required=bool(state.get("approval_required")),
+            approval_id=state.get("approval_id"),
+            approval_status=state.get("approval_status"),
         )

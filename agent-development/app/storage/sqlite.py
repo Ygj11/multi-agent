@@ -96,7 +96,8 @@ class SQLiteDatabase:
                     duration_ms INTEGER NOT NULL,
                     source TEXT,
                     server_name TEXT,
-                    original_tool_name TEXT
+                    original_tool_name TEXT,
+                    approval_id TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_tool_execution_logs_session
@@ -107,11 +108,57 @@ class SQLiteDatabase:
 
                 CREATE INDEX IF NOT EXISTS idx_tool_execution_logs_request
                 ON tool_execution_logs(request_id);
+
+                CREATE TABLE IF NOT EXISTS approval_requests (
+                    approval_id TEXT PRIMARY KEY,
+                    external_approval_id TEXT,
+                    session_key TEXT,
+                    request_id TEXT,
+                    trace_id TEXT,
+                    agent_name TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    operation_type TEXT NOT NULL,
+                    risk_level TEXT NOT NULL,
+                    arguments_json TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    callback_url TEXT,
+                    pending_state_json TEXT NOT NULL,
+                    pending_messages_json TEXT NOT NULL,
+                    pending_tools_json TEXT NOT NULL,
+                    pending_tool_call_json TEXT NOT NULL,
+                    result_json TEXT,
+                    final_answer TEXT,
+                    error TEXT,
+                    approver TEXT,
+                    comment TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    decided_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_approval_requests_session
+                ON approval_requests(session_key, created_at);
+
+                CREATE INDEX IF NOT EXISTS idx_approval_requests_request
+                ON approval_requests(request_id);
+
+                CREATE TABLE IF NOT EXISTS approval_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    approval_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_approval_events_approval
+                ON approval_events(approval_id, event_id);
                 """
             )
             self._ensure_column(conn, "tool_execution_logs", "source", "TEXT")
             self._ensure_column(conn, "tool_execution_logs", "server_name", "TEXT")
             self._ensure_column(conn, "tool_execution_logs", "original_tool_name", "TEXT")
+            self._ensure_column(conn, "tool_execution_logs", "approval_id", "TEXT")
 
     def connect(self) -> sqlite3.Connection:
         """创建 SQLite 连接，并返回 dict-like row。"""

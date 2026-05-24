@@ -19,10 +19,14 @@ class ToolCallingRunResult(BaseModel):
 
     final_answer: str
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
-    stopped_reason: Literal["final", "error", "max_iterations"]
+    stopped_reason: Literal["final", "error", "max_iterations", "human_approval_required"]
     iterations: int
     messages: list[dict[str, Any]]
+    tools: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
+    needs_human_approval: bool = False
+    approval_payload: dict[str, Any] | None = None
+    pending_tool_call: dict[str, Any] | None = None
 
 
 class ToolCallingRunner:
@@ -78,6 +82,7 @@ class ToolCallingRunner:
                     stopped_reason="error",
                     iterations=iteration,
                     messages=messages,
+                    tools=tools,
                     error=response.error or "llm_error",
                 )
 
@@ -119,6 +124,27 @@ class ToolCallingRunner:
                     )
                     dumped = tool_result.model_dump()
                     executed_calls.append(dumped)
+                    if tool_result.needs_human_approval or tool_result.error == "human_approval_required":
+                        pending_tool_call = dumped.get("pending_tool_call") or {
+                            "name": normalized.name,
+                            "arguments": normalized.arguments,
+                            "tool_call_id": normalized.id,
+                        }
+                        pending_tool_call.setdefault("tool_call_id", normalized.id)
+                        pending_tool_call.setdefault("name", normalized.name)
+                        pending_tool_call.setdefault("arguments", normalized.arguments)
+                        return ToolCallingRunResult(
+                            final_answer="",
+                            tool_calls=executed_calls,
+                            stopped_reason="human_approval_required",
+                            iterations=iteration,
+                            messages=messages,
+                            tools=tools,
+                            error="human_approval_required",
+                            needs_human_approval=True,
+                            approval_payload=dumped.get("approval_payload"),
+                            pending_tool_call=pending_tool_call,
+                        )
                     messages.append(
                         {
                             "role": "tool",
@@ -136,6 +162,7 @@ class ToolCallingRunner:
                 stopped_reason="final",
                 iterations=iteration,
                 messages=messages,
+                tools=tools,
             )
 
         error = f"tool_calling_runner_exceeded_max_iterations:{limit}"
@@ -145,6 +172,7 @@ class ToolCallingRunner:
             stopped_reason="max_iterations",
             iterations=limit,
             messages=messages,
+            tools=tools,
             error=error,
         )
 
@@ -154,4 +182,3 @@ class ToolCallingRunner:
         if isinstance(function, dict):
             return function.get("name")
         return tool.get("name") if isinstance(tool, dict) else None
-
