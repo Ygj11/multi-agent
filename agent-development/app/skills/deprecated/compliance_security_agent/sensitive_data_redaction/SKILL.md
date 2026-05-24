@@ -1,19 +1,14 @@
 ---
-skill_id: compliance.sensitive_data_redaction
-name: 敏感数据脱敏
+skill_id: compliance_agent.deprecated_sensitive_data_redaction
+name: ??????????
 description: 用于对手机号、身份证号、密钥、token、password、健康信息等敏感数据提出脱敏方案
-agent: compliance_security_agent
+agent: compliance_agent
 intent_tags:
-  - compliance_review
-  - sensitive_data_redaction
-  - 脱敏
-  - token
-  - secret
-business_domain:
-  - health_insurance_onboarding
-required_context:
-  - short_summary
-enabled: true
+  - deprecated
+required_entities: []
+
+private_tools: []
+enabled: false
 is_default: false
 ---
 

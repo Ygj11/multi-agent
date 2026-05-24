@@ -1,6 +1,15 @@
 ---
-name: compliance_security
-description: 检查文本中的隐私、敏感信息和外发合规风险，并给出脱敏与最小必要建议。
+skill_id: compliance_agent.deprecated_legacy_compliance_security
+name: ?????????
+description: ???????????????????????? SkillCatalog ??
+agent: compliance_agent
+intent_tags:
+  - deprecated
+required_entities: []
+
+private_tools: []
+enabled: false
+is_default: false
 ---
 
 # Compliance Security Skill

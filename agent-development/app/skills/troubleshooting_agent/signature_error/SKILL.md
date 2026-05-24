@@ -1,7 +1,7 @@
 ---
 skill_id: troubleshooting_agent.signature_error
-name: 签名失败排查
-description: 用于排查 E102、签名校验失败、timestamp 未参与签名、密钥版本不一致、字段排序不一致等问题
+name: ??????
+description: ???? E102????????timestamp ????????????????????????
 agent: troubleshooting_agent
 intent_tags:
   - troubleshooting
@@ -9,14 +9,19 @@ intent_tags:
   - E102
   - submitProposal
   - timestamp
+required_entities:
+  - request_id
+
+private_tools:
+  - query_internal_log
+enabled: true
+is_default: true
 business_domain:
   - health_insurance_onboarding
 required_context:
   - request_id
   - error_code
   - interface_name
-enabled: true
-is_default: true
 ---
 
 # 签名失败排查 Skill

@@ -1,3 +1,17 @@
+---
+skill_id: troubleshooting_agent.deprecated_legacy_query_rewrite
+name: ?????????
+description: ????? Agent ????????????????? SkillCatalog ??
+agent: troubleshooting_agent
+intent_tags:
+  - deprecated
+required_entities: []
+
+private_tools: []
+enabled: false
+is_default: false
+---
+
 # Query Rewrite Skill
 
 ## 元数据

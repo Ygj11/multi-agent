@@ -1,16 +1,29 @@
 from __future__ import annotations
 
-"""SKILL.md frontmatter 解析工具。"""
+"""SKILL.md frontmatter parsing and validation."""
 
-from pathlib import Path
 import json
+from pathlib import Path
 from typing import Any
 
 from app.schemas.skill import SkillMetadata
 
 
+REQUIRED_SKILL_METADATA_FIELDS = (
+    "skill_id",
+    "name",
+    "description",
+    "agent",
+    "intent_tags",
+    "required_entities",
+    "private_tools",
+    "enabled",
+    "is_default",
+)
+
+
 def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
-    """解析简化 YAML frontmatter，返回 metadata dict 和正文。"""
+    """Parse the simple YAML frontmatter used by project skills."""
     normalized = text.replace("\r\n", "\n")
     if not normalized.startswith("---\n"):
         return {}, normalized
@@ -22,34 +35,53 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     return _parse_simple_yaml(frontmatter), body
 
 
-def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata | None:
-    """只读取 SKILL.md frontmatter 并构造 SkillMetadata；正文不会进入 metadata。"""
+def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata:
+    """Read and validate Skill metadata without loading the body into metadata."""
     text = path.read_text(encoding="utf-8")
     data, _body = split_frontmatter(text)
-    if not data.get("skill_id"):
-        return None
+    validate_skill_frontmatter(data, path)
     source_path = str(path.resolve())
     root = skills_root.resolve()
     if not Path(source_path).is_relative_to(root):
         raise ValueError(f"skill path is outside skills root: {source_path}")
     return SkillMetadata(
         skill_id=str(data["skill_id"]),
-        name=str(data.get("name") or data["skill_id"]),
-        description=str(data.get("description") or ""),
-        agent=str(data.get("agent") or path.parent.parent.name),
-        intent_tags=[str(item) for item in data.get("intent_tags", [])],
+        name=str(data["name"]),
+        description=str(data["description"]),
+        agent=str(data["agent"]),
+        intent_tags=[str(item) for item in data["intent_tags"]],
+        required_entities=[str(item) for item in data["required_entities"]],
+        private_tools=[str(item) for item in data["private_tools"]],
+        enabled=_as_bool(data["enabled"]),
+        is_default=_as_bool(data["is_default"]),
         business_domain=[str(item) for item in data.get("business_domain", [])],
         required_context=[str(item) for item in data.get("required_context", [])],
-        required_entities=[str(item) for item in data.get("required_entities", [])],
-        private_tools=[str(item) for item in data.get("private_tools", [])],
-        enabled=_as_bool(data.get("enabled"), True),
-        is_default=_as_bool(data.get("is_default"), False),
         source_path=source_path,
     )
 
 
+def validate_skill_frontmatter(data: dict[str, Any], path: Path) -> None:
+    """Validate the enterprise Skill metadata contract."""
+    if not data:
+        raise ValueError(f"{path} must contain YAML frontmatter with full Skill metadata")
+    missing = [field for field in REQUIRED_SKILL_METADATA_FIELDS if field not in data]
+    if missing:
+        raise ValueError(f"{path} missing required Skill metadata fields: {missing}")
+    for field in ("intent_tags", "required_entities", "private_tools"):
+        if not isinstance(data[field], list):
+            raise ValueError(f"{path} field {field} must be a list")
+    if not data["intent_tags"]:
+        raise ValueError(f"{path} field intent_tags must contain at least one item")
+    skill_id = str(data["skill_id"])
+    agent = str(data["agent"])
+    if "." not in skill_id:
+        raise ValueError(f"{path} skill_id must use '<agent_name>.<skill_name>' format")
+    if not skill_id.startswith(f"{agent}."):
+        raise ValueError(f"{path} skill_id must start with '{agent}.'")
+
+
 def _parse_simple_yaml(text: str) -> dict[str, Any]:
-    """解析本项目 SKILL.md 使用的 YAML 子集，避免额外依赖 PyYAML。"""
+    """Parse the YAML subset used in this repository."""
     result: dict[str, Any] = {}
     current_key: str | None = None
     for raw_line in text.splitlines():
@@ -72,7 +104,7 @@ def _parse_simple_yaml(text: str) -> dict[str, Any]:
 
 
 def _parse_scalar(value: str) -> Any:
-    """解析 bool、引号字符串和普通字符串。"""
+    """Parse bool, inline JSON, quoted strings, and plain strings."""
     if value.lower() == "true":
         return True
     if value.lower() == "false":
@@ -87,10 +119,8 @@ def _parse_scalar(value: str) -> Any:
     return value
 
 
-def _as_bool(value: Any, default: bool) -> bool:
-    """将 frontmatter 值解析为 bool。"""
-    if value is None:
-        return default
+def _as_bool(value: Any) -> bool:
+    """Parse a frontmatter value as bool."""
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}

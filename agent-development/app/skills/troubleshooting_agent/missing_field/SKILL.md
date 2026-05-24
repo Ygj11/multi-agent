@@ -1,20 +1,24 @@
 ---
 skill_id: troubleshooting_agent.missing_field
-name: 字段缺失排查
-description: 用于排查 submitProposal 报文字段缺失、必填字段为空、appId 不能为空、字段映射不一致等问题
+name: ??????
+description: ???? submitProposal ??????????????appId ???????????????
 agent: troubleshooting_agent
 intent_tags:
   - troubleshooting
   - missing_field
-  - 字段缺失
-  - 必填
+  - ????
+  - ??
   - submitProposal
+required_entities: []
+
+private_tools:
+  - query_internal_log
+enabled: true
+is_default: false
 business_domain:
   - health_insurance_onboarding
 required_context:
   - interface_name
-enabled: true
-is_default: false
 ---
 
 # 字段缺失排查 Skill

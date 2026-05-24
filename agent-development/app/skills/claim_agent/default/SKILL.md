@@ -1,13 +1,14 @@
 ---
 skill_id: claim_agent.default
-name: Claim Query Default
-description: Query claim case state and progress using claim private tools.
+name: ????????
+description: ????????????????????????????
 agent: claim_agent
 intent_tags:
   - claim_query
   - claim_progress
 required_entities:
   - claim_no
+
 private_tools:
   - query_claim_case
   - query_claim_progress

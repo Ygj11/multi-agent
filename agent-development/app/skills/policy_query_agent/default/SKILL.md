@@ -1,7 +1,7 @@
 ---
 skill_id: policy_query_agent.default
-name: Policy Query Default
-description: Query policy information and policy status using policy private tools.
+name: ????????
+description: ????????????????????????????
 agent: policy_query_agent
 intent_tags:
   - policy_query
@@ -9,6 +9,7 @@ intent_tags:
   - product_rule_qa
 required_entities:
   - policy_no
+
 private_tools:
   - query_policy_info
   - query_policy_status

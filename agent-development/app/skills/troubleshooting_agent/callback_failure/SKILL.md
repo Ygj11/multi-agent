@@ -1,19 +1,24 @@
 ---
 skill_id: troubleshooting_agent.callback_failure
-name: 回调失败排查
-description: 用于排查回调失败、回调超时、渠道未收到回调、回调验签失败、回调地址异常等问题
+name: ??????
+description: ??????????????????????????????????????
 agent: troubleshooting_agent
 intent_tags:
   - troubleshooting
   - callback_failure
-  - 回调失败
-  - 回调超时
+  - ????
+  - ????
+required_entities:
+  - request_id
+
+private_tools:
+  - query_internal_log
+enabled: true
+is_default: false
 business_domain:
   - health_insurance_onboarding
 required_context:
   - request_id
-enabled: true
-is_default: false
 ---
 
 # 回调失败排查 Skill

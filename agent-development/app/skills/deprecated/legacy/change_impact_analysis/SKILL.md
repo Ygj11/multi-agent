@@ -1,6 +1,15 @@
 ---
-name: change_impact_analysis
-description: 分析接口字段、错误码、签名规则和知识文档变更对联调与排障链路的影响。
+skill_id: change_impact_analysis_agent.deprecated_legacy_change_impact_analysis
+name: ???????????
+description: ???????????????????????? SkillCatalog ??
+agent: change_impact_analysis_agent
+intent_tags:
+  - deprecated
+required_entities: []
+
+private_tools: []
+enabled: false
+is_default: false
 ---
 
 # Change Impact Analysis Skill

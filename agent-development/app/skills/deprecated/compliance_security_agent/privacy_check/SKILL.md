@@ -1,20 +1,15 @@
 ---
-skill_id: compliance.privacy_check
-name: 隐私信息检查
+skill_id: compliance_agent.deprecated_privacy_check
+name: ????????
 description: 用于检查身份证、手机号、健康告知、医疗记录、个人隐私和敏感健康信息
-agent: compliance_security_agent
+agent: compliance_agent
 intent_tags:
-  - compliance_review
-  - privacy_check
-  - 隐私
-  - 身份证
-  - 手机号
-business_domain:
-  - health_insurance_onboarding
-required_context:
-  - short_summary
-enabled: true
-is_default: true
+  - deprecated
+required_entities: []
+
+private_tools: []
+enabled: false
+is_default: false
 ---
 
 # 隐私信息检查 Skill

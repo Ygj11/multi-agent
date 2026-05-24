@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SkillMetadata(BaseModel):
@@ -14,14 +14,29 @@ class SkillMetadata(BaseModel):
     name: str
     description: str
     agent: str
-    intent_tags: list[str] = Field(default_factory=list)
+    intent_tags: list[str]
+    required_entities: list[str]
+    private_tools: list[str]
+    enabled: bool
+    is_default: bool
     business_domain: list[str] = Field(default_factory=list)
     required_context: list[str] = Field(default_factory=list)
-    required_entities: list[str] = Field(default_factory=list)
-    private_tools: list[str] = Field(default_factory=list)
-    enabled: bool = True
-    is_default: bool = False
     source_path: str
+
+    @model_validator(mode="after")
+    def validate_enterprise_metadata(self) -> "SkillMetadata":
+        """Reject legacy simplified skill metadata."""
+        if "." not in self.skill_id:
+            raise ValueError("skill_id must use '<agent_name>.<skill_name>' format")
+        if not self.skill_id.startswith(f"{self.agent}."):
+            raise ValueError("skill_id must start with '<agent>.'")
+        if not self.name.strip():
+            raise ValueError("name is required")
+        if not self.description.strip():
+            raise ValueError("description is required")
+        if not self.intent_tags:
+            raise ValueError("intent_tags must contain at least one item")
+        return self
 
 
 class SkillContent(BaseModel):

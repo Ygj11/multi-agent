@@ -1,6 +1,15 @@
 ---
-name: document_parse
-description: 解析 markdown、text、json、yaml 文档内容，提取接口、字段、错误码和摘要。
+skill_id: document_parse_agent.deprecated_legacy_document_parse
+name: ?????????
+description: ???????????????????????? SkillCatalog ??
+agent: document_parse_agent
+intent_tags:
+  - deprecated
+required_entities: []
+
+private_tools: []
+enabled: false
+is_default: false
 ---
 
 # Document Parse Skill

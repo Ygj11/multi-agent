@@ -1,18 +1,14 @@
 ---
-skill_id: compliance.external_message_review
-name: 外发内容审核
+skill_id: compliance_agent.deprecated_external_message_review
+name: ??????????
 description: 用于审核准备发送给渠道、合作方、邮件或外部系统的内容是否存在外发风险
-agent: compliance_security_agent
+agent: compliance_agent
 intent_tags:
-  - compliance_review
-  - external_message_review
-  - 外发
-  - 渠道
-business_domain:
-  - health_insurance_onboarding
-required_context:
-  - short_summary
-enabled: true
+  - deprecated
+required_entities: []
+
+private_tools: []
+enabled: false
 is_default: false
 ---
 

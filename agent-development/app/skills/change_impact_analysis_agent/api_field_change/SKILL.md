@@ -1,19 +1,22 @@
 ---
 skill_id: change_impact_analysis_agent.api_field_change
-name: 接口字段变更影响分析
-description: 用于分析新增字段、删除字段、必填字段、字段类型或字段映射变更的影响
+name: ??????????
+description: ?????????????????????????????????
 agent: change_impact_analysis_agent
 intent_tags:
   - change_impact_analysis
   - api_field_change
-  - 字段变更
-  - 必填字段
+  - ????
+  - ????
+required_entities: []
+
+private_tools: []
+enabled: true
+is_default: true
 business_domain:
   - health_insurance_onboarding
 required_context:
   - interface_name
-enabled: true
-is_default: true
 ---
 
 # 接口字段变更影响分析 Skill

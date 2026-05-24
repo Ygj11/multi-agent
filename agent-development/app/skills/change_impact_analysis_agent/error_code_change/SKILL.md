@@ -1,19 +1,22 @@
 ---
 skill_id: change_impact_analysis_agent.error_code_change
-name: 错误码变更影响分析
-description: 用于分析 E102 等错误码含义、错误映射、排障建议和知识文档变更影响
+name: ?????????
+description: ???? E102 ?????????????????????????
 agent: change_impact_analysis_agent
 intent_tags:
   - change_impact_analysis
   - error_code_change
-  - 错误码变更
+  - ?????
   - E102
+required_entities: []
+
+private_tools: []
+enabled: true
+is_default: false
 business_domain:
   - health_insurance_onboarding
 required_context:
   - error_code
-enabled: true
-is_default: false
 ---
 
 # 错误码变更影响分析 Skill

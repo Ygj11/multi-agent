@@ -102,7 +102,7 @@ flowchart TD
 | `SubAgentManager` | `app/subagents/manager.py::SubAgentManager.call_subagent` | 按名称查找并调用子 Agent | agent name、`SubAgentTask`、parent context | `SubAgentResult` | Protocol、运行时注册表 | 子 Agent 在 `app/main.py::create_app` 中注册，包括 troubleshooting、compliance、document_parse、change_impact、policy_query、claim。 |
 | `BaseSubAgent.run` | `app/subagents/base.py::BaseSubAgent.run` | 继承类的统一执行模板 | `SubAgentTask`、`OrchestratorContext` | `SubAgentResult` | AgentCard、Skill、RAG、ToolCallingRunner | 从 `task.metadata["agent_card"]` 读取 AgentCard，经 `ToolRegistry` 计算可见工具，调用 `ContextBuilder.build_for_subagent` 选择并加载 Skill，再构造 LLM messages 和工具 schema，进入 `ToolCallingRunner.run`。`TroubleshootingAgent`、`PolicyQueryAgent`、`ClaimAgent`、`ComplianceSecurityAgent` 继承该模板。 |
 | 自定义子 Agent | `app/subagents/document_parse_agent.py::DocumentParseAgent.run`，`app/subagents/change_impact_analysis_agent.py::ChangeImpactAnalysisAgent.run` | 不继承 `BaseSubAgent` 的任务级执行 | `SubAgentTask`、parent context | `SubAgentResult` | 规则解析、ContextBuilder、ToolExecutor | `document_parse_agent` 规则解析文本/JSON/YAML/Markdown；`change_impact_analysis_agent` 规则分析影响并调用 `get_knowledge`。它们仍会调用 `ContextBuilder.build_for_subagent` 触发 skill 选择和 RAG。 |
-| `SkillCatalog / SkillSelector` | `app/skills/catalog.py::SkillCatalog.scan`，`app/skills/selector.py::SkillSelector.select`，`app/skills/loader.py::SkillLoader.load` | metadata-first skill 发现、选择和正文加载 | agent name、`SkillSelectionContext`、candidate metadata | `selected_skill_id`、skill body | YAML frontmatter、Pydantic、规则打分 | 启动/校验阶段只扫描 `app/skills/*/*/SKILL.md` 的 frontmatter metadata，跳过 `deprecated` 和旧两层目录；执行时才加载完整 `SKILL.md`。`AgentCardLoader.validate_with_skill_catalog` 校验 AgentCard.skills 存在、agent 匹配、private tools 不越界，并要求每个 enabled agent 至少一个 default skill。 |
+| `SkillCatalog / SkillSelector` | `app/skills/catalog.py::SkillCatalog.scan`，`app/skills/metadata.py::metadata_from_skill_file`，`app/skills/selector.py::SkillSelector.select`，`app/skills/loader.py::SkillLoader.load` | metadata-first skill 发现、严格校验、选择和正文加载 | agent name、`SkillSelectionContext`、candidate metadata | `selected_skill_id`、skill body | YAML frontmatter、Pydantic、规则打分 | 启动/校验阶段只扫描 `app/skills/*/*/SKILL.md` 的完整企业级 frontmatter metadata，跳过 `deprecated`。缺少 `skill_id/name/description/agent/intent_tags/required_entities/private_tools/enabled/is_default` 会直接报错；执行时才加载完整 `SKILL.md`。`AgentCardLoader.validate_with_skill_catalog` 校验 AgentCard.skills 存在、agent 匹配、private tools 不越权，并要求每个 enabled agent 至少一个 default skill。 |
 | `KnowledgeService / RAG` | `app/knowledge/in_memory_service.py::InMemoryKnowledgeService.search`，`app/runtime/context_builder.py::_build_lightweight_hints`，`app/runtime/context_builder.py::_build_subagent_knowledge_hint` | 为主流程和子 Agent 提供知识检索增强 | query、intent、top_k | knowledge hints 或 mock_knowledge_hint | InMemory mock、关键词 scoring | 当前不是 Milvus/Elasticsearch/embedding/hybrid。内置 chunks 按 metadata keywords 命中数算分，`score = 0.5 + hits * 0.15`，降序取 top-k。主流程 `pre_search(top_k=3)` 进入 `lightweight_knowledge_hints`，子 Agent `search(top_k=3)` 拼接进 `mock_knowledge_hint`。 |
 | `ToolRegistry` | `app/tools/registry.py::ToolRegistry`，`app/tools/public_tools.py::register_public_tools`，`app/tools/agent_tools.py::register_agent_private_tools` | 注册和暴露工具 schema | 工具定义、AgentCard | 可见工具名和 OpenAI-compatible tools schema | Pydantic `ToolDefinition`、函数签名 introspection、MCP capability | 公有工具包括 `rag_search_tool/get_knowledge/calculator_tool/current_time_tool`；私有工具按 agent 注册；MCP 工具由 `register_mcp_tools` 注册。不会把所有工具都给 LLM，而是按 `AgentCard.private_tools`、`public_tools_allowed`、`mcp_tools`、`mcp_tool_scopes` 生成当前子 Agent 可见工具。 |
 | `LLMProvider` | `app/llm/base.py::LLMProvider`，`app/llm/internal_provider.py::InternalLLMProvider.chat`，`app/llm/opensdk_provider.py::OpenSDKLLMProvider.chat`，`app/llm/factory.py::build_llm_provider` | 统一模型调用边界 | messages、tools、scene/model 配置 | `LLMResponse` | httpx、OpenAI SDK、scene-aware model config | 当前应用默认 `build_llm_provider` 返回 `InternalLLMProvider`；当 `ENABLE_OPENSDK_LLM=true` 时使用 OpenAI-compatible SDK provider。`InternalLLMProvider` 若未配置 `INTERNAL_LLM_API_URL`，走本地确定性 fallback。`FakeLLMProvider` 存在于 `app/llm/fake_provider.py`，主要给测试/隔离场景使用，不是当前 `create_app` 默认注入。LLMProvider 不执行工具。 |
@@ -137,7 +137,7 @@ flowchart TD
 | ApprovalSystemClient | 向外部审批系统提交审批请求，当前可指向 mock URL | `app/approval/client.py::ApprovalSystemClient` |
 | ToolBroker / PolicyGate | 兼容/旧工具通道，强制经过策略门；当前主 LLM 工具循环未使用它 | `app/tools/broker.py::ToolBroker.call`，`app/tools/policy_gate.py::PolicyGate.allow` |
 | ToolRegistry | 公有工具、私有工具、MCP 工具统一注册，并按 AgentCard 生成可见工具 schema | `app/tools/registry.py::ToolRegistry` |
-| Skills metadata-first loading | 扫描时只读取 frontmatter metadata，执行选中后才加载完整 `SKILL.md` body | `app/skills/catalog.py::SkillCatalog.scan`，`app/skills/catalog.py::SkillCatalog.load_skill_content` |
+| Skills metadata-first loading | 扫描时只读取完整企业级 frontmatter metadata，执行选中后才加载完整 `SKILL.md` body | `app/skills/catalog.py::SkillCatalog.scan`，`app/skills/metadata.py::metadata_from_skill_file`，`app/skills/catalog.py::SkillCatalog.load_skill_content` |
 | RAG / KnowledgeService | 主流程轻量知识提示和子 Agent 任务级知识上下文；当前是 in-memory keyword mock | `app/knowledge/in_memory_service.py::InMemoryKnowledgeService` |
 | MCP Client | 作为外部工具来源，启动时发现能力，执行时由 ToolExecutor 分发 | `app/mcp/client_manager.py::MCPClientManager`，`app/main.py::lifespan` |
 | final compliance check | 所有返回用户前的强制合规检查、脱敏、重试/兜底 | `app/compliance/final_checker.py::FinalComplianceChecker` |
@@ -255,3 +255,365 @@ check_human_approval_required
 | 人工审批 | 当前已接入完整 pending/callback/resume 闭环 | 写工具不再只是 fail-closed，而是由 `approval_requests` 持久化并等待 callback。 |
 | MCP | 已有 client manager、capability registry、HTTP client 和 ToolRegistry 注册路径 | 只有配置 MCP servers 时才会实际发现外部工具。 |
 | RAG | 当前是内存 mock 关键词检索 | 未接 Milvus、Elasticsearch、embedding 或 hybrid ranking。 |
+
+## 开发者修改指南
+
+本节面向后续开发者，说明“要改一个能力时到底改哪些真实文件”。所有路径均以当前代码为准；如果某个目标架构中的模块当前不存在，会明确标注“当前不存在”。
+
+### 1. LangGraph 初始化在做什么？
+
+当前初始化链路从 `app/main.py::create_app` 开始。它不是只创建 FastAPI route，而是把主流程所需依赖一次性组装出来，再把编译后的 LangGraph 交给 `AgentOrchestrator`。
+
+```text
+create_app()
+  -> get_settings()
+  -> init SQLiteDatabase
+  -> init MessageStore / ShortTermMemoryManager / SQLiteCheckpointStore
+  -> init ToolExecutionLogStore / SQLiteApprovalStore
+  -> init LLMProvider
+  -> init InMemoryKnowledgeService
+  -> init MCPCapabilityRegistry / MCPClientManager
+  -> init ToolRegistry
+  -> register_public_tools()
+  -> register_agent_private_tools()
+  -> register restricted admin tools(shell_exec/http_request/mcp_http.call_tool)
+  -> init ToolExecutor
+  -> init ToolCallingRunner
+  -> init FinalComplianceChecker
+  -> init ApprovalService
+  -> init SkillCatalog / SkillSelector / ContextBuilder
+  -> init SubAgentManager and register subagents
+  -> init AgentCardLoader and validate_with_skill_catalog()
+  -> init AgentGraphFactory(...).build()
+  -> init AgentOrchestrator(graph, checkpoint_store)
+  -> register /api/chat, /api/approval/callback, /api/approval/{approval_id}
+```
+
+关键代码位置：
+
+| 问题 | 当前真实代码 |
+| ---- | ---- |
+| FastAPI 创建依赖 | `app/main.py::create_app` |
+| `AgentGraphFactory` 创建位置 | `app/main.py::create_app`，调用 `AgentGraphFactory(...).build()` |
+| LangGraph 节点注册 | `app/runtime/graph.py::AgentGraphFactory.build` |
+| LangGraph 普通边 | `app/runtime/graph.py::AgentGraphFactory.build` 中连续 `graph.add_edge(...)` |
+| LangGraph 条件边 | `app/runtime/graph.py::AgentGraphFactory.build` 中 `graph.add_conditional_edges(...)` |
+| 人工审批条件路由 | `app/runtime/graph.py::AgentGraphFactory.human_approval_route` |
+| 合规检查条件路由 | `app/runtime/graph.py::AgentGraphFactory.compliance_route` |
+| compiled graph 调用 | `app/runtime/orchestrator.py::AgentOrchestrator.run` |
+| LangGraph `thread_id` | `AgentOrchestrator.run` 用 `{"configurable": {"thread_id": inbound.session_key}}` 调用 `graph.ainvoke(...)` |
+
+`AgentGraphFactory.build()` 当前做三件事：
+
+1. 用 `StateGraph(AgentGraphState)` 创建状态机。
+2. 注册节点：`load_session`、`save_user_message`、`query_rewrite`、`intent_recognition`、`build_orchestrator_context`、`discover_agents`、`select_agent`、`assemble_task`、`dispatch_agent`、`check_human_approval_required`、`create_approval_request`、`submit_approval_request`、`pause_for_approval`、`final_compliance_check`、`regenerate_compliant_answer`、`fallback_answer`、`save_assistant_message`、`compress_short_memory`、`finalize_response`。
+3. 连接普通边和条件边，最后 `compile(checkpointer=self.checkpointer)`。
+
+`MemorySaver` / SQLite checkpoint 的关系要特别注意：`app/runtime/graph.py::AgentGraphFactory.__init__` 默认使用 LangGraph `MemorySaver` 编译图；`app/runtime/orchestrator.py::AgentOrchestrator.run` 在 `graph.ainvoke` 结束后，把最终 state 另存到项目自己的 `SQLiteCheckpointStore`，也就是 SQLite `graph_checkpoints` 表。当前代码还不是 LangGraph 官方 SQLite checkpointer。
+
+graph state 关键字段来自 `app/runtime/graph_state.py::AgentGraphState`：`request_id`、`trace_id`、`session_key`、`original_query`、`rewritten_query`、`intent`、`entities`、`orchestrator_context`、`selected_agent`、`selected_agent_card`、`assembled_task`、`subagent_result`、`answer`、`approval_required`、`approval_id`、`compliance_result`、`response`、`graph_path` 等。每个节点返回的是一个 dict patch，LangGraph 将 patch 合并进 state。
+
+### 2. 新增一个子 Agent 应该怎么做？
+
+以新增 `underwriting_agent` 为例，最小改动不是只写一个 Python 类，还要让 AgentCard、Skill、工具可见性和选择逻辑都能对齐。
+
+Checklist：
+
+1. 新增 AgentCard YAML：`app/agents/cards/underwriting_agent.yaml`。
+
+   当前 `app/schemas/agent_card.py::AgentCard` 支持这些字段：
+
+   ```yaml
+   agent_name: underwriting_agent
+   display_name: 核保 Agent
+   description: 负责健康险个险核保相关查询和处理
+   capabilities: []
+   supported_intents: []
+   required_entities: []
+   output_schema: SubAgentResult
+   private_tools: []
+   public_tools_allowed: true
+   mcp_tools: []
+   mcp_tool_scopes: []
+   skills: []
+   rag_namespaces: []
+   memory_policy:
+     use_short_summary: true
+     recent_turns: 5
+   examples: []
+   enabled: true
+   version: "1.0.0"
+   ```
+
+   注意：用户故事里常提到的 `optional_entities` 当前不在 `AgentCard` schema 中；如果确实要引入，必须先改 `app/schemas/agent_card.py`、YAML、选择逻辑和测试，不能只在 YAML 里写一个运行时不会使用的字段。
+
+2. 新增子 Agent 类：建议放在 `app/subagents/underwriting_agent.py`，默认继承 `app/subagents/base.py::BaseSubAgent`。如果只是使用 AgentCard + Skill + RAG + ToolCallingRunner，通常只需要像 `app/subagents/policy_query_agent.py::PolicyQueryAgent` 那样继承 `BaseSubAgent`；只有像 `app/subagents/document_parse_agent.py::DocumentParseAgent`、`app/subagents/change_impact_analysis_agent.py::ChangeImpactAnalysisAgent` 这种规则执行型 Agent，才建议自定义 `run`。
+
+3. 注册子 Agent：当前注册位置是 `app/main.py::create_app`，通过 `SubAgentManager.register("underwriting_agent", UnderwritingAgent(...))` 注册。对应 manager 在 `app/subagents/manager.py::SubAgentManager`。
+
+4. 如果新增 intent：需要同步改 `AgentCard.supported_intents`、`app/query/intent_recognition_node.py::IntentRecognitionNode.recognize` 或相关 `_looks_*` fallback 规则、Skill 的 `intent_tags` 和测试。当前 `IntentRecognitionNode` 不是 LLM JSON 分类，虽然构造函数注入 `LLMProvider`，实际识别仍是规则。
+
+5. 如果需要私有工具：在 `app/tools/agent_tools.py::register_agent_private_tools` 注册；在 `app/agents/cards/underwriting_agent.yaml` 的 `private_tools` 声明；在对应 Skill 的 `private_tools` 中只声明 AgentCard 允许的子集；测试 `ToolRegistry` 可见性和 `ToolExecutor` 二次校验。
+
+6. 如果需要 Skill：新增 `app/skills/underwriting_agent/{skill_name}/SKILL.md`；`skill_id` 必须写进 AgentCard `skills`；`SkillMetadata.agent` 必须等于 `underwriting_agent`。
+
+7. 建议新增或修改测试：`tests/test_agent_card_loader.py`、`tests/test_new_subagents.py`、`tests/test_architecture_acceptance.py`、`tests/test_intent_recognition.py`、`tests/test_tool_registry_visibility.py`、`tests/test_subagent_tool_visibility.py`、`tests/test_skill_catalog.py`、`tests/test_skill_selection_end_to_end.py`。
+
+新增 Agent 最小改动清单：
+
+```text
+app/agents/cards/underwriting_agent.yaml
+app/subagents/underwriting_agent.py
+app/main.py::create_app 注册 SubAgent
+app/skills/underwriting_agent/default/SKILL.md
+必要时修改 app/query/intent_recognition_node.py
+必要时修改 app/tools/agent_tools.py
+对应 tests/*
+```
+
+### 3. 新增或修改 Skill 应该怎么做？
+
+Skill 文件放在 `app/skills/{agent_name}/{skill_name}/SKILL.md`。当前 `app/skills/catalog.py::SkillCatalog` 只扫描这个两层结构下的 `SKILL.md`，并跳过 `app/skills/deprecated/**`。
+
+标准 frontmatter 模板：
+
+```yaml
+---
+skill_id: troubleshooting_agent.refund_failure
+name: 退保失败排查
+description: 用于排查保单退保没有成功、任务状态异常、节点卡住等问题
+agent: troubleshooting_agent
+intent_tags:
+  - troubleshooting
+  - refund_failure
+required_entities:
+  - policy_no
+
+private_tools:
+  - query_task_status
+  - query_node_status
+
+enabled: true
+is_default: false
+
+---
+```
+
+必填字段由 `app/skills/metadata.py::REQUIRED_SKILL_METADATA_FIELDS` 和 `app/schemas/skill.py::SkillMetadata` 共同约束：`skill_id`、`name`、`description`、`agent`、`intent_tags`、`required_entities`、`private_tools`、`enabled`、`is_default`。只有 `name/description` 的旧格式会校验失败。
+
+对齐规则：
+
+1. `skill_id` 使用 `<agent_name>.<skill_name>`，全局唯一。
+2. `agent` 必须匹配真实 AgentCard 的 `agent_name`。
+3. `skill_id` 必须出现在对应 AgentCard 的 `skills` 中。
+4. `private_tools` 必须是 AgentCard `private_tools` 的子集，不能越权声明其他 Agent 的私有工具。
+5. `enabled=false` 后，`SkillCatalog.list_skills(..., include_disabled=False)` 不会把它交给选择器。
+6. 每个 enabled Agent 至少要有一个 enabled 且 `is_default=true` 的 skill，校验在 `app/agents/card_loader.py::AgentCardLoader.validate_with_skill_catalog`。
+
+启动和执行的加载策略：`SkillCatalog` 启动时只解析 metadata；`app/runtime/context_builder.py::ContextBuilder.build_for_subagent` 选择具体 skill 后，才通过 `app/skills/loader.py::SkillLoader.load` 加载完整 `SKILL.md` body。`app/skills/selector.py::SkillSelector.select` 根据 intent、实体、query 等上下文打分；没有强匹配时回落到 default skill。
+
+修改 Skill 后建议跑：`tests/test_skill_catalog.py`、`tests/test_skill_selector.py`、`tests/test_skill_selection_end_to_end.py`、`tests/test_skill_context_builder.py`、`tests/test_agent_card_loader.py`。
+
+VSCode 中只有 `name/description` 高亮，不代表项目只使用这两个字段；运行时以 `SkillMetadata` schema 和 `SkillCatalog` 解析为准。
+
+### 4. 新增或修改本地工具应该怎么做？
+
+#### 4.1 新增公有工具
+
+公有工具注册在 `app/tools/public_tools.py::register_public_tools`。工具定义最终进入 `app/tools/registry.py::ToolRegistry.register_public`，`ToolDefinition` 在 `app/tools/base.py::ToolDefinition`，关键字段包括：`name`、`description`、`callable`、`scope`、`source`、`parameters`、`enabled`、`is_write`。
+
+`parameters` 建议写成 OpenAI-compatible tool schema 的 JSON schema 结构；如果不写，`ToolRegistry.get_tool_schema` 会根据 callable signature 自动生成基础 schema。公有工具不是所有 Agent 必然可见，只有 AgentCard `public_tools_allowed=true` 时，`ToolRegistry.list_tools_for_agent` 才会返回它们。
+
+执行链路是：LLM tool schema 来自 `ToolRegistry.list_tools_for_agent`；工具调用进入 `app/subagents/tool_calling_runner.py::ToolCallingRunner.run`；真正执行由 `app/tools/executor.py::ToolExecutor.execute` 完成；审计记录写入 SQLite `tool_execution_logs`，字段包括 session、request、trace、agent、tool、arguments、result/error、source、耗时等。
+
+建议测试：`tests/test_tool_registry_visibility.py`、`tests/test_tool_executor_authorization.py`、`tests/test_tool_calling_runner.py`、`tests/test_tool_call_audit.py`。
+
+#### 4.2 新增某个 Agent 的私有工具
+
+私有工具注册在 `app/tools/agent_tools.py::register_agent_private_tools`，通过 `ToolRegistry.register_private(agent_name=..., name=..., tool=...)` 绑定到某个 Agent。工具名要稳定、业务语义清晰，例如 `query_underwriting_result`。
+
+只注册工具不够，还必须在对应 `app/agents/cards/{agent_name}.yaml` 的 `private_tools` 中声明。原因是 `ToolRegistry.list_available_tools_for_agent` 会同时看注册表和 AgentCard；`ToolExecutor.execute` 也会调用 `ToolRegistry.is_tool_available_for_agent` 做二次校验，避免 LLM 或调用方伪造工具名越权执行。
+
+建议测试：验证目标 Agent 能看到工具、其他 Agent 看不到工具、`ToolExecutor` 对越权调用返回 `tool_not_available_for_agent`。
+
+#### 4.3 新增写工具 / 删除工具 / 修改工具
+
+写类工具要在注册时设置 `ToolDefinition.is_write=true`，或让工具名包含 `delete/update/modify/write/create/submit` 这类高风险操作词。当前判断在 `app/tools/executor.py::ToolExecutor._requires_approval`。
+
+写工具不能直接执行。当前完整审批已经接入：
+
+1. `ToolExecutor.execute` 不执行原 callable，而是返回 `error="human_approval_required"`、`needs_human_approval=true`、`approval_payload`、`pending_tool_call`，并写 `tool_execution_logs`。
+2. `ToolCallingRunner` 遇到该错误立即停止 loop，返回 `stopped_reason="human_approval_required"` 和当时的 messages/tools。
+3. `BaseSubAgent.run` 生成 `SubAgentResult.needs_human_approval=true`。
+4. `AgentGraphFactory` 走 `check_human_approval_required -> create_approval_request -> submit_approval_request -> pause_for_approval -> final_compliance_check`，`/api/chat` 返回 pending。
+5. callback approved 后，`app/approval/service.py::ApprovalService.resume_after_approval` 调 `ToolExecutor.execute_approved_tool` 执行原工具，再继续 `ToolCallingRunner` loop。
+6. callback rejected 时，不执行工具，直接走拒绝答案、合规检查、保存结果。
+
+安全校验在 `app/tools/executor.py::ToolExecutor.execute_approved_tool` 和 `app/tools/executor.py::ToolExecutor._validate_approval_for_tool`：approval 必须存在、状态必须 approved、agent/tool/arguments 必须和审批请求一致，并且工具仍要通过 AgentCard 可见性校验。
+
+建议测试：`tests/test_approval_full_flow.py`、`tests/test_approval_callback_approved.py`、`tests/test_approval_callback_rejected.py`、`tests/test_approval_idempotency.py`、`tests/test_approved_tool_guard.py`。
+
+### 5. 新增 MCP Tool 应该怎么做？
+
+当前项目是 MCP Client 消费方，不是 MCP Server。MCP Server 能力发现发生在 FastAPI lifespan 启动阶段：`app/main.py::create_app` 内部的 `lifespan` 调用 `app/mcp/client_manager.py::MCPClientManager.initialize`，再调用 `ToolRegistry.register_mcp_tools(mcp_capability_registry.list_tools())`。
+
+MCP 相关代码位置：
+
+| 机制 | 代码位置 |
+| ---- | ---- |
+| 配置读取 | `app/config/settings.py::Settings`，`ENABLE_MCP_CLIENT`、`MCP_SERVERS_JSON` / `MCP_SERVERS` |
+| client manager | `app/mcp/client_manager.py::MCPClientManager` |
+| HTTP client | `app/mcp/client.py::HTTPMCPClient` |
+| 能力缓存 | `app/mcp/capability_registry.py::MCPCapabilityRegistry` |
+| tool name 适配 | `app/mcp/tool_adapter.py` |
+| ToolRegistry 注册 | `app/tools/registry.py::ToolRegistry.register_mcp_tools` |
+| MCP 执行分发 | `app/tools/executor.py::ToolExecutor._execute_definition`，`source="mcp"` 时调用 `MCPClientManager.call_tool` |
+
+可见性由 AgentCard 控制：`mcp_tools` 可列出具体 MCP tool name，`mcp_tool_scopes` 可按 scope 放行。LLMProvider 和 ToolCallingRunner 不直接感知 MCP，它们只看到普通 OpenAI-style tool schema；MCP/local 的分发边界在 ToolExecutor。
+
+新增 MCP tool 的最小步骤：
+
+1. 在环境变量 `MCP_SERVERS_JSON` 或 `MCP_SERVERS` 配置 MCP server，保持 `ENABLE_MCP_CLIENT=true`。
+2. 确认 server 的 `list_tools` 能返回工具名、描述、input_schema。
+3. 在目标 AgentCard 的 `mcp_tools` 或 `mcp_tool_scopes` 中放行工具。
+4. 启动应用，lifespan 会发现并注册 MCP tools。
+5. 增加测试。Fake MCP 应放在 `tests`，当前已有 `tests/fakes/mcp.py`；不要把测试假实现放进 `app` 主代码。
+
+建议测试：`tests/test_mcp_client_manager.py`、`tests/test_mcp_capability_registry.py`、`tests/test_tool_registry_mcp_visibility.py`、`tests/test_tool_executor_mcp.py`、`tests/test_agent_mcp_tool_loop.py`、`tests/test_troubleshooting_with_mcp.py`。
+
+### 6. 新增主流程节点应该怎么做？
+
+主流程节点都在 `app/runtime/graph.py::AgentGraphFactory`。新增节点的基本步骤：
+
+1. 在 `AgentGraphFactory` 增加一个 async 方法，例如 `async def clarify_missing_entities(self, state: AgentGraphState) -> dict[str, Any]: ...`。
+2. 在 `AgentGraphFactory.build()` 中 `graph.add_node("clarify_missing_entities", self.clarify_missing_entities)`。
+3. 用 `graph.add_edge("from_node", "clarify_missing_entities")` 和 `graph.add_edge("clarify_missing_entities", "to_node")` 连接普通边。
+4. 如需分支，新增一个 route 方法，并用 `graph.add_conditional_edges(...)` 连接。
+5. 节点返回 state patch，不要原地依赖隐式副作用；需要观测路径时，把节点名追加到 `graph_path`。
+6. 新增测试断言节点是否进入路径，可参考 `tests/test_langgraph_flow.py`。
+7. 不要破坏 `final_compliance_check` 强制出口：任何会返回用户的分支最终都应进入 `final_compliance_check -> save_assistant_message`，人工审批 pending 分支也是这样设计的。
+8. 如果节点会中断主流程，例如 clarification 或 human approval，应设计成条件路由，不要在节点里同步阻塞等待外部人工处理。
+
+### 7. 新增实体类型应该怎么做？
+
+当前代码没有 `ConversationWindow` 顶层 `last_xxx` 业务字段，也没有 `EntityBag` schema；`app/query/entity_extractor.py` 当前不存在。当前实体流是动态 `dict[str, Any]`：`app/query/intent_recognition_node.py::IntentRecognitionNode.extract_entities` 抽取实体，`AgentGraphState.entities`、`OrchestratorContext.entities`、`AgentTaskEnvelope.entities`、`SubAgentTask.entities` 逐层传递。
+
+新增实体时不要给某个历史窗口对象硬塞 `last_policy_no`、`last_claim_no` 之类字段。当前应改：
+
+1. 通用实体：修改 `app/query/intent_recognition_node.py::IntentRecognitionNode.extract_entities`。
+2. 某个 Agent 必需实体：在对应 `app/agents/cards/{agent_name}.yaml` 的 `required_entities` 声明。
+3. Skill 依赖实体：在 `app/skills/{agent_name}/{skill_name}/SKILL.md` 的 `required_entities` 声明。
+4. Query rewrite 的历史继承：当前 `app/query/query_rewrite_node.py` 会用 recent messages 和 short_summary 做规则改写；没有 EntityBag 级继承逻辑。
+5. 多个同类型实体：当前没有统一澄清节点；如果新增，会涉及 `app/runtime/graph.py` 条件路由和新的 response 语义。
+
+例子：
+
+| 实体 | 当前建议改动 |
+| ---- | ---- |
+| `claim_no` | 当前已在 `IntentRecognitionNode.extract_entities` 中支持；如新增 Agent 使用，更新 AgentCard/Skill/test 即可。 |
+| `hospital_name` | 增加正则或规则抽取，更新需要它的 AgentCard `required_entities` 和 Skill `required_entities`。 |
+| `document_type` | 增加抽取规则，通常配合 `document_parse_agent` 的 AgentCard/Skill 使用。 |
+
+建议测试：`tests/test_intent_recognition.py`、`tests/test_query_rewrite.py`、`tests/test_skill_selector.py`、`tests/test_langgraph_flow.py`。
+
+如果后续要引入真正的 `EntityBag`，需要先新增 schema，再把 `IntentRecognitionNode`、`QueryRewriteNode`、`ContextBuilder`、`AgentTaskAssembler` 和测试一起迁移；当前不能在文档中把它当成已实现能力。
+
+### 8. 新增 intent / sub_intent 应该怎么做？
+
+当前 intent 识别在 `app/query/intent_recognition_node.py::IntentRecognitionNode.recognize`，以规则为主；没有 LLM prompt 候选 intent 列表，也没有稳定的 `sub_intent` schema 字段。
+
+新增 intent 的步骤：
+
+1. 在目标 `app/agents/cards/{agent_name}.yaml` 的 `supported_intents` 增加 intent。
+2. 在 `IntentRecognitionNode.recognize` 或 `_looks_*` helper 中增加 fallback 规则。
+3. 在相关 Skill 的 `intent_tags` 中增加 intent。
+4. 需要实体时同步更新 AgentCard `required_entities` 和 Skill `required_entities`。
+5. Agent selection 会通过 `app/agents/selection.py::AgentSelectionNode.select` 和 `AgentCardLoader.match_candidates` 使用 intent、query、entities、AgentCard 打分。
+6. 增加测试：`tests/test_intent_recognition.py`、`tests/test_agent_card_loader.py`、`tests/test_langgraph_flow.py`、`tests/test_skill_selection_end_to_end.py`。
+
+如果未来改成 LLM JSON 分类，需要在 `IntentRecognitionNode` 中显式维护候选 intent 列表和 JSON schema 解析；当前代码尚未实现。
+
+### 9. 修改 LLM 模型调用应该怎么做？
+
+LLM 抽象在 `app/llm/base.py::LLMProvider`。当前实现包括：
+
+| 实现 | 代码位置 | 说明 |
+| ---- | ---- | ---- |
+| 内部数智 LLM | `app/llm/internal_provider.py::InternalLLMProvider` | `build_llm_provider` 默认返回；配置 `INTERNAL_LLM_API_URL` 时走 HTTP，未配置时使用本地 deterministic fallback。 |
+| OpenSDK / OpenAI-compatible | `app/llm/opensdk_provider.py::OpenSDKLLMProvider` | `ENABLE_OPENSDK_LLM=true` 时启用。 |
+| OpenAI-compatible 旧实现 | `app/llm/openai_provider.py` | 代码保留。 |
+| Fake provider | `app/llm/fake_provider.py::FakeLLMProvider` | 主要用于测试。 |
+
+切换入口在 `app/llm/factory.py::build_llm_provider`，配置字段在 `app/config/settings.py::Settings`。model 不应该写死在业务节点里；scene 模型选择在 `app/llm/model_config.py::SCENE_MODEL_FIELDS`，当前 scene 包括：`query_rewrite`、`intent_recognition`、`agent_selection`、`subagent_reasoning`、`final_compliance`、`summary`。
+
+新增 scene 时要改：
+
+1. `app/config/settings.py::Settings` 增加环境变量字段。
+2. `app/llm/model_config.py::SCENE_MODEL_FIELDS` 增加映射。
+3. 对应调用 `llm_provider.chat(..., scene="new_scene")`。
+4. 增加模型配置测试，参考 `tests/test_llm_model_config.py`。
+
+LLMProvider 只负责模型调用，不执行工具。工具 loop 在 `app/subagents/tool_calling_runner.py::ToolCallingRunner.run`，工具权限和分发在 `app/tools/executor.py::ToolExecutor`。
+
+### 10. 修改记忆压缩应该怎么做？
+
+SQLite 表由 `app/storage/sqlite.py::SQLiteDatabase` 初始化。`messages` 保存完整消息；`short_term_memory` 保存每个 `session_key` 的滚动摘要；`graph_checkpoints` 保存每次图执行后的最终 state。
+
+当前读取和压缩链路：
+
+1. `app/runtime/graph.py::AgentGraphFactory.load_session` 调 `app/session/session_manager.py::SessionManager.load_session`。
+2. `SessionManager.load_session` 读取 `MessageStore.get_recent_messages(session_key, limit=60)` 和 `ShortTermMemoryManager.get_summary(session_key)`。
+3. `app/runtime/context_builder.py::ContextBuilder.build_for_orchestrator` 只把 recent messages 截到最近 10 条给主编排上下文。
+4. `ContextBuilder.build_for_subagent` 按 AgentCard `memory_policy.recent_turns * 2` 给子 Agent。
+5. `app/runtime/graph.py::AgentGraphFactory.compress_short_memory` 调 `app/memory/short_term_memory_manager.py::ShortTermMemoryManager.compress_after_turn`。
+
+当前 `compress_after_turn` 是规则 summary，不是 LLM smart summary。若要接 LLM summary，建议在 `ShortTermMemoryManager` 或一个新的 summary service 中实现，并通过 `app/main.py::create_app` 注入；scene 可复用 `summary`。压缩失败不应该导致主流程整体失败，但当前代码没有显式 try/fallback，属于需要补强的 TODO；如果修改，应加测试覆盖 SQLite/LLM 失败时仍返回用户答案。
+
+建议测试：`tests/test_multi_turn_memory.py`、`tests/test_multi_user_isolation.py`、`tests/test_sqlite_persistence.py`、`tests/test_langgraph_flow.py`。
+
+### 11. 常见问题 FAQ
+
+1. 为什么新增 Agent 不只是写一个 Python 类，还要写 AgentCard？
+   AgentCard 是主 Agent 发现、选择、授权和上下文裁剪的依据；没有 AgentCard，`AgentCardLoader`、`AgentSelectionNode`、`ToolRegistry` 和 Skill 校验都无法知道这个 Agent 的能力边界。
+
+2. 为什么工具注册了，LLM 还是看不到？
+   注册只是进入 ToolRegistry；LLM 看到的是 `ToolRegistry.list_tools_for_agent(agent_card)` 的结果，还受 AgentCard `public_tools_allowed`、`private_tools`、`mcp_tools`、`mcp_tool_scopes` 控制。
+
+3. 为什么 AgentCard.private_tools 写了，但 ToolExecutor 仍然拒绝？
+   可能工具没有在 `app/tools/agent_tools.py` 注册给该 agent，或调用时传入的 AgentCard/agent_name 不匹配。`ToolExecutor` 会二次调用 `is_tool_available_for_agent`。
+
+4. 为什么不能把所有工具都给 LLM？
+   工具包含私有业务查询、写操作和外部系统能力。最小可见性可以降低误调用、越权和提示注入风险。
+
+5. 为什么 intent_recognition 不应该输出 required_tools？
+   当前代码已把 `required_tools` 置为空数组。工具选择应由 AgentCard、Skill 和子 Agent 的 tool schema 决定，避免 intent 节点把业务执行路径绑死。
+
+6. 为什么 final_compliance_check 必须在 save_assistant_message 前？
+   保存到 `messages` 和返回给用户的都应是合规后的内容，避免敏感字段、内部日志或原始工具输出被持久化成最终回答。
+
+7. 为什么 Skill 只有 name/description 在 VSCode 中高亮，其他 metadata 是灰色？
+   编辑器高亮不等于运行时 schema。项目运行时按 `app/schemas/skill.py::SkillMetadata` 和 `app/skills/metadata.py` 校验完整企业级 metadata。
+
+8. 为什么 MCP 工具不是直接让 LLM 去发现？
+   MCP 发现、缓存、命名和权限控制属于系统边界；LLM 只接收已经被 ToolRegistry 过滤后的 tool schema。
+
+9. 为什么 ConversationWindow 不应该固定 last_policy_no / last_claim_no 这类字段？
+   当前项目没有 ConversationWindow；实体应作为动态 `entities` dict 传递。把业务字段固化到窗口顶层会导致每新增一个实体都要改通用历史结构。
+
+10. 为什么写工具需要人工审批？
+    写、删、改工具会改变外部系统或业务状态。当前系统要求先创建审批请求，approved callback 后才能通过 `execute_approved_tool` 执行，rejected 则不执行。
+
+### 12. 开发者最小改动路径汇总
+
+| 目标 | 必改文件 | 选改文件 | 必跑测试 |
+| ---- | ---- | ---- | ---- |
+| 新增 Agent | `app/agents/cards/{agent_name}.yaml`、`app/subagents/{agent_name}.py`、`app/main.py`、`app/skills/{agent_name}/default/SKILL.md` | `app/query/intent_recognition_node.py`、`app/tools/agent_tools.py` | `tests/test_agent_card_loader.py`、`tests/test_new_subagents.py`、`tests/test_architecture_acceptance.py`、相关 LangGraph/工具测试 |
+| 新增 Skill | `app/skills/{agent_name}/{skill_name}/SKILL.md`、对应 `app/agents/cards/{agent_name}.yaml` | `app/skills/selector.py` | `tests/test_skill_catalog.py`、`tests/test_skill_selector.py`、`tests/test_skill_selection_end_to_end.py` |
+| 新增公有 Tool | `app/tools/public_tools.py` | `app/tools/base.py`、相关 AgentCard `public_tools_allowed` | `tests/test_tool_registry_visibility.py`、`tests/test_tool_executor_authorization.py`、`tests/test_tool_calling_runner.py` |
+| 新增私有 Tool | `app/tools/agent_tools.py`、对应 `app/agents/cards/{agent_name}.yaml` | 对应 Skill `private_tools` | `tests/test_tool_registry_visibility.py`、`tests/test_subagent_tool_visibility.py`、`tests/test_tool_executor_authorization.py` |
+| 新增 MCP Tool | MCP server 配置环境变量、对应 `app/agents/cards/{agent_name}.yaml` | `app/mcp/*` 仅在协议适配变化时修改 | `tests/test_mcp_client_manager.py`、`tests/test_tool_registry_mcp_visibility.py`、`tests/test_tool_executor_mcp.py`、`tests/test_agent_mcp_tool_loop.py` |
+| 新增 intent | `app/query/intent_recognition_node.py`、对应 AgentCard `supported_intents`、对应 Skill `intent_tags` | `app/agents/selection.py` | `tests/test_intent_recognition.py`、`tests/test_agent_card_loader.py`、`tests/test_langgraph_flow.py` |
+| 新增实体类型 | `app/query/intent_recognition_node.py`、对应 AgentCard/Skill `required_entities` | 如果未来引入 EntityBag，再新增 schema；当前 `app/query/entity_extractor.py` 不存在 | `tests/test_intent_recognition.py`、`tests/test_query_rewrite.py`、`tests/test_skill_selector.py` |
+| 新增 graph 节点 | `app/runtime/graph.py` | `app/runtime/graph_state.py`、`app/schemas/message.py` | `tests/test_langgraph_flow.py`、相关端到端测试 |
+| 修改 LLM Provider | `app/llm/factory.py`、具体 `app/llm/*_provider.py`、`app/config/settings.py` | `app/llm/model_config.py` | `tests/test_llm_model_config.py`、`tests/test_internal_llm_provider_tools.py` |
+| 修改记忆压缩 | `app/memory/short_term_memory_manager.py`、`app/runtime/graph.py::compress_short_memory` | `app/llm/model_config.py`、`app/config/settings.py` | `tests/test_multi_turn_memory.py`、`tests/test_multi_user_isolation.py`、`tests/test_sqlite_persistence.py` |

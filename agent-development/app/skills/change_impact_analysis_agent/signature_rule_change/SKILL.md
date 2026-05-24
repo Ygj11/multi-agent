@@ -1,21 +1,24 @@
 ---
 skill_id: change_impact_analysis_agent.signature_rule_change
-name: 签名规则变更影响分析
-description: 用于分析 timestamp、base string、字段排序、密钥版本、签名算法变更对接口和错误码的影响
+name: ??????????
+description: ???? timestamp?base string???????????????????????????
 agent: change_impact_analysis_agent
 intent_tags:
   - change_impact_analysis
   - signature_rule_change
-  - 签名规则
+  - ????
   - timestamp
   - E102
+required_entities: []
+
+private_tools: []
+enabled: true
+is_default: false
 business_domain:
   - health_insurance_onboarding
 required_context:
   - interface_name
   - error_code
-enabled: true
-is_default: false
 ---
 
 # 签名规则变更影响分析 Skill

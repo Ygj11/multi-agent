@@ -30,8 +30,9 @@ class SkillCatalog:
                 if len(relative.parts) != 3 or relative.parts[0] == "deprecated":
                     continue
                 metadata = metadata_from_skill_file(path, self.skills_root)
-                if metadata is not None:
-                    metadata_by_id[metadata.skill_id] = metadata
+                if metadata.skill_id in metadata_by_id:
+                    raise ValueError(f"duplicate skill_id found: {metadata.skill_id}")
+                metadata_by_id[metadata.skill_id] = metadata
 
         self._metadata_by_id = metadata_by_id
         self._scanned = True
