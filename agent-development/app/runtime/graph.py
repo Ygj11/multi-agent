@@ -79,6 +79,7 @@ class AgentGraphFactory:
         graph.add_node("select_agent", self.select_agent)
         graph.add_node("assemble_task", self.assemble_task)
         graph.add_node("dispatch_agent", self.dispatch_agent)
+        graph.add_node("build_clarification_answer", self.build_clarification_answer)
         graph.add_node("check_human_approval_required", self.check_human_approval_required)
         graph.add_node("create_approval_request", self.create_approval_request)
         graph.add_node("submit_approval_request", self.submit_approval_request)
@@ -93,13 +94,26 @@ class AgentGraphFactory:
         graph.set_entry_point("load_session")
         graph.add_edge("load_session", "save_user_message")
         graph.add_edge("save_user_message", "query_rewrite")
-        graph.add_edge("query_rewrite", "intent_recognition")
-        graph.add_edge("intent_recognition", "build_orchestrator_context")
+        graph.add_conditional_edges(
+            "query_rewrite",
+            self.clarification_route,
+            {"clarify": "build_clarification_answer", "continue": "intent_recognition"},
+        )
+        graph.add_conditional_edges(
+            "intent_recognition",
+            self.clarification_route,
+            {"clarify": "build_clarification_answer", "continue": "build_orchestrator_context"},
+        )
         graph.add_edge("build_orchestrator_context", "discover_agents")
         graph.add_edge("discover_agents", "select_agent")
-        graph.add_edge("select_agent", "assemble_task")
+        graph.add_conditional_edges(
+            "select_agent",
+            self.clarification_route,
+            {"clarify": "build_clarification_answer", "continue": "assemble_task"},
+        )
         graph.add_edge("assemble_task", "dispatch_agent")
         graph.add_edge("dispatch_agent", "check_human_approval_required")
+        graph.add_edge("build_clarification_answer", "final_compliance_check")
         graph.add_conditional_edges(
             "check_human_approval_required",
             self.human_approval_route,
@@ -160,28 +174,46 @@ class AgentGraphFactory:
             original_query=state["original_query"],
             recent_messages=state.get("recent_messages", []),
             short_summary=state.get("short_summary"),
+            session_key=state["session_key"],
         )
         self._log_node_exit(state, "query_rewrite")
         return {
             "rewritten_query": result.rewritten_query,
+            "entities": result.entities,
+            "entity_bag": result.entity_bag,
+            "conversation_window": result.conversation_window,
+            "is_follow_up": result.is_follow_up,
+            "need_clarification": result.need_clarification,
+            "clarification_question": result.clarification_question,
+            "clarification_source": "query_rewrite" if result.need_clarification else None,
+            "missing_required_entities": result.missing_required_entities,
             "graph_path": self._append_path(state, "query_rewrite"),
         }
 
     async def intent_recognition(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "intent_recognition")
+        agent_summaries = [self._agent_card_summary(card) for card in self.agent_card_loader.list_available_agents()]
         result = await self.intent_recognition_node.recognize(
             original_query=state["original_query"],
             rewritten_query=state.get("rewritten_query", state["original_query"]),
             recent_messages=state.get("recent_messages", []),
             short_summary=state.get("short_summary"),
+            current_entities=state.get("entities", {}),
+            conversation_window=state.get("conversation_window", {}),
+            agent_card_summaries=agent_summaries,
         )
         self._log_node_exit(state, "intent_recognition")
+        merged_entities = {**(state.get("entities") or {}), **(result.entities or {})}
         return {
             "intent": result.intent,
+            "sub_intent": result.sub_intent,
             "confidence": result.confidence,
-            "entities": result.entities,
+            "entities": merged_entities,
+            "need_clarification": result.need_clarification,
+            "clarification_question": result.clarification_question,
+            "clarification_source": "intent_recognition" if result.need_clarification else state.get("clarification_source"),
+            "missing_required_entities": result.missing_required_entities,
             "target_subagent": None,
-            "required_tools": [],
             "graph_path": self._append_path(state, "intent_recognition"),
         }
 
@@ -191,7 +223,10 @@ class AgentGraphFactory:
             original_query=state["original_query"],
             rewritten_query=state.get("rewritten_query", state["original_query"]),
             intent=state.get("intent", "unknown"),
+            sub_intent=state.get("sub_intent"),
             entities=state.get("entities", {}),
+            entity_bag=state.get("entity_bag", {}),
+            conversation_window=state.get("conversation_window", {}),
             session_key=state["session_key"],
             recent_messages=state.get("recent_messages", []),
             short_summary=state.get("short_summary"),
@@ -218,18 +253,25 @@ class AgentGraphFactory:
         self._log_node_enter(state, "select_agent")
         selection = await self.agent_selection_node.select(
             intent=state.get("intent", "unknown"),
+            sub_intent=state.get("sub_intent"),
+            intent_confidence=state.get("confidence", 0.0),
             entities=state.get("entities", {}),
             query=state.get("rewritten_query", state["original_query"]),
+            is_follow_up=bool(state.get("is_follow_up")),
             request_id=state.get("request_id"),
             trace_id=state.get("trace_id"),
             session_key=state.get("session_key"),
         )
-        selected_card = selection.candidates[0].card
+        selected_candidate = next((item for item in selection.candidates if item.agent_name == selection.selected_agent), selection.candidates[0])
+        selected_card = selected_candidate.card
         self._log_node_exit(state, "select_agent")
         return {
             "agent_selection": selection.model_dump(),
             "selected_agent": selection.selected_agent,
             "selected_agent_card": selected_card.model_dump(),
+            "need_clarification": selection.need_clarification,
+            "clarification_question": selection.clarification_question,
+            "clarification_source": "agent_selection" if selection.need_clarification else state.get("clarification_source"),
             "graph_path": self._append_path(state, "select_agent"),
         }
 
@@ -412,13 +454,29 @@ class AgentGraphFactory:
                 "original_query": state["original_query"],
                 "rewritten_query": state.get("rewritten_query"),
                 "intent": state.get("intent"),
+                "sub_intent": state.get("sub_intent"),
                 "entities": state.get("entities", {}),
+                "need_clarification": state.get("need_clarification", False),
+                "clarification_source": state.get("clarification_source"),
                 "selected_agent": state.get("selected_agent"),
                 "session_key": state["session_key"],
             },
         )
         self._log_node_exit(state, "save_assistant_message")
         return {"graph_path": self._append_path(state, "save_assistant_message")}
+
+    async def build_clarification_answer(self, state: AgentGraphState) -> dict[str, Any]:
+        self._log_node_enter(state, "build_clarification_answer")
+        question = state.get("clarification_question") or "请补充必要信息后我再继续处理。"
+        self._log_node_exit(state, "build_clarification_answer")
+        return {
+            "answer": question,
+            "approval_required": False,
+            "graph_path": self._append_path(state, "build_clarification_answer"),
+        }
+
+    def clarification_route(self, state: AgentGraphState) -> str:
+        return "clarify" if state.get("need_clarification") else "continue"
 
     async def compress_short_memory(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "compress_short_memory")
@@ -478,3 +536,15 @@ class AgentGraphFactory:
             message=f"Exit LangGraph node {node}",
             data={"node": node},
         )
+
+    @staticmethod
+    def _agent_card_summary(card: AgentCard) -> dict[str, Any]:
+        return {
+            "agent_name": card.agent_name,
+            "description": card.description,
+            "supported_intents": card.supported_intents,
+            "capabilities": card.capabilities,
+            "required_entities": card.required_entities,
+            "optional_entities": card.optional_entities,
+            "examples": card.examples,
+        }

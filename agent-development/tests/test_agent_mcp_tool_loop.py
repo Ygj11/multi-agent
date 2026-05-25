@@ -44,7 +44,7 @@ def _card():
         public_tools_allowed=False,
         mcp_tools=["mcp.workflow.query_refund_task"],
         mcp_tool_scopes=[],
-        skills=["troubleshooting_agent.signature_error"],
+        skills=["troubleshooting_agent.refund_failure"],
         rag_namespaces=[],
         enabled=True,
         version="1",

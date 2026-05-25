@@ -2,6 +2,8 @@ from __future__ import annotations
 
 """意图识别结果 schema。"""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -13,7 +15,12 @@ class IntentResult(BaseModel):
     """
 
     intent: str
+    sub_intent: str | None = None
     confidence: float
-    entities: dict[str, str] = Field(default_factory=dict)
+    entities: dict[str, Any] = Field(default_factory=dict)
+    missing_required_entities: list[str] = Field(default_factory=list)
+    need_clarification: bool = False
+    clarification_question: str | None = None
+    is_follow_up: bool = False
+    reason: str = ""
     target_subagent: str | None = None
-    required_tools: list[str] = Field(default_factory=list)

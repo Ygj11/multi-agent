@@ -1,4 +1,4 @@
----
+﻿---
 skill_id: change_impact_analysis_agent.error_code_change
 name: ?????????
 description: ???? E102 ?????????????????????????
@@ -8,7 +8,10 @@ intent_tags:
   - error_code_change
   - ?????
   - E102
-required_entities: []
+required_entities:
+  - error_code
+optional_entities:
+  - interface_name
 
 private_tools: []
 enabled: true
@@ -22,3 +25,5 @@ required_context:
 # 错误码变更影响分析 Skill
 
 分析错误码定义变化对接口文档、知识库、排障 Agent 和回归测试的影响。
+
+

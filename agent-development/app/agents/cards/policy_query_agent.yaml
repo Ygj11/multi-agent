@@ -9,8 +9,11 @@ supported_intents:
   - policy_query
   - policy_status
   - product_rule_qa
-required_entities:
+required_entities: []
+optional_entities:
   - policy_no
+  - product_code
+  - insured_name
 output_schema: SubAgentResult
 private_tools:
   - query_policy_info

@@ -13,8 +13,9 @@ async def test_e102_is_troubleshooting_with_entities():
     assert result.intent == "troubleshooting"
     assert result.entities["request_id"] == "REQ_001"
     assert result.entities["error_code"] == "E102"
+    assert result.sub_intent == "signature_error"
     assert result.target_subagent is None
-    assert result.required_tools == []
+    assert "required_tools" not in result.model_dump()
 
 
 async def test_follow_up_with_summary_is_troubleshooting():

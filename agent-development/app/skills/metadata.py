@@ -16,6 +16,7 @@ REQUIRED_SKILL_METADATA_FIELDS = (
     "agent",
     "intent_tags",
     "required_entities",
+    "optional_entities",
     "private_tools",
     "enabled",
     "is_default",
@@ -24,7 +25,7 @@ REQUIRED_SKILL_METADATA_FIELDS = (
 
 def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Parse the simple YAML frontmatter used by project skills."""
-    normalized = text.replace("\r\n", "\n")
+    normalized = text.replace("\r\n", "\n").lstrip("\ufeff")
     if not normalized.startswith("---\n"):
         return {}, normalized
     end = normalized.find("\n---", 4)
@@ -51,6 +52,7 @@ def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata:
         agent=str(data["agent"]),
         intent_tags=[str(item) for item in data["intent_tags"]],
         required_entities=[str(item) for item in data["required_entities"]],
+        optional_entities=[str(item) for item in data["optional_entities"]],
         private_tools=[str(item) for item in data["private_tools"]],
         enabled=_as_bool(data["enabled"]),
         is_default=_as_bool(data["is_default"]),
@@ -67,7 +69,7 @@ def validate_skill_frontmatter(data: dict[str, Any], path: Path) -> None:
     missing = [field for field in REQUIRED_SKILL_METADATA_FIELDS if field not in data]
     if missing:
         raise ValueError(f"{path} missing required Skill metadata fields: {missing}")
-    for field in ("intent_tags", "required_entities", "private_tools"):
+    for field in ("intent_tags", "required_entities", "optional_entities", "private_tools"):
         if not isinstance(data[field], list):
             raise ValueError(f"{path} field {field} must be a list")
     if not data["intent_tags"]:

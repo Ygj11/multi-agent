@@ -85,8 +85,10 @@ class SkillSelector:
                 context.short_summary or "",
                 context.recent_messages_summary or "",
                 " ".join(context.lightweight_knowledge_hints),
+                " ".join(str(value) for value in context.entities.values()),
                 context.extracted_error_code or "",
                 context.extracted_interface_name or "",
+                context.sub_intent or "",
             ]
         ).lower()
         skill_text = " ".join(
@@ -95,6 +97,8 @@ class SkillSelector:
                 skill.name,
                 skill.description,
                 " ".join(skill.intent_tags),
+                " ".join(skill.required_entities),
+                " ".join(skill.optional_entities),
                 " ".join(skill.required_context),
                 " ".join(skill.business_domain),
             ]
@@ -103,6 +107,10 @@ class SkillSelector:
         if context.intent and any(context.intent.lower() == tag.lower() for tag in skill.intent_tags):
             score += 3
             reasons.append(f"intent tag matched: {context.intent}")
+
+        if context.sub_intent and any(context.sub_intent.lower() == tag.lower() for tag in skill.intent_tags):
+            score += 3
+            reasons.append(f"sub_intent tag matched: {context.sub_intent}")
 
         for tag in skill.intent_tags:
             tag_text = tag.lower()
@@ -114,6 +122,16 @@ class SkillSelector:
             if token and token in skill.description.lower():
                 score += 1
                 reasons.append(f"description keyword matched: {token}")
+
+        for entity_type in skill.required_entities:
+            if context.entities.get(entity_type):
+                score += 2
+                reasons.append(f"required entity present: {entity_type}")
+
+        for entity_type in skill.optional_entities:
+            if context.entities.get(entity_type):
+                score += 1
+                reasons.append(f"optional entity present: {entity_type}")
 
         for required in skill.required_context:
             if self._has_required_context(context, required):
@@ -146,7 +164,7 @@ class SkillSelector:
     def _has_required_context(context: SkillSelectionContext, required: str) -> bool:
         """判断 required_context 是否在上下文中存在。"""
         mapping = {
-            "request_id": context.extracted_request_id or context.request_id,
+            "request_id": context.extracted_request_id,
             "error_code": context.extracted_error_code,
             "interface_name": context.extracted_interface_name,
             "short_summary": context.short_summary,

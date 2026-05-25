@@ -1,4 +1,4 @@
----
+﻿---
 skill_id: troubleshooting_agent.missing_field
 name: ??????
 description: ???? submitProposal ??????????????appId ???????????????
@@ -9,7 +9,10 @@ intent_tags:
   - ????
   - ??
   - submitProposal
-required_entities: []
+required_entities:
+  - interface_name
+optional_entities:
+  - error_code
 
 private_tools:
   - query_internal_log
@@ -31,3 +34,5 @@ required_context:
 2. 对照接口文档或知识库中的字段要求。
 3. 检查渠道报文字段映射、空值处理和字段命名大小写。
 4. 输出缺失字段、影响接口、疑似责任方和补充字段建议。
+
+

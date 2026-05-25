@@ -1,4 +1,4 @@
----
+﻿---
 skill_id: policy_query_agent.default
 name: ????????
 description: ????????????????????????????
@@ -9,6 +9,9 @@ intent_tags:
   - product_rule_qa
 required_entities:
   - policy_no
+optional_entities:
+  - product_code
+  - insured_name
 
 private_tools:
   - query_policy_info
@@ -21,3 +24,5 @@ is_default: true
 2. Query basic policy information.
 3. Query policy status.
 4. Summarize only user-safe fields.
+
+

@@ -24,4 +24,5 @@ async def test_rewrite_follow_up_uses_context():
         "那这个一般是谁的问题？",
         short_summary="上一轮讨论 requestId=REQ_001 的 submitProposal E102 问题。",
     )
-    assert result.rewritten_query == "继续排查上一轮 requestId 的 E102 签名校验失败问题，并判断问题归属"
+    assert result.rewritten_query == "继续排查上一轮 requestId=REQ_001 的 E102 签名校验失败问题，并判断问题归属"
+    assert result.inherited_entities["request_id"] == "REQ_001"

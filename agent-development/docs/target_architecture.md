@@ -71,6 +71,19 @@ The orchestrator context uses:
 
 Sub agents can perform deeper retrieval through public tools such as `rag_search_tool` and `get_knowledge` when their AgentCard allows public tools.
 
+## Entity Understanding And Routing
+
+The current implementation uses a three-layer entity and routing design:
+
+- Generic entity extraction lives in `app/query/entity_extractor.py` and reads configurable patterns from `app/query/entity_patterns.yaml`.
+- Runtime entity state is dynamic: `app/schemas/entities.py::EntityBag` stores arbitrary entity types as `dict[str, list[EntityMention]]`. `ConversationWindow` does not grow business-specific top-level fields such as `last_policy_no` or `last_claim_no`.
+- AgentCards declare coarse routing needs with `required_entities` and `optional_entities` in `app/agents/cards/*.yaml`.
+- Skills declare fine-grained execution requirements with `required_entities` and `optional_entities` in `app/skills/*/*/SKILL.md`.
+
+Routing is hybrid rather than pure rules or pure LLM. `AgentCardLoader.match_candidates` performs deterministic Top-K recall using intent, sub_intent, entities, capabilities, descriptions, and examples. `AgentSelectionNode` directly selects the rule winner when it is clearly ahead. When scores are close, intent confidence is low, or the query is a complex follow-up, `LLMAgentRouter` re-ranks only the Top-K AgentCard summaries. It does not receive all tool schemas, all Skill bodies, or private agent prompts.
+
+If QueryRewrite, IntentRecognition, AgentSelection, or Skill required entity checking needs clarification, the graph returns a clarification answer through `final_compliance_check` instead of dispatching a sub agent or calling tools prematurely.
+
 ## MCP Client Tools
 
 The platform is an MCP client / consumer. MCP server capabilities are discovered during FastAPI lifespan startup through `MCPClientManager.initialize()`, cached in `MCPCapabilityRegistry`, and registered into `ToolRegistry` as external tools with `source="mcp"`.

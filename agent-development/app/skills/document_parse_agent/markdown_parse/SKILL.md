@@ -1,4 +1,4 @@
----
+﻿---
 skill_id: document_parse_agent.markdown_parse
 name: Markdown ????
 description: ???? markdown ?????????????????
@@ -8,6 +8,8 @@ intent_tags:
   - markdown_parse
   - markdown
 required_entities: []
+optional_entities:
+  - document_type
 
 private_tools: []
 enabled: true
@@ -21,3 +23,5 @@ required_context:
 # Markdown 文档解析 Skill
 
 解析 markdown 文档结构，提取标题、表格字段、列表项和代码块中的接口信息。
+
+

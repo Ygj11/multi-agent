@@ -8,6 +8,11 @@ capabilities:
 supported_intents:
   - change_impact_analysis
 required_entities: []
+optional_entities:
+  - interface_name
+  - error_code
+  - field_name
+  - api_name
 output_schema: SubAgentResult
 private_tools: []
 public_tools_allowed: true

@@ -9,10 +9,12 @@ from typing import Any
 from app.knowledge.service import KnowledgeService
 from app.observability.logger import log_event
 from app.schemas.runtime import OrchestratorContext, SubAgentContext
+from app.schemas.entities import EntityBag
 from app.schemas.skill import SkillSelectionContext
 from app.schemas.subagent import SubAgentTask
 from app.skills.catalog import SkillCatalog
 from app.skills.loader import SkillLoader
+from app.skills.required_entities import RequiredEntityChecker
 from app.skills.selector import SkillSelector
 
 
@@ -32,6 +34,7 @@ class ContextBuilder:
         self.skill_catalog = skill_catalog or SkillCatalog(skills_root)
         self.skill_loader = SkillLoader(self.skill_catalog)
         self.skill_selector = skill_selector or SkillSelector()
+        self.required_entity_checker = RequiredEntityChecker()
 
     async def build_for_orchestrator(
         self,
@@ -39,7 +42,10 @@ class ContextBuilder:
         original_query: str,
         rewritten_query: str,
         intent: str,
+        sub_intent: str | None = None,
         entities: dict[str, Any] | None = None,
+        entity_bag: dict[str, Any] | None = None,
+        conversation_window: dict[str, Any] | None = None,
         session_key: str,
         recent_messages: list[dict[str, Any]],
         short_summary: str | None,
@@ -57,7 +63,10 @@ class ContextBuilder:
             original_query=original_query,
             rewritten_query=rewritten_query,
             intent=intent,
+            sub_intent=sub_intent,
             entities=entities or {},
+            entity_bag=entity_bag or {},
+            conversation_window=conversation_window or {},
             session_key=session_key,
             recent_messages=compact_recent_messages,
             short_summary=short_summary,
@@ -76,7 +85,11 @@ class ContextBuilder:
     ) -> SubAgentContext:
         """构建子 Agent 深度执行所需的任务级上下文。"""
         selection_context = self.build_skill_selection_context(task=task, parent_context=parent_context)
+        agent_card_data = task.metadata.get("agent_card")
+        allowed_skill_ids = set(agent_card_data.get("skills", [])) if isinstance(agent_card_data, dict) else set()
         candidates = self.skill_catalog.list_skills(task.name)
+        if allowed_skill_ids:
+            candidates = [candidate for candidate in candidates if candidate.skill_id in allowed_skill_ids]
         log_event(
             "skill_candidates_built",
             request_id=task.metadata.get("request_id"),
@@ -92,12 +105,47 @@ class ContextBuilder:
                 context=selection_context,
                 candidates=candidates,
             )
-            loaded_skill = self.skill_loader.load(selection.selected_skill_id)
-            skill_content = loaded_skill.content
-            task.metadata["selected_skill_id"] = selection.selected_skill_id
             task.metadata["skill_selection_score"] = selection.score
             task.metadata["skill_selection_reason"] = selection.reason
-            task.metadata["selected_skill_metadata"] = selection.selected_skill_metadata.model_dump()
+            task.metadata["skill_selection_fallback"] = selection.fallback
+            if selection.fallback:
+                skill_content = (
+                    "No specific Skill matched confidently. Use the AgentCard, user query, "
+                    "conversation context, and visible tools to reason and answer."
+                )
+                entity_check = None
+                task.metadata["selected_skill_id"] = None
+                task.metadata["selected_skill_metadata"] = None
+                task.metadata["missing_required_entities"] = []
+                task.metadata["need_clarification"] = False
+                task.metadata["clarification_question"] = None
+                log_event(
+                    "skill_fallback_generic_execution",
+                    request_id=task.metadata.get("request_id"),
+                    trace_id=task.metadata.get("trace_id"),
+                    session_key=task.session_key,
+                    node="context_builder",
+                    message="No confident skill match; continue with generic subagent execution",
+                    data={"agent_name": task.name, "fallback_skill_id": selection.selected_skill_id, "reason": selection.reason},
+                )
+            else:
+                loaded_skill = self.skill_loader.load(selection.selected_skill_id)
+                entity_bag = EntityBag(**parent_context.entity_bag) if parent_context.entity_bag else EntityBag()
+                entity_bag.merge(EntityBag.from_compact_dict(task.entities, source="rule", confidence=0.9))
+                entity_check = self.required_entity_checker.check(
+                    skill=selection.selected_skill_metadata,
+                    entities=task.entities,
+                    entity_bag=entity_bag,
+                )
+                task.entities = entity_check.entities
+                skill_content = loaded_skill.content
+                task.metadata["selected_skill_id"] = selection.selected_skill_id
+                task.metadata["selected_skill_metadata"] = selection.selected_skill_metadata.model_dump()
+                task.metadata["missing_required_entities"] = entity_check.missing_required_entities
+                task.metadata["need_clarification"] = entity_check.need_clarification
+                task.metadata["clarification_question"] = entity_check.clarification_question
+            task.metadata["skill_selection_score"] = selection.score
+            task.metadata["skill_selection_reason"] = selection.reason
             log_event(
                 "skill_content_loaded",
                 request_id=task.metadata.get("request_id"),
@@ -116,6 +164,7 @@ class ContextBuilder:
             # 兼容旧目录，避免迁移中断；新子 Agent skill 应全部来自 SkillCatalog。
             skill_content = self._read_skill(self._skill_name_for_task(task.name))
             selection = None
+            entity_check = None
         mock_knowledge_hint = await self._build_subagent_knowledge_hint(parent_context.rewritten_query)
         troubleshooting_context = [
             message
@@ -128,10 +177,13 @@ class ContextBuilder:
             intent=parent_context.intent,
             allowed_tools=allowed_tools,
             skill_content=skill_content,
-            selected_skill_id=selection.selected_skill_id if selection else None,
-            selected_skill_metadata=selection.selected_skill_metadata.model_dump() if selection else None,
+            selected_skill_id=selection.selected_skill_id if selection and not selection.fallback else None,
+            selected_skill_metadata=selection.selected_skill_metadata.model_dump() if selection and not selection.fallback else None,
             skill_selection_score=selection.score if selection else None,
             skill_selection_reason=selection.reason if selection else None,
+            missing_required_entities=entity_check.missing_required_entities if entity_check else [],
+            need_clarification=entity_check.need_clarification if entity_check else False,
+            clarification_question=entity_check.clarification_question if entity_check else None,
             mock_knowledge_hint=mock_knowledge_hint,
             recent_troubleshooting_context=troubleshooting_context,
         )
@@ -148,9 +200,12 @@ class ContextBuilder:
         context = SkillSelectionContext(
             agent_name=task.name,
             intent=task.intent,
+            sub_intent=parent_context.sub_intent,
             original_query=task.original_query,
             rewritten_query=parent_context.rewritten_query,
             session_key=task.session_key,
+            entities=task.entities,
+            entity_bag=parent_context.entity_bag,
             short_summary=parent_context.short_summary,
             recent_messages_summary=recent_summary[:1000],
             lightweight_knowledge_hints=parent_context.lightweight_knowledge_hints,

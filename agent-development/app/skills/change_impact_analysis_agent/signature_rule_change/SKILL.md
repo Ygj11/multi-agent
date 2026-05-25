@@ -1,4 +1,4 @@
----
+﻿---
 skill_id: change_impact_analysis_agent.signature_rule_change
 name: ??????????
 description: ???? timestamp?base string???????????????????????????
@@ -9,7 +9,10 @@ intent_tags:
   - ????
   - timestamp
   - E102
-required_entities: []
+required_entities:
+  - interface_name
+optional_entities:
+  - error_code
 
 private_tools: []
 enabled: true
@@ -24,3 +27,5 @@ required_context:
 # 签名规则变更影响分析 Skill
 
 分析签名规则变更对 submitProposal、E102、渠道联调、回归测试和排障知识的影响。
+
+

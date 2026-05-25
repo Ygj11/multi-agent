@@ -10,8 +10,14 @@ supported_intents:
   - troubleshooting
   - refund_failure
   - callback_failure
-required_entities:
+required_entities: []
+optional_entities:
+  - policy_no
   - request_id
+  - error_code
+  - interface_name
+  - task_id
+  - node_name
 output_schema: SubAgentResult
 private_tools:
   - query_task_status
@@ -25,6 +31,7 @@ mcp_tool_scopes:
   - mcp.workflow
 skills:
   - troubleshooting_agent.signature_error
+  - troubleshooting_agent.refund_failure
   - troubleshooting_agent.missing_field
   - troubleshooting_agent.callback_failure
 rag_namespaces:

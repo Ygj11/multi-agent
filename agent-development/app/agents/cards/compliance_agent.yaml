@@ -9,6 +9,10 @@ supported_intents:
   - compliance_review
   - privacy_review
 required_entities: []
+optional_entities:
+  - text_snippet
+  - sensitive_type
+  - risk_level
 output_schema: SubAgentResult
 private_tools: []
 public_tools_allowed: false

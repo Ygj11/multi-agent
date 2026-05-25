@@ -55,29 +55,50 @@ class AgentCardLoader:
         intent: str,
         entities: dict[str, Any],
         query: str,
+        sub_intent: str | None = None,
     ) -> list[AgentCandidate]:
         """Score cards using intent, entity, capability, keyword, and enabled signals."""
         candidates: list[AgentCandidate] = []
         query_l = query.lower()
-        entity_keys = {key for key, value in entities.items() if value}
+        entity_keys = {key for key, value in entities.items() if value not in (None, "", [])}
 
         for card in self.list_available_agents():
             score = 0.0
             reasons: list[str] = []
             missing_entities = [name for name in card.required_entities if name not in entity_keys]
+            matched_entities: list[str] = []
 
             if intent in card.supported_intents:
-                score += 5
+                score += 6
                 reasons.append(f"intent matched: {intent}")
+            elif intent != "unknown" and intent in " ".join(card.capabilities + [card.description]):
+                score += 2
+                reasons.append(f"intent keyword matched capability: {intent}")
+
+            if sub_intent:
+                card_subintent_text = " ".join(card.supported_intents + card.capabilities + [card.description]).lower()
+                if sub_intent.lower() in card_subintent_text:
+                    score += 2
+                    reasons.append(f"sub_intent matched: {sub_intent}")
 
             if card.required_entities:
                 matched = len(card.required_entities) - len(missing_entities)
-                score += matched * 2
+                score += matched * 2.5
                 if matched:
+                    matched_entities.extend([name for name in card.required_entities if name in entity_keys])
                     reasons.append(f"required entities matched: {matched}")
+                if missing_entities:
+                    score -= len(missing_entities) * 1.5
+                    reasons.append(f"required entities missing: {missing_entities}")
             else:
                 score += 1
                 reasons.append("no required entities")
+
+            optional_matches = [name for name in card.optional_entities if name in entity_keys]
+            if optional_matches:
+                matched_entities.extend(optional_matches)
+                score += len(optional_matches) * 1.2
+                reasons.append(f"optional entities matched: {optional_matches}")
 
             for capability in card.capabilities:
                 normalized = capability.replace("_", " ").lower()
@@ -92,7 +113,9 @@ class AgentCardLoader:
                     card.description,
                     " ".join(card.capabilities),
                     " ".join(card.supported_intents),
+                    " ".join(card.optional_entities),
                     " ".join(card.rag_namespaces),
+                    " ".join(str(example.get("query", "")) for example in card.examples),
                 ]
             ).lower()
             for token in _tokens(query):
@@ -111,10 +134,11 @@ class AgentCardLoader:
                     score=score,
                     reason="; ".join(reasons) or "no match",
                     missing_entities=missing_entities,
+                    matched_entities=sorted(set(matched_entities)),
                 )
             )
 
-        candidates.sort(key=lambda item: item.score, reverse=True)
+        candidates.sort(key=lambda item: (-item.score, item.agent_name))
         return candidates
 
     def validate_with_skill_catalog(self, skill_catalog: SkillCatalog) -> None:

@@ -1,0 +1,77 @@
+version: "1.0.0"
+
+patterns:
+  - entity_type: request_id
+    description: 请求流水号，例如 REQ_001、REQ-20240501-0001
+    regex:
+      - "\\bREQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+)\\b"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.95
+
+  - entity_type: error_code
+    description: 错误码，例如 E102、ERR_500、ERROR-1001
+    regex:
+      - "\\bE\\d{3,6}\\b"
+      - "\\bERR[_-]?\\d{3,6}\\b"
+      - "\\bERROR[_-]?\\d{3,6}\\b"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.9
+
+  - entity_type: policy_no
+    description: 保单号
+    regex:
+      - "(?:保单(?:号)?[:：]?\\s*|policy[_-]?no[:：]?\\s*)([A-Za-z0-9]{6,20})(?![A-Za-z0-9])"
+      - "(?<![A-Za-z0-9])P\\d{6,}(?![A-Za-z0-9])"
+      - "(?<![A-Za-z0-9])\\d{10,20}(?![A-Za-z0-9])"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.85
+
+  - entity_type: claim_no
+    description: 理赔号
+    regex:
+      - "\\bCLM[_-]?[A-Za-z0-9_-]+\\b"
+      - "\\bCLAIM[_-]?[A-Za-z0-9_-]+\\b"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.9
+
+  - entity_type: interface_name
+    description: 接口名，例如 submitProposal、callbackNotify
+    regex:
+      - "\\b[a-z][A-Za-z0-9_]*(?:Api|API|Service|Callback|Notify|Proposal|Policy|Claim)?\\b"
+    keyword_allowlist:
+      - submitProposal
+      - callbackNotify
+      - refundCallback
+      - policyQuery
+      - claimQuery
+    normalized_type: string
+    sensitive: false
+    confidence: 0.75
+
+  - entity_type: product_code
+    description: 产品编码
+    regex:
+      - "\\bPROD[_-]?[A-Za-z0-9_-]+\\b"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.85
+
+  - entity_type: phone_number
+    description: 手机号
+    regex:
+      - "(?<!\\d)1[3-9]\\d{9}(?!\\d)"
+    normalized_type: string
+    sensitive: true
+    confidence: 0.95
+
+  - entity_type: id_card
+    description: 身份证号
+    regex:
+      - "(?<!\\d)\\d{17}[0-9Xx](?!\\d)"
+    normalized_type: string
+    sensitive: true
+    confidence: 0.95

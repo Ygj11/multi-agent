@@ -44,6 +44,20 @@ class BaseSubAgent(ABC):
             parent_context=parent_context,
             allowed_tools=allowed_tools,
         )
+        if sub_context.need_clarification:
+            return SubAgentResult(
+                name=self.name,
+                agent_name=self.name,
+                task_id=task.task_id,
+                answer=sub_context.clarification_question or "请补充必要信息后我再继续处理。",
+                confidence=0.4,
+                risk_level="low",
+                metadata={"clarification": True},
+                selected_skill_id=sub_context.selected_skill_id,
+                selected_skill_metadata=sub_context.selected_skill_metadata,
+                skill_selection_score=sub_context.skill_selection_score,
+                skill_selection_reason=sub_context.skill_selection_reason,
+            )
         if self.use_tool_calling_runner and self.tool_calling_runner is not None and agent_card is not None:
             self._log_runner_started(task)
             messages = self.build_messages(

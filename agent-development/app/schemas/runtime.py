@@ -13,7 +13,10 @@ class OrchestratorContext(BaseModel):
     original_query: str
     rewritten_query: str
     intent: str
+    sub_intent: str | None = None
     entities: dict[str, Any] = Field(default_factory=dict)
+    entity_bag: dict[str, Any] = Field(default_factory=dict)
+    conversation_window: dict[str, Any] = Field(default_factory=dict)
     session_key: str
     recent_messages: list[dict[str, Any]] = Field(default_factory=list)
     short_summary: str | None = None
@@ -35,5 +38,8 @@ class SubAgentContext(BaseModel):
     selected_skill_metadata: dict[str, Any] | None = None
     skill_selection_score: float | None = None
     skill_selection_reason: str | None = None
+    missing_required_entities: list[str] = Field(default_factory=list)
+    need_clarification: bool = False
+    clarification_question: str | None = None
     mock_knowledge_hint: str | None = None
     recent_troubleshooting_context: list[dict[str, Any]] = Field(default_factory=list)

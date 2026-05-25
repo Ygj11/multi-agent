@@ -19,10 +19,17 @@ class AgentGraphState(TypedDict, total=False):
     original_query: str
     rewritten_query: str
     intent: str
+    sub_intent: str | None
     confidence: float
     entities: dict[str, Any]
+    entity_bag: dict[str, Any]
+    conversation_window: dict[str, Any]
+    is_follow_up: bool
     target_subagent: str | None
-    required_tools: list[str]
+    need_clarification: bool
+    clarification_question: str | None
+    clarification_source: str | None
+    missing_required_entities: list[str]
 
     recent_messages: list[dict[str, Any]]
     short_summary: str | None

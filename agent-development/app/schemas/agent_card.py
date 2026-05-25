@@ -23,6 +23,7 @@ class AgentCard(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     supported_intents: list[str] = Field(default_factory=list)
     required_entities: list[str] = Field(default_factory=list)
+    optional_entities: list[str] = Field(default_factory=list)
     output_schema: str
     private_tools: list[str] = Field(default_factory=list)
     public_tools_allowed: bool = False
@@ -53,6 +54,7 @@ class AgentCandidate(BaseModel):
     score: float
     reason: str
     missing_entities: list[str] = Field(default_factory=list)
+    matched_entities: list[str] = Field(default_factory=list)
 
 
 class AgentSelectionResult(BaseModel):
@@ -65,3 +67,6 @@ class AgentSelectionResult(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "low"
     candidates: list[AgentCandidate] = Field(default_factory=list)
     fallback: bool = False
+    selection_method: Literal["rule", "llm_router", "fallback"] = "rule"
+    need_clarification: bool = False
+    clarification_question: str | None = None

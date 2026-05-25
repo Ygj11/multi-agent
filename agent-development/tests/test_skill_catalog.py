@@ -93,6 +93,7 @@ agent: demo_agent
 intent_tags:
   - demo
 required_entities: []
+optional_entities: []
 
 private_tools: []
 enabled: false

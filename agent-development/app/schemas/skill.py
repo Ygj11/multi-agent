@@ -16,6 +16,7 @@ class SkillMetadata(BaseModel):
     agent: str
     intent_tags: list[str]
     required_entities: list[str]
+    optional_entities: list[str] = Field(default_factory=list)
     private_tools: list[str]
     enabled: bool
     is_default: bool
@@ -51,9 +52,12 @@ class SkillSelectionContext(BaseModel):
 
     agent_name: str
     intent: str
+    sub_intent: str | None = None
     original_query: str
     rewritten_query: str
     session_key: str
+    entities: dict[str, Any] = Field(default_factory=dict)
+    entity_bag: dict[str, Any] = Field(default_factory=dict)
     short_summary: str | None = None
     recent_messages_summary: str | None = None
     lightweight_knowledge_hints: list[str] = Field(default_factory=list)
@@ -74,3 +78,6 @@ class SkillSelectionResult(BaseModel):
     score: float
     reason: str
     fallback: bool = False
+    missing_required_entities: list[str] = Field(default_factory=list)
+    need_clarification: bool = False
+    clarification_question: str | None = None

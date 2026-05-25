@@ -1,4 +1,4 @@
----
+﻿---
 skill_id: document_parse_agent.api_doc_parse
 name: ??????
 description: ???? submitProposal ??????????????????????????????
@@ -8,7 +8,11 @@ intent_tags:
   - api_doc_parse
   - ????
   - submitProposal
-required_entities: []
+required_entities:
+  - interface_name
+optional_entities:
+  - document_type
+  - field_name
 
 private_tools: []
 enabled: true
@@ -22,3 +26,5 @@ required_context:
 # 接口文档解析 Skill
 
 解析接口文档中的标题、接口名、字段、错误码和签名规则说明，输出结构化摘要。
+
+

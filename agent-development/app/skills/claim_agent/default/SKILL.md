@@ -1,4 +1,4 @@
----
+﻿---
 skill_id: claim_agent.default
 name: ????????
 description: ????????????????????????????
@@ -8,6 +8,8 @@ intent_tags:
   - claim_progress
 required_entities:
   - claim_no
+optional_entities:
+  - policy_no
 
 private_tools:
   - query_claim_case
@@ -20,3 +22,5 @@ is_default: true
 2. Query claim case state.
 3. Query claim progress.
 4. Return a concise answer with evidence and avoid exposing raw internal payloads.
+
+
