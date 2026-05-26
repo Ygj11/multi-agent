@@ -23,4 +23,4 @@ is_default: false
 3. 判断文本是否适合直接外发给渠道、合作方或第三方。
 4. 给出最小必要、脱敏、授权确认、接收方范围控制等建议。
 5. 当前阶段不调用真实 DLP、权限、审计或外部合规系统。
-6. 如需工具能力，必须通过 SubAgentManager 分派后的 ToolBroker / PolicyGate 调用，不允许绕过工具代理。
+6. 如需工具能力，必须通过 SubAgentManager 分派后的 ToolCallingRunner / ToolExecutor 调用，不允许绕过工具执行器。

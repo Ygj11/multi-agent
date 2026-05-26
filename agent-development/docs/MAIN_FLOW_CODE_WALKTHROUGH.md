@@ -134,7 +134,7 @@ flowchart TD
 | FastAPI | 提供 `/api/chat` HTTP 入口和 lifespan 初始化 | `app/main.py::create_app` |
 | LangGraph / StateGraph | 主 Agent 任务级状态机编排，节点顺序和合规条件路由都在图里 | `app/runtime/graph.py::AgentGraphFactory.build` |
 | Pydantic | 请求、响应、AgentCard、SubAgentTask、SubAgentResult、Skill、MCP、tool schema 校验 | `app/schemas/*`，`app/mcp/schemas.py` |
-| SQLite | 持久化 messages、short_term_memory、graph_checkpoints、tool_call_logs、tool_execution_logs | `app/storage/sqlite.py::SQLiteDatabase.initialize` |
+| SQLite | 持久化 messages、short_term_memory、graph_checkpoints、tool_execution_logs、approval_requests、approval_events | `app/storage/sqlite.py::SQLiteDatabase.initialize` |
 | AgentCard | 描述子 Agent 能力、intent、实体需求、工具可见性、skills、RAG namespace、memory_policy | `app/schemas/agent_card.py`，`app/agents/cards/*.yaml` |
 | YAML | AgentCard 和 Skill frontmatter 的轻量配置格式 | `app/agents/card_loader.py::_parse_card_yaml`，`app/skills/metadata.py::split_frontmatter` |
 | EntityBag / EntityExtractor | 动态实体容器和通用实体抽取；规则来自 YAML，不写死在 ConversationWindow 顶层 | `app/schemas/entities.py`，`app/query/entity_extractor.py`，`app/query/entity_patterns.yaml` |
@@ -283,7 +283,6 @@ check_human_approval_required
 | 旧 `route_intent/direct_answer/call_troubleshooting_agent` 节点 | 当前没有这些节点，测试 `tests/test_langgraph_flow.py` 也断言它们不在 graph path | 主流程已经升级为 AgentCard 选择和统一 dispatch。 |
 | `app/api/*` | 当前不存在 | `/api/chat` 路由在 `app/main.py`。 |
 | `app/subagents/agent_card_loader.py` | 当前不存在 | AgentCard loader 在 `app/agents/card_loader.py`。 |
-| FakeLLMProvider 默认启用 | 当前 `create_app` 默认由 `build_llm_provider` 返回 `InternalLLMProvider`，未配置 URL 时使用本地 fallback；`FakeLLMProvider` 主要用于测试/隔离 | 若架构要求“默认 FakeLLMProvider”，代码与要求不一致。 |
 | QueryRewrite / IntentRecognition LLM JSON | 当前两个节点已支持 LLM JSON；LLM 不可用或 JSON 非法时走新 EntityExtractor/规则 fallback | 文档不能再写成旧固定规则主路径。 |
 | ToolBroker / PolicyGate 主路径 | 当前 `ToolCallingRunner` 直接调用 `ToolExecutor` | 文档需说明 PolicyGate 存在但非主工具循环路径。 |
 | 人工审批 | 当前已接入完整 pending/callback/resume 闭环 | 写工具不再只是 fail-closed，而是由 `approval_requests` 持久化并等待 callback。 |
@@ -576,7 +575,7 @@ LLM 抽象在 `app/llm/base.py::LLMProvider`。当前实现包括：
 | 内部数智 LLM | `app/llm/internal_provider.py::InternalLLMProvider` | `build_llm_provider` 默认返回；配置 `INTERNAL_LLM_API_URL` 时走 HTTP，未配置时使用本地 deterministic fallback。 |
 | OpenSDK / OpenAI-compatible | `app/llm/opensdk_provider.py::OpenSDKLLMProvider` | `ENABLE_OPENSDK_LLM=true` 时启用。 |
 | OpenAI-compatible 旧实现 | `app/llm/openai_provider.py` | 代码保留。 |
-| Fake provider | `app/llm/fake_provider.py::FakeLLMProvider` | 主要用于测试。 |
+| Fake provider | `app/llm/fake_provider.py::FakeLLMProvider` | 当前 `create_app()` 不注入它；默认链路使用 `InternalLLMProvider`，未配置 URL 时由 `InternalLLMProvider` 自己提供本地 deterministic fallback。 |
 
 切换入口在 `app/llm/factory.py::build_llm_provider`，配置字段在 `app/config/settings.py::Settings`。model 不应该写死在业务节点里；scene 模型选择在 `app/llm/model_config.py::SCENE_MODEL_FIELDS`，当前 scene 包括：`query_rewrite`、`intent_recognition`、`agent_selection`、`subagent_reasoning`、`final_compliance`、`summary`。
 

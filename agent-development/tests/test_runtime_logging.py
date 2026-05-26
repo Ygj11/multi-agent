@@ -10,13 +10,11 @@ from app.config.settings import Settings
 from app.knowledge.in_memory_service import InMemoryKnowledgeService
 from app.observability.logger import LOGGER_NAME
 from app.schemas.tool import ToolCall
-from app.tools.audit_store import ToolCallLogStore
 from app.tools.broker import ToolBroker
 from app.tools.builtin_tools import build_get_knowledge_tool
 from app.tools.policy_gate import PolicyGate
 from app.tools.registry import ToolRegistry
 from app.tools.shell_exec_tool import ShellExecTool
-from app.storage.sqlite import SQLiteDatabase
 
 
 def _events(caplog) -> list[dict]:
@@ -85,13 +83,11 @@ def test_api_chat_emits_runtime_execution_events(app_factory, caplog):
 async def test_shell_exec_rejected_emits_runtime_logs(tmp_path, caplog):
     """shell_exec 被拒绝时也应输出工具链路日志。"""
     caplog.set_level(logging.INFO, logger=LOGGER_NAME)
-    db = SQLiteDatabase(tmp_path / "runtime_log.sqlite3")
     registry = ToolRegistry()
     registry.register("shell_exec", ShellExecTool(Path.cwd()))
     broker = ToolBroker(
         registry=registry,
         policy_gate=PolicyGate(Settings(enable_shell_exec=False)),
-        audit_store=ToolCallLogStore(db=db),
     )
 
     result = await broker.call(

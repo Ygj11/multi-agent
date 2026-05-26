@@ -85,5 +85,5 @@ async def test_change_impact_analysis_agent_uses_knowledge_tool(app_factory):
     assert "timestamp" in body["answer"]
     assert "get_knowledge" in body["answer"]
 
-    logs = await app.state.tool_call_log_store.list_by_session(body["session_key"])
+    logs = await app.state.tool_execution_log_store.list_by_session(body["session_key"])
     assert any(item["tool_name"] == "get_knowledge" for item in logs)

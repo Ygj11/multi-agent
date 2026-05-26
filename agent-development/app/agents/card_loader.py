@@ -65,6 +65,7 @@ class AgentCardLoader:
         for card in self.list_available_agents():
             score = 0.0
             reasons: list[str] = []
+            # 实体包中，卡片缺失的实体
             missing_entities = [name for name in card.required_entities if name not in entity_keys]
             matched_entities: list[str] = []
 

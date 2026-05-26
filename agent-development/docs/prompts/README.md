@@ -17,8 +17,8 @@
 | Query rewrite prompt | 当前未使用 prompt | `QueryRewriteNode` 当前是规则实现；`app/skills/query_rewrite/SKILL.md` 是文档/skill 指令，不是运行时 prompt。 |
 | Intent recognition prompt | 当前未使用 prompt | `IntentRecognitionNode` 当前是关键词规则实现。 |
 | ContextBuilder prompt | 当前未拼接 system prompt | `ContextBuilder` 当前构建 Pydantic 上下文对象，不构造 LLM messages。 |
-| LLM provider messages | 接口预留 | `FakeLLMProvider` 和 `OpenAICompatibleLLMProvider` 接收 `messages`，但主链路当前没有实际调用 LLM provider。 |
-| Tool / MCP prompt | 当前未使用 prompt | 工具调用是结构化 `ToolCall`，经 `ToolBroker / PolicyGate` 执行。 |
+| LLM provider messages | 真实运行时使用 | `InternalLLMProvider` 是默认 provider，未配置 `INTERNAL_LLM_API_URL` 时走本地 deterministic fallback；`OpenSDKLLMProvider` 在 `ENABLE_OPENSDK_LLM=true` 时启用。 |
+| Tool / MCP prompt | 真实运行时使用结构化 tool schema | 子 Agent 的工具循环由 `ToolCallingRunner` 调 LLM，工具执行统一进入 `ToolExecutor`。 |
 
 ## 哪些是真实运行时使用
 
@@ -61,4 +61,3 @@
 3. 为 query rewrite、intent recognition、final answer 分别定义 prompt id、version、input schema、output schema。
 4. 增加 prompt evaluation 测试集，先离线评估，再灰度启用。
 5. 支持 prompt rollback，确保 prompt 改动不会破坏现有规则回归测试。
-

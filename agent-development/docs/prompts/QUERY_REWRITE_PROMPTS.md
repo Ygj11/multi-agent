@@ -8,9 +8,9 @@
 
 ## 当前是否使用 Prompt
 
-当前 query 改写没有调用 LLM prompt，是规则实现。
+当前 query 改写优先通过注入的 `LLMProvider` 调用 `scene="query_rewrite"`；模型不可用或 JSON 非法时，回退到 EntityExtractor / EntityBag 规则逻辑。
 
-`QueryRewriteNode` 没有读取 `app/skills/query_rewrite/SKILL.md`，也没有调用 `FakeLLMProvider` 或 `OpenAICompatibleLLMProvider`。
+`QueryRewriteNode` 没有读取 `app/skills/query_rewrite/SKILL.md`；当前默认 provider 是 `InternalLLMProvider`，不是 `FakeLLMProvider`。
 
 ## 当前规则
 
@@ -117,4 +117,3 @@ known_business_terms:
 - 保留当前规则实现作为 fallback。
 - Prompt 版本变更必须有回归测试覆盖 `REQ_001`、`REQ_002` 和多轮追问。
 - 不要让 LLM 编造 requestId。
-

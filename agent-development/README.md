@@ -9,7 +9,7 @@
 - LangGraph StateGraph
 - Pydantic
 - SQLite 本地持久化
-- FakeLLMProvider 默认启用
+- InternalLLMProvider 默认启用；未配置 INTERNAL_LLM_API_URL 时走本地 deterministic fallback
 - InMemoryKnowledgeService 作为 RAG fallback
 - MCPClientManager 作为 MCP Client / Consumer 入口
 
@@ -571,7 +571,6 @@ messages
 short_term_memory
 graph_checkpoints
 tool_execution_logs
-tool_call_logs        # legacy 兼容表
 ```
 
 `messages` 的 metadata 会保留：
@@ -589,7 +588,7 @@ session_key
 
 ## 真实 LLM Provider
 
-默认使用 `FakeLLMProvider`，无需网络和 API key。
+默认使用 `InternalLLMProvider`。未配置 `INTERNAL_LLM_API_URL` 时，它会走本地 deterministic fallback，无需网络和 API key；`FakeLLMProvider` 不再是 `create_app()` 的默认注入对象。
 
 OpenAI-compatible Provider 已保留在：
 

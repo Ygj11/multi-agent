@@ -46,7 +46,7 @@ from app.subagents.manager import SubAgentManager
 from app.subagents.policy_query_agent import PolicyQueryAgent
 from app.subagents.troubleshooting_agent import TroubleshootingAgent
 from app.subagents.tool_calling_runner import ToolCallingRunner
-from app.tools.audit_store import ToolCallLogStore, ToolExecutionLogStore
+from app.tools.audit_store import ToolExecutionLogStore
 from app.tools.agent_tools import register_agent_private_tools
 from app.tools.http_tools import HTTPRequestTool, MCPHTTPCallTool
 from app.tools.executor import ToolExecutor
@@ -60,13 +60,12 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     settings = get_settings()
     db = SQLiteDatabase(sqlite_db_path or settings.sqlite_db_path)
     message_store = MessageStore(db=db)
-    short_memory = ShortTermMemoryManager(db=db)
+    llm_provider = build_llm_provider(settings)
+    short_memory = ShortTermMemoryManager(db=db, llm_provider=llm_provider)
     checkpoint_store = SQLiteCheckpointStore(db=db)
-    tool_call_log_store = ToolCallLogStore(db=db)
     tool_execution_log_store = ToolExecutionLogStore(db=db)
     approval_store = SQLiteApprovalStore(db=db)
     _long_memory = LongTermMemoryManager()
-    llm_provider = build_llm_provider(settings)
     knowledge_service = InMemoryKnowledgeService()
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
@@ -207,8 +206,6 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     app.state.message_store = message_store
     app.state.short_memory = short_memory
     app.state.checkpoint_store = checkpoint_store
-    app.state.legacy_tool_call_log_store = tool_call_log_store
-    app.state.tool_call_log_store = tool_execution_log_store
     app.state.tool_execution_log_store = tool_execution_log_store
     app.state.approval_store = approval_store
     app.state.approval_service = approval_service

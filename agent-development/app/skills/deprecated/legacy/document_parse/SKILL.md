@@ -23,4 +23,4 @@ is_default: false
 3. 当前阶段不解析 PDF、Word、图片或扫描件。
 4. 不接真实文档解析服务、OCR、对象存储或外部知识库。
 5. 不擅自推断文档版本有效性；对不确定的字段必须标记为待确认。
-6. 如未来需要解析工具，必须通过 SubAgentManager 分派后的 ToolBroker / PolicyGate 调用。
+6. 如未来需要解析工具，必须通过 SubAgentManager 分派后的 ToolCallingRunner / ToolExecutor 调用。

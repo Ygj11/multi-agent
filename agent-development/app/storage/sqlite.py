@@ -54,32 +54,6 @@ class SQLiteDatabase:
                     updated_at TEXT NOT NULL
                 );
 
-                CREATE TABLE IF NOT EXISTS tool_call_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    request_id TEXT,
-                    trace_id TEXT,
-                    session_key TEXT,
-                    tool_name TEXT NOT NULL,
-                    arguments_json TEXT NOT NULL,
-                    allowed INTEGER NOT NULL,
-                    success INTEGER NOT NULL,
-                    result_json TEXT,
-                    error TEXT,
-                    started_at TEXT NOT NULL,
-                    finished_at TEXT NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_tool_call_logs_session_created
-                ON tool_call_logs(session_key, created_at);
-
-                CREATE INDEX IF NOT EXISTS idx_tool_call_logs_trace
-                ON tool_call_logs(trace_id);
-
-                CREATE INDEX IF NOT EXISTS idx_tool_call_logs_request
-                ON tool_call_logs(request_id);
-
                 CREATE TABLE IF NOT EXISTS tool_execution_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     request_id TEXT,

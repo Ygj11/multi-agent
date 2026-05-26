@@ -165,7 +165,7 @@ Prompt 改动会影响路由、工具调用和回答质量，必须支持：
 
 - `ContextBuilder` 构造 subagent messages。
 - 子 Agent 使用 LLM 生成结构化计划或回答。
-- 工具调用仍必须经过 `ToolBroker / PolicyGate`。
+- 子 Agent 工具调用必须经过 `ToolCallingRunner / ToolExecutor`，由 ToolExecutor 做 AgentCard 可见性二次校验和执行日志记录。
 
 ### 阶段 6：Prompt Evaluation / Rollback
 
@@ -180,7 +180,6 @@ Prompt 改动会影响路由、工具调用和回答质量，必须支持：
 
 - 不要从 `docs/prompts` 读取运行时 prompt。
 - 不要删除当前规则实现。
-- 不要让 LLM 绕过 `ToolBroker / PolicyGate`。
+- 不要让 LLM 绕过 `ToolCallingRunner / ToolExecutor`。
 - 不要把所有业务规则塞进单个大 system prompt。
 - 不要一次性替换所有子 Agent 的规则逻辑。
-

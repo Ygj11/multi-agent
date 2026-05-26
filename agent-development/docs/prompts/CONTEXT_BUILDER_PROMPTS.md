@@ -168,7 +168,7 @@ allowed_tools:
 
 要求：
 1. 只能使用 allowed_tools 中的工具。
-2. 工具调用必须经过 ToolBroker / PolicyGate。
+2. 工具调用必须经过 ToolCallingRunner / ToolExecutor。
 3. 结论必须区分证据和推断。
 4. 输出必须包含 answer、diagnosis、evidence、recommendation、responsibility、confidence。
 ```
@@ -184,4 +184,3 @@ allowed_tools:
 ```
 
 该结构只是后续建议，当前未实现。
-

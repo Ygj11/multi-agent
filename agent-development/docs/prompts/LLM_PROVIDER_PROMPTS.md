@@ -1,125 +1,58 @@
 # LLM Provider Prompts
 
-## FakeLLMProvider 当前是否使用 Prompt
+## 当前默认 Provider
 
-当前 `FakeLLMProvider` 不使用真正的 prompt。
+当前 `app/main.py::create_app` 通过 `app/llm/factory.py::build_llm_provider` 创建全局 LLMProvider：
 
-代码位置：`app/llm/fake_provider.py`
-
-它的行为是：
-
-1. 接收 `messages: list[dict[str, str]]`。
-2. 把所有 `message.content` 拼接成一个字符串。
-3. 如果文本包含 `E102`，返回固定文本：
-   - `E102 通常表示签名校验失败，请检查 timestamp、密钥版本和字段排序。`
-4. 否则返回：
-   - `这是 FakeLLMProvider 的确定性回复。`
-
-这属于规则返回，不是 LLM prompt 推理。
-
-## FakeLLMProvider 是否在主链路使用
-
-当前 `app/main.py` 会实例化：
-
-```python
-_llm = FakeLLMProvider()
+```text
+ENABLE_OPENSDK_LLM=true -> OpenSDKLLMProvider
+其他情况 -> InternalLLMProvider
 ```
 
-但当前主链路没有把 `_llm` 注入 LangGraph 节点，也没有任何节点调用 `FakeLLMProvider.chat()` 或 `chat_json()`。
+`InternalLLMProvider` 是默认实现。配置 `INTERNAL_LLM_API_URL` 时走内部数智 LLM HTTP API；未配置 URL 时，`InternalLLMProvider` 自己提供本地 deterministic fallback，方便本地 MVP 和测试运行。
 
-因此，当前默认模型存在，但没有参与 `/api/chat` 的主流程回答生成。
+`FakeLLMProvider` 不再是 `create_app()` 默认注入对象，也不参与当前 `/api/chat` 主链路。若保留该文件，只应把它视为隔离实验或临时测试替身，而不是项目默认模型层。
 
-## OpenAICompatibleLLMProvider 当前是否真实启用
+## Provider 不负责什么
 
-当前默认不启用。
+LLMProvider 只负责模型调用和响应归一化：
 
-代码位置：`app/llm/openai_provider.py`
+- 不执行工具
+- 不做工具权限判断
+- 不选择所有工具
+- 不绕过 `ToolCallingRunner`
+- 不绕过 `ToolExecutor`
+- 不做最终合规出口替代
+
+工具循环由 `app/subagents/tool_calling_runner.py::ToolCallingRunner.run` 负责；真正工具执行、AgentCard 可见性二次校验、MCP 分发和工具执行日志由 `app/tools/executor.py::ToolExecutor` 负责。
+
+## 当前会传入 LLM 的主要场景
+
+| scene | 调用位置 | 说明 |
+| --- | --- | --- |
+| `query_rewrite` | `app/query/query_rewrite_node.py` | 多轮上下文消解和 query 改写，失败时走 EntityExtractor / EntityBag fallback。 |
+| `intent_recognition` | `app/query/intent_recognition_node.py` | intent/sub_intent JSON 分类，失败时走新规则 fallback。 |
+| `agent_selection` | `app/agents/llm_router.py` | 规则 Top-K 不确定时，在候选 AgentCard 摘要内重排。 |
+| `subagent_reasoning` | `app/subagents/tool_calling_runner.py` | 子 Agent ReAct-style tool loop。 |
+| `final_compliance` | `app/compliance/final_checker.py` | 最终返回前合规辅助检查，规则脱敏仍是强制基础。 |
+| `summary` | `app/memory/short_term_memory_manager.py` | `previous_summary + current_turn -> new_summary` 短期记忆滚动摘要。 |
+
+## 可选 OpenAI-compatible Provider
+
+OpenAI-compatible 调用由 `app/llm/opensdk_provider.py::OpenSDKLLMProvider` 提供，`app/llm/openai_provider.py::OpenAICompatibleLLMProvider` 只是兼容旧 import 的别名。
 
 启用条件：
 
-- `ENABLE_REAL_LLM=true`
-- 配置 `OPENAI_API_KEY`
-- 可选配置 `OPENAI_BASE_URL`
-- 配置 `OPENAI_MODEL`
-
-当前测试中会验证它在未启用时不影响运行。
-
-## OpenAICompatibleLLMProvider 预留了哪些参数
-
-`OpenAICompatibleLLMProvider.chat()` 和 `chat_json()` 支持：
-
-- `messages`
-- `tools`
-- `timeout`
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `OPENAI_MODEL`
-- `ENABLE_REAL_LLM=true`
-
-但 provider 自己不构造 prompt，只把调用方传入的 `messages` 转发给 OpenAI-compatible API。
-
-## 当前不存在的真实 Prompt
-
-当前没有以下运行时 prompt：
-
-- main agent system prompt
-- query rewrite system prompt
-- intent recognition system prompt
-- troubleshooting system prompt
-- final answer system prompt
-- tool calling system prompt
-
-这些在 V3 架构文档中有设计方向，但当前代码没有实现。
-
-## 未来接真实 LLM 时 messages 建议
-
-### chat 文本回答
-
-```json
-[
-  {
-    "role": "system",
-    "content": "你是企业健康险个险业务 Agent。必须基于给定证据回答，不得编造。"
-  },
-  {
-    "role": "user",
-    "content": "用户问题：{original_query}"
-  },
-  {
-    "role": "user",
-    "content": "上下文：{context_json}"
-  }
-]
+```text
+ENABLE_OPENSDK_LLM=true
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=...
+OPENAI_MODEL=...
 ```
 
-### chat_json 结构化输出
+## Prompt 维护注意事项
 
-```json
-[
-  {
-    "role": "system",
-    "content": "你必须输出 JSON object，字段包括 diagnosis、evidence、recommendation、responsibility、confidence。"
-  },
-  {
-    "role": "user",
-    "content": "{task_and_context_json}"
-  }
-]
-```
-
-## 建议输出约束
-
-真实 LLM 接入时，应至少约束：
-
-- 不得编造 requestId、日志、trace、客户、保单、密钥。
-- 所有事实性结论必须对应 evidence。
-- 工具调用结果优先于模型猜测。
-- 低置信度时必须明确说明需要补充信息。
-
-## 改造注意事项
-
-- 不要直接让 provider 内部硬编码业务 prompt。
-- Prompt 应由 `ContextBuilder` 或未来 `PromptRegistry` 构造。
-- Provider 只负责模型调用，不负责业务语义。
-- 保留 `FakeLLMProvider` 作为测试 fallback。
-
+- 不要让 provider 内部硬编码业务 prompt。
+- Prompt 应由调用节点根据 scene 构造。
+- Provider 只转发 `messages` / `tools` 并归一化 `LLMResponse`。
+- 如果新增 scene，需要同步检查 `app/llm/model_config.py::get_llm_model` 和对应节点测试。
