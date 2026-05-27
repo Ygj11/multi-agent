@@ -18,7 +18,7 @@ from app.adapters.request_adapter import RequestAdapter
 from app.adapters.response_adapter import ResponseAdapter
 from app.compliance.final_checker import FinalComplianceChecker
 from app.config.settings import get_settings
-from app.knowledge.in_memory_service import InMemoryKnowledgeService
+from app.knowledge.factory import build_knowledge_service
 from app.llm.factory import build_llm_provider
 from app.memory.long_term_memory_manager import LongTermMemoryManager
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
@@ -46,7 +46,7 @@ from app.subagents.manager import SubAgentManager
 from app.subagents.policy_query_agent import PolicyQueryAgent
 from app.subagents.troubleshooting_agent import TroubleshootingAgent
 from app.subagents.tool_calling_runner import ToolCallingRunner
-from app.tools.audit_store import ToolExecutionLogStore
+from app.tools.tool_execution_log_store import ToolExecutionLogStore
 from app.tools.agent_tools import register_agent_private_tools
 from app.tools.http_tools import HTTPRequestTool, MCPHTTPCallTool
 from app.tools.executor import ToolExecutor
@@ -56,7 +56,7 @@ from app.tools.shell_exec_tool import ShellExecTool
 
 
 def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
-    """创建应用并组装第二阶段 SQLite 持久化 MVP 所需依赖。"""
+    """创建应用"""
     settings = get_settings()
     db = SQLiteDatabase(sqlite_db_path or settings.sqlite_db_path)
     message_store = MessageStore(db=db)
@@ -66,7 +66,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     tool_execution_log_store = ToolExecutionLogStore(db=db)
     approval_store = SQLiteApprovalStore(db=db)
     _long_memory = LongTermMemoryManager()
-    knowledge_service = InMemoryKnowledgeService()
+    knowledge_service = build_knowledge_service(settings)
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
 
@@ -78,18 +78,26 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     tool_registry.register_private(
         agent_name="admin_agent",
         name="shell_exec",
-        tool=ShellExecTool(project_root=settings.project_root),
+        tool=ShellExecTool(project_root=settings.project_root, enabled=settings.enable_shell_exec),
         is_write=False,
     )
     tool_registry.register_private(
         agent_name="admin_agent",
         name="http_request",
-        tool=HTTPRequestTool(timeout=settings.http_tool_timeout),
+        tool=HTTPRequestTool(
+            timeout=settings.http_tool_timeout,
+            enabled=settings.enable_http_tools,
+            allowed_hosts=settings.allowed_http_tool_hosts,
+        ),
     )
     tool_registry.register_private(
         agent_name="admin_agent",
         name="mcp_http.call_tool",
-        tool=MCPHTTPCallTool(timeout=settings.http_tool_timeout),
+        tool=MCPHTTPCallTool(
+            timeout=settings.http_tool_timeout,
+            enabled=settings.enable_http_tools,
+            allowed_hosts=settings.allowed_http_tool_hosts,
+        ),
     )
     tool_executor = ToolExecutor(
         registry=tool_registry,

@@ -1,15 +1,15 @@
 from pathlib import Path
 
 from app.agents.card_loader import AgentCardLoader
-from app.knowledge.in_memory_service import InMemoryKnowledgeService
 from app.tools.agent_tools import register_agent_private_tools
 from app.tools.public_tools import register_public_tools
 from app.tools.registry import ToolRegistry
+from tests.fakes.fake_knowledge_service import FakeKnowledgeService
 
 
 def _registry():
     registry = ToolRegistry()
-    register_public_tools(registry, InMemoryKnowledgeService())
+    register_public_tools(registry, FakeKnowledgeService())
     register_agent_private_tools(registry)
     return registry
 

@@ -1,24 +1,14 @@
-"""Runtime Execution Logging 测试。"""
+"""Runtime execution logging tests."""
 
 import json
 import logging
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.config.settings import Settings
-from app.knowledge.in_memory_service import InMemoryKnowledgeService
 from app.observability.logger import LOGGER_NAME
-from app.schemas.tool import ToolCall
-from app.tools.broker import ToolBroker
-from app.tools.builtin_tools import build_get_knowledge_tool
-from app.tools.policy_gate import PolicyGate
-from app.tools.registry import ToolRegistry
-from app.tools.shell_exec_tool import ShellExecTool
 
 
 def _events(caplog) -> list[dict]:
-    """从 caplog 中解析 JSON line 日志。"""
     events = []
     for record in caplog.records:
         if record.name != LOGGER_NAME:
@@ -31,7 +21,6 @@ def _events(caplog) -> list[dict]:
 
 
 def test_api_chat_emits_runtime_execution_events(app_factory, caplog):
-    """一次 /api/chat 请求应输出完整运行时链路关键事件。"""
     caplog.set_level(logging.INFO, logger=LOGGER_NAME)
     app = app_factory()
     client = TestClient(app)
@@ -78,32 +67,3 @@ def test_api_chat_emits_runtime_execution_events(app_factory, caplog):
     assert contextual_events
     assert all("request_id" in event for event in contextual_events)
     assert any(event["session_key"] == "pingan_health:web:u001:s001" for event in events)
-
-
-async def test_shell_exec_rejected_emits_runtime_logs(tmp_path, caplog):
-    """shell_exec 被拒绝时也应输出工具链路日志。"""
-    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
-    registry = ToolRegistry()
-    registry.register("shell_exec", ShellExecTool(Path.cwd()))
-    broker = ToolBroker(
-        registry=registry,
-        policy_gate=PolicyGate(Settings(enable_shell_exec=False)),
-    )
-
-    result = await broker.call(
-        ToolCall(
-            name="shell_exec",
-            arguments={"command": ["echo", "hello"], "token": "plain-token"},
-            session_key="s1",
-        )
-    )
-
-    assert result.allowed is False
-    events = _events(caplog)
-    event_names = [event["event"] for event in events]
-    assert "tool_call_requested" in event_names
-    assert "policy_gate_checked" in event_names
-    assert "tool_call_finished" in event_names
-    serialized = "\n".join(json.dumps(event, ensure_ascii=False) for event in events)
-    assert "plain-token" not in serialized
-    assert '"token": "***"' in serialized

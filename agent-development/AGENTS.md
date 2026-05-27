@@ -39,7 +39,7 @@
 6. 问题排查子 Agent 需要读取自己的 SKILL.md。
 7. 内部简单能力通过 tools。
 8. 外部系统能力通过 MCP 预留接口，第一阶段不接真实 MCP。
-9. 子 Agent 工具调用必须经过 ToolCallingRunner 和 ToolExecutor；ToolBroker/PolicyGate 仅保留为受限直连工具的兼容通道，不是 `/api/chat` 主链路。
+9. 子 Agent 工具调用必须经过 ToolCallingRunner 和 ToolExecutor；旧工具代理/策略门通道已删除，不再作为兼容主路径保留。
 10. LangGraph 必须真实实现，不允许只写伪代码。
 11. LangGraph 流程必须体现状态机节点和条件路由。
 12. 多用户、多会话、多轮对话必须通过 session_key / thread_id 隔离。
@@ -73,7 +73,7 @@
 
 ## 真实大模型代码要求
 
-第一阶段默认使用 InternalLLMProvider。未配置 INTERNAL_LLM_API_URL 时，InternalLLMProvider 使用本地 deterministic fallback；FakeLLMProvider 不再是 create_app() 默认注入对象。
+第一阶段默认使用 InternalLLMProvider。未配置 INTERNAL_LLM_API_URL 时，InternalLLMProvider 使用本地 deterministic fallback。
 
 但必须提供真实 OpenAI-compatible LLM Provider 完整代码，建议文件：
 

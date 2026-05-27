@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""SQLite tool execution audit store."""
+"""SQLite tool execution log store."""
 
 import json
 from typing import Any

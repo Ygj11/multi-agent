@@ -174,7 +174,7 @@ Prompt 改动会影响路由、工具调用和回答质量，必须支持：
 - prompt evaluation suite
 - prompt version tracking
 - prompt rollback
-- prompt audit log
+- prompt review log
 
 ## 当前不要做
 

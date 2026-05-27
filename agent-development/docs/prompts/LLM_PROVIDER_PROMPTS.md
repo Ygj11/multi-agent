@@ -11,7 +11,7 @@ ENABLE_OPENSDK_LLM=true -> OpenSDKLLMProvider
 
 `InternalLLMProvider` 是默认实现。配置 `INTERNAL_LLM_API_URL` 时走内部数智 LLM HTTP API；未配置 URL 时，`InternalLLMProvider` 自己提供本地 deterministic fallback，方便本地 MVP 和测试运行。
 
-`FakeLLMProvider` 不再是 `create_app()` 默认注入对象，也不参与当前 `/api/chat` 主链路。若保留该文件，只应把它视为隔离实验或临时测试替身，而不是项目默认模型层。
+项目不再保留单独的 fake provider 文件；本地 MVP 和测试运行所需的确定性行为由 `InternalLLMProvider` 在未配置内部 LLM URL 时提供。
 
 ## Provider 不负责什么
 

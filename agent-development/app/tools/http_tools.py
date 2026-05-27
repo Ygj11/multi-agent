@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-"""受控 HTTP / MCP HTTP 工具。
-
-这些工具提供给子 Agent 使用，但默认必须被 PolicyGate 拒绝。只有显式开启
-ENABLE_HTTP_TOOLS=true 且目标 host 在白名单中时，才允许经过 ToolBroker 执行。
-"""
+"""Restricted HTTP / MCP-over-HTTP tools."""
 
 import json
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -16,14 +12,22 @@ from app.observability.logger import log_event, preview_text
 
 
 class HTTPRequestTool:
-    """通用受控 HTTP 请求工具，支持 GET / POST 和 URL 参数。"""
+    """Controlled HTTP request tool with built-in enable switch and host allowlist."""
 
     allowed_methods = {"GET", "POST"}
 
-    def __init__(self, timeout: float = 5.0, client: httpx.AsyncClient | None = None) -> None:
-        """注入 timeout 和可选测试 client。"""
+    def __init__(
+        self,
+        timeout: float = 5.0,
+        client: httpx.AsyncClient | None = None,
+        *,
+        enabled: bool = False,
+        allowed_hosts: tuple[str, ...] = (),
+    ) -> None:
         self.timeout = timeout
         self._client = client
+        self.enabled = enabled
+        self.allowed_hosts = set(allowed_hosts)
 
     async def __call__(
         self,
@@ -36,8 +40,15 @@ class HTTPRequestTool:
         timeout: float | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """执行受控 HTTP 调用，并返回可审计的结构化结果。"""
         normalized_method = method.upper()
+        if not self.enabled:
+            return {"success": False, "error": "http_tools_disabled"}
+        if normalized_method not in self.allowed_methods:
+            return {"success": False, "error": f"method_not_allowed:{normalized_method}"}
+        host = urlparse(url).hostname or ""
+        if host not in self.allowed_hosts:
+            return {"success": False, "error": f"host not allowlisted: {host}"}
+
         effective_timeout = min(float(timeout or self.timeout), self.timeout)
         log_event(
             "http_tool_call_started",
@@ -84,7 +95,6 @@ class HTTPRequestTool:
 
     @staticmethod
     def _response_to_result(response: httpx.Response) -> dict[str, Any]:
-        """将 httpx 响应转换成轻量结构，避免把大响应直接塞进工具结果。"""
         content_type = response.headers.get("content-type", "")
         result: dict[str, Any] = {
             "success": 200 <= response.status_code < 400,
@@ -99,12 +109,23 @@ class HTTPRequestTool:
 
 
 class MCPHTTPCallTool:
-    """通过 HTTP 网关调用 MCP tool 的受控工具。"""
+    """Call an MCP HTTP gateway through the restricted HTTP request tool."""
 
-    def __init__(self, timeout: float = 5.0, client: httpx.AsyncClient | None = None) -> None:
-        """注入 timeout 和可选测试 client。"""
+    def __init__(
+        self,
+        timeout: float = 5.0,
+        client: httpx.AsyncClient | None = None,
+        *,
+        enabled: bool = False,
+        allowed_hosts: tuple[str, ...] = (),
+    ) -> None:
         self.timeout = timeout
-        self.http_request = HTTPRequestTool(timeout=timeout, client=client)
+        self.http_request = HTTPRequestTool(
+            timeout=timeout,
+            client=client,
+            enabled=enabled,
+            allowed_hosts=allowed_hosts,
+        )
 
     async def __call__(
         self,
@@ -116,7 +137,6 @@ class MCPHTTPCallTool:
         timeout: float | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """按约定 MCP HTTP endpoint 调用外部工具。"""
         url = urljoin(base_url.rstrip("/") + "/", endpoint_path.lstrip("/"))
         return await self.http_request(
             method="POST",

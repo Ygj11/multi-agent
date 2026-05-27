@@ -18,7 +18,7 @@ flowchart TD
     D --> E["ToolExecutionLogStore / ApprovalStore"]
     E --> F["LongTermMemoryManager<br>预留空实现"]
     F --> G["build_llm_provider(settings)"]
-    G --> H["InMemoryKnowledgeService"]
+    G --> H["build_knowledge_service()<br>DisabledKnowledgeService 或 KnowledgeAPIClient"]
     H --> I["MCPCapabilityRegistry"]
     I --> J["MCPClientManager<br>解析 MCP_SERVERS_JSON"]
     J --> K["SessionManager"]
@@ -53,11 +53,11 @@ flowchart TD
 | `MessageStore` | `app/main.py::create_app`，`app/session/message_store.py::MessageStore.__init__` | 读写 `messages` | 否 | 运行时读写 | 复用已创建的 `SQLiteDatabase`。 |
 | `ShortTermMemoryManager` | `app/main.py::create_app`，`app/memory/short_term_memory_manager.py::__init__` | 读写 `short_term_memory` | 否 | 运行时读写 | `load_session` 读摘要，`compress_short_memory` 更新摘要。 |
 | `SQLiteCheckpointStore` | `app/main.py::create_app`，`app/runtime/checkpoint.py::SQLiteCheckpointStore.__init__` | 保存每次图执行后的最终 state snapshot | 否 | 运行时保存/读取 | 不是 LangGraph 原生 checkpointer。 |
-| `ToolExecutionLogStore` | `app/main.py::create_app`，`app/tools/audit_store.py::ToolExecutionLogStore` | `ToolExecutor` 工具执行日志 | 否 | 运行时写入 | 写 `tool_execution_logs`。 |
+| `ToolExecutionLogStore` | `app/main.py::create_app`，`app/tools/tool_execution_log_store.py::ToolExecutionLogStore` | `ToolExecutor` 工具执行日志 | 否 | 运行时写入 | 写 `tool_execution_logs`。 |
 | `ApprovalStore` | `app/main.py::create_app`，`app/approval/store.py::SQLiteApprovalStore` | 审批请求和事件持久化 | 否 | 运行时读写 | 表结构由 `SQLiteDatabase.initialize()` 创建。 |
 | `LongTermMemoryManager` | `app/main.py::create_app`，`app/memory/long_term_memory_manager.py` | 长期记忆接口预留 | 否 | 当前未实际使用 | MVP 返回空列表/不写入。 |
 | `LLMProvider` | `app/main.py::create_app`，`app/llm/factory.py::build_llm_provider` | 统一模型调用层 | 否 | 请求时调用模型 | `ENABLE_OPENSDK_LLM=true` 时使用 OpenSDK，否则 `InternalLLMProvider`。 |
-| `InMemoryKnowledgeService` | `app/main.py::create_app`，`app/knowledge/in_memory_service.py` | 内存知识检索 mock | 否 | 运行时检索 | 当前不是外部向量库。 |
+| `KnowledgeService` | `app/main.py::create_app`，`app/knowledge/factory.py::build_knowledge_service` | 知识检索抽象实现 | 否 | 运行时检索 | 默认 `DisabledKnowledgeService` 返回空结果；`ENABLE_KNOWLEDGE_API=true` 时使用 `KnowledgeAPIClient`。 |
 | `MCPCapabilityRegistry` | `app/main.py::create_app`，`app/mcp/capability_registry.py` | 缓存 MCP tool 能力和 server 状态 | 否 | lifespan 写入 | 纯内存。 |
 | `MCPClientManager` | `app/main.py::create_app`，`app/mcp/client_manager.py::MCPClientManager.__init__` | 管理上游 MCP client 和工具发现 | 只解析配置，不连 server | lifespan 初始化 | 构造时解析 `MCP_SERVERS_JSON`，真正 `initialize/list_tools` 在 lifespan。 |
 | `SessionManager` | `app/main.py::create_app`，`app/session/session_manager.py` | 聚合消息和短期记忆读取 | 否 | 每次请求 `load_session` | 不在启动时读取会话。 |
@@ -425,6 +425,6 @@ flowchart TD
 
 1. `EntityExtractor` 当前不是第一次 `extract()` 时懒加载，而是在 `QueryRewriteNode` / `IntentRecognitionNode` 构造时立即加载 YAML。若期望“第一次请求才加载”，需要改 `EntityExtractor` 的实现。
 2. `SQLiteCheckpointStore` 名字容易误解为 LangGraph 原生 checkpointer；当前它只保存最终 state snapshot，真正传给 LangGraph compile 的是 `MemorySaver`。
-3. 旧 `ToolCallLogStore` / `tool_call_logs` 路径已删除；当前主工具循环通过 `ToolExecutor` 写 `tool_execution_logs`。
+3. 旧工具调用日志路径已删除；当前主工具循环通过 `ToolExecutor` 写 `tool_execution_logs`。
 4. `LongTermMemoryManager` 当前只是预留实现，启动时创建对象，但主流程没有实际长期记忆加载。
 5. `MCPClientManager.__init__` 会解析 `MCP_SERVERS_JSON`。如果该环境变量不是合法 JSON，错误会发生在 `create_app()` 期间，而不是 lifespan。

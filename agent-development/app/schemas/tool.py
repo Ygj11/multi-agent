@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class ToolCall(BaseModel):
-    """ToolBroker 接收的标准工具调用请求。"""
+    """Normalized tool call request."""
 
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)

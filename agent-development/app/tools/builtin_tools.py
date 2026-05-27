@@ -1,33 +1,30 @@
 from __future__ import annotations
 
-"""MVP 阶段内置工具。"""
+"""Built-in local tools."""
 
 import re
 from typing import Any
 
-from app.knowledge.in_memory_service import InMemoryKnowledgeService
 from app.knowledge.service import KnowledgeService
 
 
 def build_get_knowledge_tool(knowledge_service: KnowledgeService):
-    """构造调用 KnowledgeService 的 get_knowledge tool。"""
+    """Build the get_knowledge tool from a KnowledgeService implementation."""
 
     async def get_knowledge_tool(query: str, top_k: int = 3, **kwargs: Any) -> str:
-        """通过 KnowledgeService 检索知识，并返回轻量文本。"""
         chunks = await knowledge_service.search(query=query, top_k=top_k)
         if not chunks:
-            return "当前知识库未命中明确知识，建议补充错误码、接口名或 requestId。"
+            disabled_reason = getattr(knowledge_service, "disabled_reason", None)
+            if disabled_reason:
+                return str(disabled_reason)
+            return "No matching knowledge chunks found."
         return "\n".join(chunk.content for chunk in chunks)
 
     return get_knowledge_tool
 
 
-_default_knowledge_service = InMemoryKnowledgeService()
-get_knowledge = build_get_knowledge_tool(_default_knowledge_service)
-
-
 async def query_internal_log(request_id: str | None = None, query: str | None = None, **kwargs: Any) -> dict[str, Any]:
-    """模拟内部日志查询，用固定数据支撑问题排查 Agent。"""
+    """Mock internal log query used by the troubleshooting MVP tool."""
     resolved_request_id = request_id or _extract_request_id(query or "")
     mock_logs: dict[str, dict[str, Any]] = {
         "REQ_001": {
@@ -59,10 +56,9 @@ async def query_internal_log(request_id: str | None = None, query: str | None = 
     }
     if resolved_request_id in mock_logs:
         return mock_logs[resolved_request_id]
-    return {"found": False, "message": "未查询到该 requestId 的模拟日志"}
+    return {"found": False, "message": "No mock internal log found for this requestId."}
 
 
 def _extract_request_id(text: str) -> str | None:
-    """从 query 中提取 REQ_xxx 格式 requestId。"""
     match = re.search(r"\bREQ_\d+\b", text)
     return match.group(0) if match else None

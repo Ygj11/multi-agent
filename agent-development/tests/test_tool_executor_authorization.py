@@ -3,18 +3,18 @@ from pathlib import Path
 import pytest
 
 from app.agents.card_loader import AgentCardLoader
-from app.knowledge.in_memory_service import InMemoryKnowledgeService
 from app.storage.sqlite import SQLiteDatabase
 from app.tools.agent_tools import register_agent_private_tools
-from app.tools.audit_store import ToolExecutionLogStore
+from app.tools.tool_execution_log_store import ToolExecutionLogStore
 from app.tools.executor import ToolExecutor
 from app.tools.public_tools import register_public_tools
 from app.tools.registry import ToolRegistry
+from tests.fakes.fake_knowledge_service import FakeKnowledgeService
 
 
 def _executor(tmp_path: Path):
     registry = ToolRegistry()
-    register_public_tools(registry, InMemoryKnowledgeService())
+    register_public_tools(registry, FakeKnowledgeService())
     register_agent_private_tools(registry)
     store = ToolExecutionLogStore(SQLiteDatabase(tmp_path / "tools.sqlite3"))
     return ToolExecutor(registry, store), store

@@ -91,7 +91,7 @@ SubAgentContext.skill_content
 - `selected_skill_metadata`
 - `skill_selection_score`
 - `skill_selection_reason`
-- `mock_knowledge_hint`
+- `knowledge_hint`
 - `recent_troubleshooting_context`
 
 ## selected skill 如何进入上下文
@@ -118,7 +118,7 @@ SubAgentTask
 - `short_summary`
 - `recent_messages_summary`
 - `lightweight_knowledge_hints`
-- `mock_knowledge_hint`
+- `knowledge_hint`
 - `allowed_tools`
 - `intent`
 - `rewritten_query`

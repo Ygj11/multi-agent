@@ -165,7 +165,7 @@ class ContextBuilder:
             skill_content = self._read_skill(self._skill_name_for_task(task.name))
             selection = None
             entity_check = None
-        mock_knowledge_hint = await self._build_subagent_knowledge_hint(parent_context.rewritten_query)
+        knowledge_hint = await self._build_subagent_knowledge_hint(parent_context.rewritten_query)
         troubleshooting_context = [
             message
             for message in parent_context.recent_messages
@@ -184,7 +184,7 @@ class ContextBuilder:
             missing_required_entities=entity_check.missing_required_entities if entity_check else [],
             need_clarification=entity_check.need_clarification if entity_check else False,
             clarification_question=entity_check.clarification_question if entity_check else None,
-            mock_knowledge_hint=mock_knowledge_hint,
+            knowledge_hint=knowledge_hint,
             recent_troubleshooting_context=troubleshooting_context,
         )
 

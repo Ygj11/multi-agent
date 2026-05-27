@@ -10,7 +10,7 @@
 
 当前 query 改写优先通过注入的 `LLMProvider` 调用 `scene="query_rewrite"`；模型不可用或 JSON 非法时，回退到 EntityExtractor / EntityBag 规则逻辑。
 
-`QueryRewriteNode` 没有读取 `app/skills/query_rewrite/SKILL.md`；当前默认 provider 是 `InternalLLMProvider`，不是 `FakeLLMProvider`。
+`QueryRewriteNode` 没有读取 `app/skills/query_rewrite/SKILL.md`；当前默认 provider 是 `InternalLLMProvider`，未配置内部 LLM URL 时由它提供本地 deterministic fallback。
 
 ## 当前规则
 

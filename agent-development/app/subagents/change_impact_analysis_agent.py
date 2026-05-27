@@ -11,8 +11,6 @@ from app.runtime.context_builder import ContextBuilder
 from app.schemas.agent_card import AgentCard
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.subagent import SubAgentResult, SubAgentTask
-from app.schemas.tool import ToolCall
-from app.tools.broker import ToolBroker
 from app.tools.executor import ToolExecutor
 
 
@@ -45,12 +43,10 @@ class ChangeImpactAnalysisAgent:
     def __init__(
         self,
         context_builder: ContextBuilder,
-        tool_broker: ToolBroker | None = None,
         tool_executor: ToolExecutor | None = None,
     ) -> None:
-        """注入 ContextBuilder 和 ToolBroker，知识查询也必须经过统一工具通道。"""
+        """Store ContextBuilder and ToolExecutor dependencies."""
         self.context_builder = context_builder
-        self.tool_broker = tool_broker
         self.tool_executor = tool_executor
 
     async def run(self, task: SubAgentTask, parent_context: OrchestratorContext) -> SubAgentResult:
@@ -139,18 +135,7 @@ class ChangeImpactAnalysisAgent:
                 trace_id=str(task.metadata.get("trace_id") or ""),
                 session_key=task.session_key,
             )
-        if self.tool_broker is None:
-            raise RuntimeError("no tool executor configured")
-        return await self.tool_broker.call(
-            ToolCall(
-                name=name,
-                arguments=arguments,
-                request_id=str(task.metadata.get("request_id") or ""),
-                trace_id=str(task.metadata.get("trace_id") or ""),
-                session_key=task.session_key,
-                agent_name=self.name,
-            )
-        )
+        raise RuntimeError("tool executor is not configured")
 
     @staticmethod
     def _card_from_task(task: SubAgentTask) -> AgentCard | None:

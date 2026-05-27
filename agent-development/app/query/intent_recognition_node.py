@@ -46,7 +46,7 @@ class IntentRecognitionNode:
         )
         if llm_result is not None:
             return llm_result
-
+        # fallback 兜底规则引擎
         return self._recognize_with_rules(
             original_query=original_query,
             rewritten_query=rewritten_query,

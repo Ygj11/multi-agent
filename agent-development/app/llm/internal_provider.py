@@ -149,6 +149,7 @@ class InternalLLMProvider:
             latency_ms=latency_ms,
         )
 
+    # 如果 internal_llm_api_url 没配置，就不请求真实模型，而是用本地写死逻辑模拟模型返回。todo 需要废弃
     def _local_fallback_response(
         self,
         *,

@@ -10,7 +10,7 @@
 - Pydantic
 - SQLite 本地持久化
 - InternalLLMProvider 默认启用；未配置 INTERNAL_LLM_API_URL 时走本地 deterministic fallback
-- InMemoryKnowledgeService 作为 RAG fallback
+- KnowledgeService 默认关闭；开启 ENABLE_KNOWLEDGE_API 后通过 KnowledgeAPIClient 接外部知识库
 - MCPClientManager 作为 MCP Client / Consumer 入口
 
 ## 快速开始
@@ -172,7 +172,7 @@ app/
     executor.py                   AgentCard 驱动的工具执行器
     public_tools.py               公用工具注册
     agent_tools.py                子 Agent 私有工具注册
-    audit_store.py                tool_execution_logs 持久化
+    tool_execution_log_store.py   tool_execution_logs 持久化
   compliance/
     final_checker.py              最终返回前合规检查
   storage/
@@ -390,7 +390,7 @@ class SubAgentResult(BaseModel):
 
 ## 工具系统
 
-当前主链路不再使用旧的 `ToolBroker / PolicyGate` 作为核心链路。旧文件保留用于兼容和迁移观察，新工具系统由两层组成：
+当前主链路使用 `ToolCallingRunner / ToolExecutor`，旧的工具代理和策略门实现已经删除。新工具系统由两层组成：
 
 - `ToolRegistry`：注册公用工具和子 Agent 私有工具
 - `ToolExecutor`：执行工具、做 AgentCard 可用性校验、写入工具执行日志
@@ -588,7 +588,7 @@ session_key
 
 ## 真实 LLM Provider
 
-默认使用 `InternalLLMProvider`。未配置 `INTERNAL_LLM_API_URL` 时，它会走本地 deterministic fallback，无需网络和 API key；`FakeLLMProvider` 不再是 `create_app()` 的默认注入对象。
+默认使用 `InternalLLMProvider`。未配置 `INTERNAL_LLM_API_URL` 时，它会走本地 deterministic fallback，无需网络和 API key。
 
 OpenAI-compatible Provider 已保留在：
 

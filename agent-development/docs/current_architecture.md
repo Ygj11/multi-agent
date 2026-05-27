@@ -49,7 +49,7 @@ Tool availability is card-driven:
 - unauthorized calls return `tool_not_available_for_agent`
 - all ToolExecutor calls write `tool_execution_logs`
 
-The old `ToolBroker` and `PolicyGate` remain only for compatibility tests and are not used by the app main path.
+The old tool broker and policy gate path has been removed. Restricted tools now keep their own explicit disable/allowlist checks, and all sub-agent tool calls still go through `ToolExecutor`.
 
 ## Skills
 

@@ -113,11 +113,11 @@ flowchart TD
 | `BaseSubAgent.run` | `app/subagents/base.py::BaseSubAgent.run` | 继承类的统一执行模板 | `SubAgentTask`、`OrchestratorContext` | `SubAgentResult` | AgentCard、Skill、RAG、ToolCallingRunner | 从 `task.metadata["agent_card"]` 读取 AgentCard，经 `ToolRegistry` 计算可见工具，调用 `ContextBuilder.build_for_subagent` 选择并加载 Skill，再构造 LLM messages 和工具 schema，进入 `ToolCallingRunner.run`。`TroubleshootingAgent`、`PolicyQueryAgent`、`ClaimAgent`、`ComplianceSecurityAgent` 继承该模板。 |
 | 自定义子 Agent | `app/subagents/document_parse_agent.py::DocumentParseAgent.run`，`app/subagents/change_impact_analysis_agent.py::ChangeImpactAnalysisAgent.run` | 不继承 `BaseSubAgent` 的任务级执行 | `SubAgentTask`、parent context | `SubAgentResult` | 规则解析、ContextBuilder、ToolExecutor | `document_parse_agent` 规则解析文本/JSON/YAML/Markdown；`change_impact_analysis_agent` 规则分析影响并调用 `get_knowledge`。它们仍会调用 `ContextBuilder.build_for_subagent` 触发 skill 选择和 RAG。 |
 | `SkillCatalog / SkillSelector` | `app/skills/catalog.py::SkillCatalog.scan`，`app/skills/metadata.py::metadata_from_skill_file`，`app/skills/selector.py::SkillSelector.select`，`app/skills/loader.py::SkillLoader.load`，`app/skills/required_entities.py::RequiredEntityChecker` | metadata-first skill 发现、严格校验、选择、正文加载和必需实体检查 | agent name、`SkillSelectionContext`、candidate metadata、EntityBag | `selected_skill_id`、skill body、missing entities 或 clarification | YAML frontmatter、Pydantic、规则打分、EntityBag | 启动/校验阶段只扫描 `app/skills/*/*/SKILL.md` 的完整企业级 frontmatter metadata，跳过 `deprecated`。缺少 `skill_id/name/description/agent/intent_tags/required_entities/optional_entities/private_tools/enabled/is_default` 会直接报错；执行时才加载完整 `SKILL.md`。`RequiredEntityChecker` 在子 Agent 执行前检查 skill.required_entities，缺失时返回 clarification，不强行调用工具。 |
-| `KnowledgeService / RAG` | `app/knowledge/in_memory_service.py::InMemoryKnowledgeService.search`，`app/runtime/context_builder.py::_build_lightweight_hints`，`app/runtime/context_builder.py::_build_subagent_knowledge_hint` | 为主流程和子 Agent 提供知识检索增强 | query、intent、top_k | knowledge hints 或 mock_knowledge_hint | InMemory mock、关键词 scoring | 当前不是 Milvus/Elasticsearch/embedding/hybrid。内置 chunks 按 metadata keywords 命中数算分，`score = 0.5 + hits * 0.15`，降序取 top-k。主流程 `pre_search(top_k=3)` 进入 `lightweight_knowledge_hints`，子 Agent `search(top_k=3)` 拼接进 `mock_knowledge_hint`。 |
+| `KnowledgeService / RAG` | `app/knowledge/factory.py::build_knowledge_service`，`app/integrations/knowledge_api_client.py::KnowledgeAPIClient.search`，`app/knowledge/disabled_service.py::DisabledKnowledgeService.search`，`app/runtime/context_builder.py::_build_lightweight_hints`，`app/runtime/context_builder.py::_build_subagent_knowledge_hint` | 为主流程和子 Agent 提供知识检索增强 | query、intent、top_k | knowledge hints | KnowledgeService 协议、外部 API、Disabled 空实现、chunk post-processing | 默认 `ENABLE_KNOWLEDGE_API=false`，不使用内置 mock chunks，返回空知识结果；开启后 `KnowledgeAPIClient` 调外部知识库 API，并通过 `KnowledgeChunkPostProcessor` 归一化为 `KnowledgeChunk`。 |
 | `ToolRegistry` | `app/tools/registry.py::ToolRegistry`，`app/tools/public_tools.py::register_public_tools`，`app/tools/agent_tools.py::register_agent_private_tools` | 注册和暴露工具 schema | 工具定义、AgentCard | 可见工具名和 OpenAI-compatible tools schema | Pydantic `ToolDefinition`、函数签名 introspection、MCP capability | 公有工具包括 `rag_search_tool/get_knowledge/calculator_tool/current_time_tool`；私有工具按 agent 注册；MCP 工具由 `register_mcp_tools` 注册。不会把所有工具都给 LLM，而是按 `AgentCard.private_tools`、`public_tools_allowed`、`mcp_tools`、`mcp_tool_scopes` 生成当前子 Agent 可见工具。 |
-| `LLMProvider` | `app/llm/base.py::LLMProvider`，`app/llm/internal_provider.py::InternalLLMProvider.chat`，`app/llm/opensdk_provider.py::OpenSDKLLMProvider.chat`，`app/llm/factory.py::build_llm_provider` | 统一模型调用边界 | messages、tools、scene/model 配置 | `LLMResponse` | httpx、OpenAI SDK、scene-aware model config | 当前应用默认 `build_llm_provider` 返回 `InternalLLMProvider`；当 `ENABLE_OPENSDK_LLM=true` 时使用 OpenAI-compatible SDK provider。`InternalLLMProvider` 若未配置 `INTERNAL_LLM_API_URL`，走本地确定性 fallback。`FakeLLMProvider` 存在于 `app/llm/fake_provider.py`，主要给测试/隔离场景使用，不是当前 `create_app` 默认注入。LLMProvider 不执行工具。 |
+| `LLMProvider` | `app/llm/base.py::LLMProvider`，`app/llm/internal_provider.py::InternalLLMProvider.chat`，`app/llm/opensdk_provider.py::OpenSDKLLMProvider.chat`，`app/llm/factory.py::build_llm_provider` | 统一模型调用边界 | messages、tools、scene/model 配置 | `LLMResponse` | httpx、OpenAI SDK、scene-aware model config | 当前应用默认 `build_llm_provider` 返回 `InternalLLMProvider`；当 `ENABLE_OPENSDK_LLM=true` 时使用 OpenAI-compatible SDK provider。`InternalLLMProvider` 若未配置 `INTERNAL_LLM_API_URL`，走本地确定性 fallback。项目不再保留单独 fake provider；LLMProvider 不执行工具。 |
 | `ToolCallingRunner` | `app/subagents/tool_calling_runner.py::ToolCallingRunner.run` | 实现 LLM 工具调用循环 | agent name、messages、visible tools、session/request/trace、AgentCard | `ToolCallingRunResult` | ReAct-style loop、OpenAI tool call schema | 每轮调用 `llm_provider.chat(messages, tools, scene="subagent_reasoning")`。如果工具结果是 `human_approval_required`，立即停止 loop，返回 `stopped_reason="human_approval_required"`、`pending_tool_call`、`approval_payload`、当时 messages/tools。无 tool_calls 时以 assistant content 结束。 |
-| `ToolExecutor` | `app/tools/executor.py::ToolExecutor.execute`，`app/tools/executor.py::ToolExecutor.execute_approved_tool` | 执行工具、二次权限校验、写执行日志、审批后安全执行 | agent name、tool name、arguments、AgentCard、session/request/trace、approval_id | `ToolResult` | ToolRegistry、SQLite audit、MCP dispatch、approval guard | 普通 `execute` 遇到 `is_write=true` 工具只返回 `human_approval_required`，不执行 callable。approved callback 后只能通过 `execute_approved_tool` 执行，并校验 approval 存在、status=approved、agent/tool/arguments 一致。 |
+| `ToolExecutor` | `app/tools/executor.py::ToolExecutor.execute`，`app/tools/executor.py::ToolExecutor.execute_approved_tool` | 执行工具、二次权限校验、写执行日志、审批后安全执行 | agent name、tool name、arguments、AgentCard、session/request/trace、approval_id | `ToolResult` | ToolRegistry、SQLite tool execution logs、MCP dispatch、approval guard | 普通 `execute` 遇到 `is_write=true` 工具只返回 `human_approval_required`，不执行 callable。approved callback 后只能通过 `execute_approved_tool` 执行，并校验 approval 存在、status=approved、agent/tool/arguments 一致。 |
 | `ApprovalService` | `app/approval/service.py::ApprovalService` | 审批创建、提交、callback 处理、approved/rejected 恢复 | approval payload 或 callback | approval status、final answer | SQLite、httpx、ToolExecutor、ToolCallingRunner | approved 后执行 pending tool，追加 tool observation 并继续 loop；rejected 后不执行工具。两条路径最终都调用 final compliance、保存 assistant message、压缩短期记忆。 |
 | `MCP Client` | `app/main.py::lifespan`，`app/mcp/client_manager.py::MCPClientManager.initialize`，`app/mcp/capability_registry.py::MCPCapabilityRegistry`，`app/mcp/client.py::HTTPMCPClient` | 发现外部 MCP 工具并路由调用 | `MCP_SERVERS_JSON` / `MCP_SERVERS` 配置 | MCP capabilities 注册到 ToolRegistry | HTTP JSON-RPC-ish client、Pydantic schemas | `settings.enable_mcp_client` 默认 true，但没有配置 server 时列表为空，不会发现工具。启动时 `initialize -> list_tools -> capability_registry.upsert_tools -> tool_registry.register_mcp_tools`。执行时 `ToolExecutor` 根据 source=mcp 调 `MCPClientManager.call_tool`，再由 capability 找到 server 和原始工具名。 |
 | `final_compliance_check` | `app/runtime/graph.py::AgentGraphFactory.final_compliance_check`，`app/compliance/final_checker.py::FinalComplianceChecker.check` | 返回用户前强制合规检查 | `answer` | `final_compliance_result`，通过时更新 `answer=sanitized_answer` | 规则脱敏、可选 LLM scene 调用 | 检查手机号、身份证、银行卡、凭据字段、内部日志字段、健康隐私词、raw tool markers。若包含 raw tool output marker，`passed=False` 且 `retry_required=True`。会调用一次 `llm_provider.chat(scene="final_compliance")` 作模型侧检查，但实际判定和脱敏由规则完成。 |
@@ -147,10 +147,9 @@ flowchart TD
 | ToolExecutor | 当前主路径的工具执行、AgentCard 权限校验、MCP 分发、SQLite 日志记录 | `app/tools/executor.py::ToolExecutor.execute` |
 | ApprovalService | 高风险写工具的人审闭环：创建请求、提交外部审批、callback 恢复、保存结果 | `app/approval/service.py::ApprovalService` |
 | ApprovalSystemClient | 向外部审批系统提交审批请求，当前可指向 mock URL | `app/approval/client.py::ApprovalSystemClient` |
-| ToolBroker / PolicyGate | 兼容/旧工具通道，强制经过策略门；当前主 LLM 工具循环未使用它 | `app/tools/broker.py::ToolBroker.call`，`app/tools/policy_gate.py::PolicyGate.allow` |
 | ToolRegistry | 公有工具、私有工具、MCP 工具统一注册，并按 AgentCard 生成可见工具 schema | `app/tools/registry.py::ToolRegistry` |
 | Skills metadata-first loading | 扫描时只读取完整企业级 frontmatter metadata，执行选中后才加载完整 `SKILL.md` body | `app/skills/catalog.py::SkillCatalog.scan`，`app/skills/metadata.py::metadata_from_skill_file`，`app/skills/catalog.py::SkillCatalog.load_skill_content` |
-| RAG / KnowledgeService | 主流程轻量知识提示和子 Agent 任务级知识上下文；当前是 in-memory keyword mock | `app/knowledge/in_memory_service.py::InMemoryKnowledgeService` |
+| RAG / KnowledgeService | 主流程轻量知识提示和子 Agent 任务级知识上下文；默认关闭，开启后通过 KnowledgeAPIClient 接外部知识库 | `app/knowledge/factory.py::build_knowledge_service`，`app/integrations/knowledge_api_client.py::KnowledgeAPIClient` |
 | MCP Client | 作为外部工具来源，启动时发现能力，执行时由 ToolExecutor 分发 | `app/mcp/client_manager.py::MCPClientManager`，`app/main.py::lifespan` |
 | final compliance check | 所有返回用户前的强制合规检查、脱敏、重试/兜底 | `app/compliance/final_checker.py::FinalComplianceChecker` |
 | summary + recent N turns | `short_summary` 加最近消息窗口共同提供历史上下文 | `app/session/session_manager.py::SessionManager.load_session`，`app/agents/task_assembler.py::AgentTaskAssembler.assemble` |
@@ -200,7 +199,7 @@ flowchart TD
 8. 写工具不会作为普通失败继续交给 LLM，而是立即停止 loop，生成 `needs_human_approval=true` 的 `SubAgentResult`，由主图创建审批请求并返回 pending。
 9. approved callback 后，`ApprovalService.resume_after_approval` 调 `ToolExecutor.execute_approved_tool`，把工具结果追加为 `role=tool` observation，再用保存的 messages/tools 继续 `ToolCallingRunner.run`。
 10. 达到 `max_iterations` 后返回 `ToolCallingRunResult(stopped_reason="max_iterations", final_answer="", error="tool_calling_runner_exceeded_max_iterations:<limit>")`。`BaseSubAgent.build_result_from_runner` 会把它转成低置信度、medium risk 的 `SubAgentResult`。
-11. `ToolBroker/PolicyGate` 仍在代码中，`DocumentParseAgent` 和 `ChangeImpactAnalysisAgent` 的构造函数也保留 `ToolBroker` 兼容参数。但当前主路径的 LLM 工具循环没有经过 `PolicyGate`，而是由 `ToolExecutor + AgentCard visibility + approval guard` 完成权限控制。
+11. 旧工具代理和策略门路径已删除；当前主路径的 LLM 工具循环由 `ToolExecutor + AgentCard visibility + approval guard` 完成权限控制，受限运维工具还会在工具实现内部做禁用/白名单校验。
 
 ## 合规检查机制
 
@@ -284,7 +283,6 @@ check_human_approval_required
 | `app/api/*` | 当前不存在 | `/api/chat` 路由在 `app/main.py`。 |
 | `app/subagents/agent_card_loader.py` | 当前不存在 | AgentCard loader 在 `app/agents/card_loader.py`。 |
 | QueryRewrite / IntentRecognition LLM JSON | 当前两个节点已支持 LLM JSON；LLM 不可用或 JSON 非法时走新 EntityExtractor/规则 fallback | 文档不能再写成旧固定规则主路径。 |
-| ToolBroker / PolicyGate 主路径 | 当前 `ToolCallingRunner` 直接调用 `ToolExecutor` | 文档需说明 PolicyGate 存在但非主工具循环路径。 |
 | 人工审批 | 当前已接入完整 pending/callback/resume 闭环 | 写工具不再只是 fail-closed，而是由 `approval_requests` 持久化并等待 callback。 |
 | MCP | 已有 client manager、capability registry、HTTP client 和 ToolRegistry 注册路径 | 只有配置 MCP servers 时才会实际发现外部工具。 |
 | RAG | 当前是内存 mock 关键词检索 | 未接 Milvus、Elasticsearch、embedding 或 hybrid ranking。 |
@@ -304,7 +302,7 @@ create_app()
   -> init MessageStore / ShortTermMemoryManager / SQLiteCheckpointStore
   -> init ToolExecutionLogStore / SQLiteApprovalStore
   -> init LLMProvider
-  -> init InMemoryKnowledgeService
+  -> init KnowledgeService via build_knowledge_service()
   -> init MCPCapabilityRegistry / MCPClientManager
   -> init ToolRegistry
   -> register_public_tools()
@@ -575,8 +573,6 @@ LLM 抽象在 `app/llm/base.py::LLMProvider`。当前实现包括：
 | 内部数智 LLM | `app/llm/internal_provider.py::InternalLLMProvider` | `build_llm_provider` 默认返回；配置 `INTERNAL_LLM_API_URL` 时走 HTTP，未配置时使用本地 deterministic fallback。 |
 | OpenSDK / OpenAI-compatible | `app/llm/opensdk_provider.py::OpenSDKLLMProvider` | `ENABLE_OPENSDK_LLM=true` 时启用。 |
 | OpenAI-compatible 旧实现 | `app/llm/openai_provider.py` | 代码保留。 |
-| Fake provider | `app/llm/fake_provider.py::FakeLLMProvider` | 当前 `create_app()` 不注入它；默认链路使用 `InternalLLMProvider`，未配置 URL 时由 `InternalLLMProvider` 自己提供本地 deterministic fallback。 |
-
 切换入口在 `app/llm/factory.py::build_llm_provider`，配置字段在 `app/config/settings.py::Settings`。model 不应该写死在业务节点里；scene 模型选择在 `app/llm/model_config.py::SCENE_MODEL_FIELDS`，当前 scene 包括：`query_rewrite`、`intent_recognition`、`agent_selection`、`subagent_reasoning`、`final_compliance`、`summary`。
 
 新增 scene 时要改：

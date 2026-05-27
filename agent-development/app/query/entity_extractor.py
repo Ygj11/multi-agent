@@ -172,6 +172,7 @@ class EntityExtractor:
 
     @staticmethod
     def _allow_value(pattern: EntityPattern, value: str) -> bool:
+        """Apply entity-specific allowlist rules, e.g. for policy_no we require a specific numeric format to reduce false positives."""
         if pattern.entity_type == "policy_no":
             if re.fullmatch(r"1[3-9]\d{9}", value) or re.fullmatch(r"\d{17}[0-9Xx]", value):
                 return False
@@ -181,6 +182,7 @@ class EntityExtractor:
 
     @staticmethod
     def _normalize(pattern: EntityPattern, value: str) -> str:
+        """Apply entity-specific normalization rules, e.g. for error_code we convert to uppercase to unify different casings."""
         if pattern.normalized_type == "string":
             return value.strip()
         return value.strip()

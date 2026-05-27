@@ -2,13 +2,12 @@ import inspect
 
 import pytest
 
-from app.integrations.base_http_client import BaseIntegrationHTTPClient, IntegrationAPIError
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.integrations.knowledge_api_client import KnowledgeAPIClient
 from app.integrations.log_api_client import LogAPIClient
 from app.integrations.mcp_http_client import MCPHTTPClient
 from app.integrations.llm_api_client_example import LLMAPIClientExample
 from app.integrations.long_term_memory_api_client import LongTermMemoryAPIClient
-from app.integrations.audit_api_client import AuditAPIClient
 from app.integrations.vector_search_api_client import VectorSearchAPIClient
 from app.integrations.insurance_core_api_client import InsuranceCoreAPIClient
 from app.integrations.observability_api_client import ObservabilityAPIClient
@@ -28,12 +27,11 @@ def test_base_http_client_passes_trace_headers_and_masks_sensitive_values():
 
 
 @pytest.mark.asyncio
-async def test_api_clients_are_disabled_without_base_url():
+async def test_knowledge_api_client_returns_empty_without_base_url():
     """真实 API 示例默认不启用，缺少真实地址时不会发起外部请求。"""
     client = KnowledgeAPIClient(BaseIntegrationHTTPClient(base_url=None))
 
-    with pytest.raises(IntegrationAPIError):
-        await client.search(query="E102", request_id="req-1", trace_id="trace-1")
+    assert await client.search(query="E102", request_id="req-1", trace_id="trace-1") == []
 
 
 def test_future_api_client_methods_keep_request_and_trace_parameters():
@@ -48,8 +46,6 @@ def test_future_api_client_methods_keep_request_and_trace_parameters():
         LLMAPIClientExample.chat_json,
         LongTermMemoryAPIClient.retrieve,
         LongTermMemoryAPIClient.extract_and_update,
-        AuditAPIClient.write_tool_execution_log,
-        AuditAPIClient.query_tool_execution_logs,
         VectorSearchAPIClient.search_vectors,
         VectorSearchAPIClient.keyword_search,
         InsuranceCoreAPIClient.get_policy,

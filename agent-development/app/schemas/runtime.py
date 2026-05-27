@@ -41,5 +41,5 @@ class SubAgentContext(BaseModel):
     missing_required_entities: list[str] = Field(default_factory=list)
     need_clarification: bool = False
     clarification_question: str | None = None
-    mock_knowledge_hint: str | None = None
+    knowledge_hint: str | None = None
     recent_troubleshooting_context: list[dict[str, Any]] = Field(default_factory=list)

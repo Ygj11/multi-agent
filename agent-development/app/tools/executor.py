@@ -11,7 +11,7 @@ from app.mcp.errors import MCPServerUnavailableError, MCPToolError, MCPToolTimeo
 from app.schemas.agent_card import AgentCard
 from app.approval.store import SQLiteApprovalStore
 from app.schemas.tool import ToolResult
-from app.tools.audit_store import ToolExecutionLogStore
+from app.tools.tool_execution_log_store import ToolExecutionLogStore
 from app.tools.registry import ToolRegistry
 import json
 

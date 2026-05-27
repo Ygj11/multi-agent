@@ -15,6 +15,9 @@ def build_rag_search_tool(knowledge_service: KnowledgeService):
     async def rag_search_tool(query: str, top_k: int = 3, namespace: str | None = None, **kwargs: Any) -> str:
         chunks = await knowledge_service.search(query=query, top_k=top_k)
         if not chunks:
+            disabled_reason = getattr(knowledge_service, "disabled_reason", None)
+            if disabled_reason:
+                return str(disabled_reason)
             return "No matching knowledge chunks found."
         return "\n".join(chunk.content for chunk in chunks)
 

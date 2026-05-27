@@ -221,8 +221,8 @@ class BaseSubAgent(ABC):
         tool_name = str(item.get("name") or item.get("tool_name") or "")
         mapping = {
             "query_internal_log": ("internal_log", "query_internal_log"),
-            "get_knowledge": ("knowledge", "InMemoryKnowledgeService"),
-            "rag_search_tool": ("knowledge", "InMemoryKnowledgeService"),
+            "get_knowledge": ("knowledge", "KnowledgeService"),
+            "rag_search_tool": ("knowledge", "KnowledgeService"),
             "mcp.workflow.query_refund_task": ("mcp_workflow", "MCPClientManager"),
             "mcp.logs.query_trace": ("mcp_logs", "MCPClientManager"),
             "query_policy_info": ("policy_info", "query_policy_info"),

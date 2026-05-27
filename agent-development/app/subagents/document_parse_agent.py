@@ -12,7 +12,6 @@ from app.observability.logger import log_event, preview_text
 from app.runtime.context_builder import ContextBuilder
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.subagent import SubAgentResult, SubAgentTask
-from app.tools.broker import ToolBroker
 from app.tools.executor import ToolExecutor
 
 
@@ -42,12 +41,10 @@ class DocumentParseAgent:
     def __init__(
         self,
         context_builder: ContextBuilder,
-        tool_broker: ToolBroker | None = None,
         tool_executor: ToolExecutor | None = None,
     ) -> None:
-        """保留 ToolBroker 依赖，后续 OCR、PDF 或文档服务工具接入时继续走统一通道。"""
+        """Store shared dependencies for future document tools through ToolExecutor."""
         self.context_builder = context_builder
-        self.tool_broker = tool_broker
         self.tool_executor = tool_executor
 
     async def run(self, task: SubAgentTask, parent_context: OrchestratorContext) -> SubAgentResult:

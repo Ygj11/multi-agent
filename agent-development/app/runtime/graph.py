@@ -475,6 +475,7 @@ class AgentGraphFactory:
             "graph_path": self._append_path(state, "build_clarification_answer"),
         }
 
+    # 路由函数
     def clarification_route(self, state: AgentGraphState) -> str:
         return "clarify" if state.get("need_clarification") else "continue"
 

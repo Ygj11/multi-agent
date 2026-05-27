@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from app.knowledge.in_memory_service import InMemoryKnowledgeService
 from app.llm.schemas import LLMResponse
 from app.mcp.schemas import MCPToolCapability
 from app.runtime.context_builder import ContextBuilder
@@ -14,6 +13,7 @@ from app.subagents.tool_calling_runner import ToolCallingRunner
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
 from tests.fakes.mcp import FakeMCPClientManager
+from tests.fakes.fake_knowledge_service import FakeKnowledgeService
 
 
 class FakeLLM:
@@ -71,7 +71,7 @@ async def test_subagent_loop_can_call_authorized_mcp_tool():
     skills_root = Path("app/skills")
     context_builder = ContextBuilder(
         skills_root=skills_root,
-        knowledge_service=InMemoryKnowledgeService(),
+        knowledge_service=FakeKnowledgeService(),
         skill_catalog=SkillCatalog(skills_root),
         skill_selector=SkillSelector(),
     )

@@ -3,7 +3,7 @@ import pytest
 from app.mcp.schemas import MCPToolCapability
 from app.schemas.agent_card import AgentCard
 from app.storage.sqlite import SQLiteDatabase
-from app.tools.audit_store import ToolExecutionLogStore
+from app.tools.tool_execution_log_store import ToolExecutionLogStore
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
 from tests.fakes.mcp import FakeMCPClientManager
