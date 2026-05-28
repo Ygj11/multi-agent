@@ -22,6 +22,15 @@ class RequiredEntityCheckResult:
 class RequiredEntityChecker:
     """Check Skill.required_entities against dynamic EntityBag."""
 
+    DISPLAY_NAMES = {
+        "apply_seq": "保全受理号 apply_seq",
+        "policy_no": "保单号 policy_no",
+        "endorseType": "保全项 endorseType",
+        "request_id": "请求流水号 request_id",
+        "error_code": "错误码 error_code",
+        "claim_no": "理赔号 claim_no",
+    }
+
     def check(
         self,
         *,
@@ -49,21 +58,27 @@ class RequiredEntityChecker:
                 missing.append(entity_type)
 
         if ambiguous:
+            display = self._display(ambiguous)
             return RequiredEntityCheckResult(
                 entities=merged,
                 missing_required_entities=ambiguous,
                 need_clarification=True,
-                clarification_question=f"上下文里有多个 {ambiguous[0]}，请明确要使用哪一个。",
+                clarification_question=f"上下文里有多个 {display}，请明确要使用哪一个。",
             )
         if missing:
+            display = self._display(missing)
             return RequiredEntityCheckResult(
                 entities=merged,
                 missing_required_entities=missing,
                 need_clarification=True,
-                clarification_question=f"执行 {skill.name} 还缺少 {', '.join(missing)}，请补充后我再继续。",
+                clarification_question=f"执行 {skill.name} 还缺少 {display}，请补充后我再继续处理。",
             )
         return RequiredEntityCheckResult(
             entities=merged,
             missing_required_entities=[],
             need_clarification=False,
         )
+
+    @classmethod
+    def _display(cls, entity_types: list[str]) -> str:
+        return "、".join(cls.DISPLAY_NAMES.get(entity_type, entity_type) for entity_type in entity_types)

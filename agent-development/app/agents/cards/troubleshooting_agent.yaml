@@ -6,16 +6,21 @@ capabilities:
   - internal_log_analysis
   - workflow_mcp_diagnosis
   - error_code_diagnosis
+  - endo_completion_aftercare
+  - endorsement_task_node_diagnosis
 supported_intents:
   - troubleshooting
   - refund_failure
   - callback_failure
+  - endo_completion_aftercare
 required_entities: []
 optional_entities:
   - policy_no
   - request_id
   - error_code
   - interface_name
+  - apply_seq
+  - endorseType
   - task_id
   - node_name
 output_schema: SubAgentResult
@@ -23,6 +28,12 @@ private_tools:
   - query_task_status
   - query_node_status
   - query_internal_log
+  - query_endo_task_record
+  - notice_policy_update
+  - notice_customer_update
+  - notice_period_update
+  - policy_suspendOrRecovery
+  - notice_finance
 public_tools_allowed: true
 mcp_tools:
   - mcp.workflow.query_refund_task
@@ -34,6 +45,7 @@ skills:
   - troubleshooting_agent.refund_failure
   - troubleshooting_agent.missing_field
   - troubleshooting_agent.callback_failure
+  - troubleshooting_agent.endo_completion_aftercare
 rag_namespaces:
   - troubleshooting
   - integration_errors

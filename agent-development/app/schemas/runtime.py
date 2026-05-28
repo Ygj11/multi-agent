@@ -42,4 +42,3 @@ class SubAgentContext(BaseModel):
     need_clarification: bool = False
     clarification_question: str | None = None
     knowledge_hint: str | None = None
-    recent_troubleshooting_context: list[dict[str, Any]] = Field(default_factory=list)

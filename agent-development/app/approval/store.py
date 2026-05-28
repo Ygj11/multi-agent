@@ -207,23 +207,3 @@ class SQLiteApprovalStore:
     @staticmethod
     def _now() -> str:
         return datetime.now(UTC).isoformat()
-
-
-class InMemoryApprovalStore:
-    """Backward-compatible in-memory store kept for older callers."""
-
-    def __init__(self) -> None:
-        self._items: dict[str, ApprovalRequest] = {}
-
-    def create(self, request: ApprovalRequest) -> ApprovalRequest:
-        self._items[request.approval_id] = request
-        return request
-
-    def get(self, approval_id: str) -> ApprovalRequest | None:
-        return self._items.get(approval_id)
-
-    def update_status(self, approval_id: str, status: ApprovalStatus) -> ApprovalRequest:
-        item = self._items[approval_id]
-        item.status = status
-        item.updated_at = datetime.now(UTC).isoformat()
-        return item

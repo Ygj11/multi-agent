@@ -15,6 +15,15 @@ def test_entity_extractor_extracts_common_business_entities():
     assert compact["product_code"] == "PROD_ABC"
 
 
+def test_entity_extractor_extracts_endo_aftercare_entities():
+    bag = EntityExtractor().extract("保全任务完成了，受理号 APPLY_POLICY_UPDATE_FAIL，保单号 P001，保全项退保")
+    compact = bag.to_compact_dict()
+
+    assert compact["apply_seq"] == "APPLY_POLICY_UPDATE_FAIL"
+    assert compact["policy_no"] == "P001"
+    assert compact["endorseType"] == "退保"
+
+
 def test_entity_extractor_marks_sensitive_entities():
     bag = EntityExtractor().extract("手机号13800138000，身份证110101199003074233")
 

@@ -141,7 +141,7 @@ flowchart TD
 | Hybrid Agent Router | 规则 Top-K 召回，必要时 LLM Router 仅在候选 AgentCard 摘要中重排 | `app/agents/selection.py::AgentSelectionNode`，`app/agents/llm_router.py::LLMAgentRouter` |
 | LLMProvider | 统一模型调用协议，规范 `chat(messages, tools)` 的输入输出 | `app/llm/base.py::LLMProvider` |
 | 内部数智 LLM API | 默认模型调用方式；未配置 URL 时走本地 deterministic fallback | `app/llm/internal_provider.py::InternalLLMProvider` |
-| OpenSDK / OpenAI-compatible | 可选模型调用方式，`ENABLE_OPENSDK_LLM=true` 时启用 | `app/llm/opensdk_provider.py::OpenSDKLLMProvider`，`app/llm/openai_provider.py::OpenAICompatibleLLMProvider` |
+| OpenSDK / OpenAI-compatible | 可选模型调用方式，`ENABLE_OPENSDK_LLM=true` 时启用 | `app/llm/opensdk_provider.py::OpenSDKLLMProvider` |
 | scene 模型选择 | 为 query rewrite、intent、agent selection、subagent reasoning、final compliance、summary 预留不同模型配置 | `app/llm/model_config.py::get_llm_model` |
 | ToolCallingRunner | 子 Agent 的 ReAct-style LLM 工具调用循环 | `app/subagents/tool_calling_runner.py::ToolCallingRunner.run` |
 | ToolExecutor | 当前主路径的工具执行、AgentCard 权限校验、MCP 分发、SQLite 日志记录 | `app/tools/executor.py::ToolExecutor.execute` |

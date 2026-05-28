@@ -54,6 +54,8 @@ def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata:
         required_entities=[str(item) for item in data["required_entities"]],
         optional_entities=[str(item) for item in data["optional_entities"]],
         private_tools=[str(item) for item in data["private_tools"]],
+        public_tools=[str(item) for item in data.get("public_tools", [])],
+        mcp_tools=[str(item) for item in data.get("mcp_tools", [])],
         enabled=_as_bool(data["enabled"]),
         is_default=_as_bool(data["is_default"]),
         business_domain=[str(item) for item in data.get("business_domain", [])],

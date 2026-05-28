@@ -55,3 +55,16 @@ def test_multiple_candidates_clarify():
 
     assert result.need_clarification is True
     assert result.missing_required_entities == ["claim_no"]
+
+
+def test_endo_completion_aftercare_requires_apply_seq_policy_no_and_endorse_type():
+    result = RequiredEntityChecker().check(
+        skill=_skill("troubleshooting_agent.endo_completion_aftercare"),
+        entities={"apply_seq": "APPLY_POLICY_UPDATE_FAIL"},
+        entity_bag=EntityBag(),
+    )
+
+    assert result.need_clarification is True
+    assert result.missing_required_entities == ["policy_no", "endorseType"]
+    assert "保单号 policy_no" in result.clarification_question
+    assert "保全项 endorseType" in result.clarification_question

@@ -18,6 +18,8 @@ class SkillMetadata(BaseModel):
     required_entities: list[str]
     optional_entities: list[str] = Field(default_factory=list)
     private_tools: list[str]
+    public_tools: list[str] = Field(default_factory=list)
+    mcp_tools: list[str] = Field(default_factory=list)
     enabled: bool
     is_default: bool
     business_domain: list[str] = Field(default_factory=list)
@@ -78,6 +80,9 @@ class SkillSelectionResult(BaseModel):
     score: float
     reason: str
     fallback: bool = False
+    selection_source: str = "rule"
+    llm_confidence: float | None = None
+    llm_reason: str | None = None
     missing_required_entities: list[str] = Field(default_factory=list)
     need_clarification: bool = False
     clarification_question: str | None = None

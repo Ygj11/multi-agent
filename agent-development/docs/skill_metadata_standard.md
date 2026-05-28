@@ -57,7 +57,3 @@ required_context:
 - Required fields: `app/skills/metadata.py::REQUIRED_SKILL_METADATA_FIELDS`
 - Catalog scan: `app/skills/catalog.py::SkillCatalog.scan`
 - AgentCard 校验: `app/agents/card_loader.py::AgentCardLoader.validate_with_skill_catalog`
-
-## 迁移结果
-
-旧两层目录 skill 已迁移到 `app/skills/deprecated/legacy/**/SKILL.md`，仅作为历史资料保留。当前 active skills 全部使用统一 metadata，并与 `app/agents/cards/*.yaml` 中的 `skills` 声明保持一致。

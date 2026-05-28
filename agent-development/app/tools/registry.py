@@ -27,7 +27,14 @@ class ToolRegistry:
         """Compatibility API: register a public tool."""
         self.register_public(name=name, tool=tool)
 
-    def register_public(self, name: str, tool: ToolCallable, description: str = "", is_write: bool = False) -> None:
+    def register_public(
+        self,
+        name: str,
+        tool: ToolCallable,
+        description: str = "",
+        is_write: bool = False,
+        parameters: dict[str, Any] | None = None,
+    ) -> None:
         """Register a tool available to agents that allow public tools."""
         self._tools[name] = ToolDefinition(
             name=name,
@@ -36,12 +43,20 @@ class ToolRegistry:
             scope="public",
             source="local",
             is_write=is_write,
+            parameters=normalize_tool_parameters(parameters) if parameters is not None else {},
         )
         self._public_tools.add(name)
 
-    def register_public_tool(self, name: str, tool: ToolCallable, description: str = "", is_write: bool = False) -> None:
+    def register_public_tool(
+        self,
+        name: str,
+        tool: ToolCallable,
+        description: str = "",
+        is_write: bool = False,
+        parameters: dict[str, Any] | None = None,
+    ) -> None:
         """New API alias for registering a public tool."""
-        self.register_public(name=name, tool=tool, description=description, is_write=is_write)
+        self.register_public(name=name, tool=tool, description=description, is_write=is_write, parameters=parameters)
 
     def register_private(
         self,
@@ -51,6 +66,7 @@ class ToolRegistry:
         tool: ToolCallable,
         description: str = "",
         is_write: bool = False,
+        parameters: dict[str, Any] | None = None,
     ) -> None:
         """Register a tool bound to one sub agent."""
         self._tools[name] = ToolDefinition(
@@ -61,6 +77,7 @@ class ToolRegistry:
             source="local",
             agent_name=agent_name,
             is_write=is_write,
+            parameters=normalize_tool_parameters(parameters) if parameters is not None else {},
         )
         self._private_tools_by_agent.setdefault(agent_name, set()).add(name)
 
@@ -71,6 +88,7 @@ class ToolRegistry:
         tool: ToolCallable,
         description: str = "",
         is_write: bool = False,
+        parameters: dict[str, Any] | None = None,
     ) -> None:
         """New API alias for registering an agent-private tool."""
         self.register_private(
@@ -79,6 +97,7 @@ class ToolRegistry:
             tool=tool,
             description=description,
             is_write=is_write,
+            parameters=parameters,
         )
 
     def get(self, name: str) -> ToolCallable | None:
@@ -101,8 +120,13 @@ class ToolRegistry:
                 source="mcp",
                 server_name=capability.server_name,
                 original_name=capability.original_tool_name,
-                parameters=capability.input_schema,
+                parameters=normalize_tool_parameters(capability.input_schema),
                 enabled=capability.enabled,
+                metadata={
+                    "server_name": capability.server_name,
+                    "original_tool_name": capability.original_tool_name,
+                    "raw_schema": capability.raw_schema,
+                },
             )
             self._mcp_tools.add(capability.registered_tool_name)
 
@@ -153,17 +177,23 @@ class ToolRegistry:
 
     def list_tools_for_agent(self, agent_card: AgentCard) -> list[dict[str, Any]]:
         """Return OpenAI-compatible tool schemas visible to one AgentCard."""
-        return [self.get_tool_schema(name) for name in self.list_tool_names_for_agent(agent_card) if self.get_tool_schema(name)]
+        schemas: list[dict[str, Any]] = []
+        for name in self.list_tool_names_for_agent(agent_card):
+            schema = self.get_tool_schema(name)
+            if schema is not None:
+                schemas.append(schema)
+        return schemas
 
     def get_tool_schema(self, tool_name: str) -> dict[str, Any] | None:
         """Return one tool schema usable by LLM function calling."""
         definition = self._tools.get(tool_name)
         if definition is None:
             return None
-        if definition.parameters:
-            parameters = definition.parameters
-        else:
-            parameters = self._parameters_from_signature(definition)
+        parameters = (
+            normalize_tool_parameters(definition.parameters)
+            if definition.parameters
+            else self._parameters_from_signature(definition)
+        )
         return {
             "type": "function",
             "function": {
@@ -188,6 +218,18 @@ class ToolRegistry:
                 if parameter.default is inspect._empty:
                     required.append(name)
         return {"type": "object", "properties": properties, "required": required}
+
+    def get_required_arguments(self, tool_name: str) -> list[str]:
+        """Return normalized required argument names for a registered tool."""
+        definition = self._tools.get(tool_name)
+        if definition is None:
+            return []
+        parameters = (
+            normalize_tool_parameters(definition.parameters)
+            if definition.parameters
+            else self._parameters_from_signature(definition)
+        )
+        return [str(item) for item in parameters.get("required", [])]
 
     def is_tool_available_for_agent(self, agent_name: str, tool_name: str, card: AgentCard | None = None) -> bool:
         """Check card-driven tool availability."""
@@ -229,3 +271,24 @@ class ToolRegistry:
 async def _mcp_placeholder(**kwargs: Any) -> None:
     """Never called directly; ToolExecutor dispatches source=mcp to MCPClientManager."""
     raise RuntimeError("mcp tools must be executed through MCPClientManager")
+
+
+def normalize_tool_parameters(parameters: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize any local or MCP input schema to an object JSON schema."""
+    if not isinstance(parameters, dict):
+        return {"type": "object", "properties": {}, "required": []}
+
+    normalized = dict(parameters)
+    normalized["type"] = "object"
+
+    properties = normalized.get("properties")
+    if not isinstance(properties, dict):
+        properties = {}
+    normalized["properties"] = properties
+
+    required = normalized.get("required")
+    if not isinstance(required, list):
+        required = []
+    normalized["required"] = [str(item) for item in required]
+
+    return normalized

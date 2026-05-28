@@ -1,6 +1,5 @@
 from app.knowledge.disabled_service import DisabledKnowledgeService
-from app.tools.builtin_tools import build_get_knowledge_tool
-from app.tools.public_tools import build_rag_search_tool
+from app.tools.public_tools import build_get_knowledge_tool, build_rag_search_tool
 from tests.fakes.fake_knowledge_service import FakeKnowledgeService
 
 

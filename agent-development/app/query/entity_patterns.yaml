@@ -19,12 +19,29 @@ patterns:
     sensitive: false
     confidence: 0.9
 
+  - entity_type: apply_seq
+    description: 保全受理号 / 申请流水号，例如 APPLY_POLICY_UPDATE_FAIL
+    regex:
+      - "\\bAPPLY[_-]?[A-Za-z0-9_-]+\\b"
+      - "(?:受理号|申请号|apply[_-]?seq|applySeq)[:：=]?\\s*([A-Za-z0-9_-]+)"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.95
+
   - entity_type: policy_no
     description: 保单号
     regex:
-      - "(?:保单(?:号)?[:：]?\\s*|policy[_-]?no[:：]?\\s*)([A-Za-z0-9]{6,20})(?![A-Za-z0-9])"
-      - "(?<![A-Za-z0-9])P\\d{6,}(?![A-Za-z0-9])"
+      - "(?:保单号|policy[_-]?no|policyNo)[:：=]?\\s*([A-Za-z0-9]{3,20})(?![A-Za-z0-9])"
+      - "(?<![A-Za-z0-9])P\\d{3,}(?![A-Za-z0-9])"
       - "(?<![A-Za-z0-9])\\d{10,20}(?![A-Za-z0-9])"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.85
+
+  - entity_type: endorseType
+    description: 保全项 / 保全类型，例如 退保、地址变更、客户资料变更
+    regex:
+      - "(?:保全项|保全类型|endorseType)[:：=]?\\s*([\\u4e00-\\u9fa5A-Za-z0-9_-]+)"
     normalized_type: string
     sensitive: false
     confidence: 0.85

@@ -39,7 +39,7 @@ LLMProvider 只负责模型调用和响应归一化：
 
 ## 可选 OpenAI-compatible Provider
 
-OpenAI-compatible 调用由 `app/llm/opensdk_provider.py::OpenSDKLLMProvider` 提供，`app/llm/openai_provider.py::OpenAICompatibleLLMProvider` 只是兼容旧 import 的别名。
+OpenAI-compatible 调用由 `app/llm/opensdk_provider.py::OpenSDKLLMProvider` 提供；旧的 `app/llm/openai_provider.py` 兼容别名已移除。
 
 启用条件：
 

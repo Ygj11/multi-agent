@@ -79,6 +79,15 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         agent_name="admin_agent",
         name="shell_exec",
         tool=ShellExecTool(project_root=settings.project_root, enabled=settings.enable_shell_exec),
+        description="Run a tightly restricted allowlisted shell command. Disabled by default.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "command": {"type": "array", "description": "Allowlisted command argv, for example ['echo', 'hello']."},
+                "timeout": {"type": "number", "description": "Maximum command timeout in seconds, capped by the tool."},
+            },
+            "required": ["command"],
+        },
         is_write=False,
     )
     tool_registry.register_private(
@@ -89,6 +98,18 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             enabled=settings.enable_http_tools,
             allowed_hosts=settings.allowed_http_tool_hosts,
         ),
+        description="Run a restricted allowlisted HTTP GET or POST request. Disabled by default.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "method": {"type": "string", "description": "HTTP method, GET or POST."},
+                "url": {"type": "string", "description": "Target URL. Host must be allowlisted."},
+                "params": {"type": "object", "description": "Optional query parameters."},
+                "json_body": {"type": "object", "description": "Optional JSON request body."},
+                "timeout": {"type": "number", "description": "Optional timeout in seconds, capped by the tool."},
+            },
+            "required": ["method", "url"],
+        },
     )
     tool_registry.register_private(
         agent_name="admin_agent",
@@ -98,6 +119,18 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             enabled=settings.enable_http_tools,
             allowed_hosts=settings.allowed_http_tool_hosts,
         ),
+        description="Call an MCP HTTP gateway through the restricted HTTP request tool. Disabled by default.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "base_url": {"type": "string", "description": "MCP HTTP gateway base URL. Host must be allowlisted."},
+                "tool_name": {"type": "string", "description": "MCP tool name to call."},
+                "arguments": {"type": "object", "description": "Arguments passed to the MCP tool."},
+                "endpoint_path": {"type": "string", "description": "Gateway endpoint path, default /mcp/tools/call."},
+                "timeout": {"type": "number", "description": "Optional timeout in seconds, capped by the tool."},
+            },
+            "required": ["base_url", "tool_name"],
+        },
     )
     tool_executor = ToolExecutor(
         registry=tool_registry,
@@ -123,7 +156,12 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         skills_root=skills_root,
         knowledge_service=knowledge_service,
         skill_catalog=skill_catalog,
-        skill_selector=SkillSelector(),
+        skill_selector=SkillSelector(
+            llm_provider=llm_provider,
+            enable_llm_rerank=settings.enable_skill_llm_rerank,
+            top_k=settings.skill_llm_rerank_top_k,
+            min_margin=settings.skill_llm_rerank_min_margin,
+        ),
     )
 
     subagent_manager = SubAgentManager(skill_catalog=skill_catalog)

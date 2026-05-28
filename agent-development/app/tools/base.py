@@ -27,5 +27,6 @@ class ToolDefinition(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     is_write: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"arbitrary_types_allowed": True}

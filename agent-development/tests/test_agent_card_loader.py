@@ -23,6 +23,21 @@ def test_agent_card_yaml_loads_required_fields():
     assert "troubleshooting" in card.rag_namespaces
 
 
+def test_troubleshooting_agent_declares_endo_aftercare_skill_and_tools():
+    card = AgentCardLoader(CARDS_ROOT).get_agent_card("troubleshooting_agent")
+
+    assert "troubleshooting_agent.endo_completion_aftercare" in card.skills
+    for tool_name in {
+        "query_endo_task_record",
+        "notice_policy_update",
+        "notice_customer_update",
+        "notice_period_update",
+        "policy_suspendOrRecovery",
+        "notice_finance",
+    }:
+        assert tool_name in card.private_tools
+
+
 def test_agent_card_missing_required_field_fails(tmp_path):
     cards_root = tmp_path / "cards"
     cards_root.mkdir()

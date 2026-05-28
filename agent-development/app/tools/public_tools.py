@@ -6,7 +6,40 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.knowledge.service import KnowledgeService
-from app.tools.builtin_tools import build_get_knowledge_tool
+
+
+RAG_SEARCH_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": (
+                "用于检索知识库的查询语句。应包含用户问题、rewritten_query、错误码、接口名、业务实体等"
+                "关键信息，例如：E102 submitProposal 签名失败原因。"
+            ),
+        },
+        "top_k": {
+            "type": "integer",
+            "description": "返回的知识片段数量，默认 3。",
+        },
+    },
+    "required": ["query"],
+}
+
+GET_KNOWLEDGE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": "用于检索知识库的查询语句。",
+        },
+        "top_k": {
+            "type": "integer",
+            "description": "返回的知识片段数量，默认 3。",
+        },
+    },
+    "required": ["query"],
+}
 
 
 def build_rag_search_tool(knowledge_service: KnowledgeService):
@@ -24,6 +57,21 @@ def build_rag_search_tool(knowledge_service: KnowledgeService):
     return rag_search_tool
 
 
+def build_get_knowledge_tool(knowledge_service: KnowledgeService):
+    """Build the legacy get_knowledge public knowledge search alias."""
+
+    async def get_knowledge_tool(query: str, top_k: int = 3, **kwargs: Any) -> str:
+        chunks = await knowledge_service.search(query=query, top_k=top_k)
+        if not chunks:
+            disabled_reason = getattr(knowledge_service, "disabled_reason", None)
+            if disabled_reason:
+                return str(disabled_reason)
+            return "No matching knowledge chunks found."
+        return "\n".join(chunk.content for chunk in chunks)
+
+    return get_knowledge_tool
+
+
 async def calculator_tool(expression: str, **kwargs: Any) -> dict[str, Any]:
     """Very small calculator for arithmetic expressions."""
     allowed = set("0123456789+-*/(). %")
@@ -39,7 +87,20 @@ async def current_time_tool(**kwargs: Any) -> dict[str, Any]:
 
 def register_public_tools(registry, knowledge_service: KnowledgeService) -> None:
     """Register public tools on the provided registry."""
-    registry.register_public("rag_search_tool", build_rag_search_tool(knowledge_service), "Search task knowledge.")
-    registry.register_public("get_knowledge", build_get_knowledge_tool(knowledge_service), "Legacy knowledge search alias.")
+    registry.register_public(
+        "rag_search_tool",
+        build_rag_search_tool(knowledge_service),
+        (
+            "Search the knowledge base for task-related context. Use this when the answer requires project knowledge, "
+            "troubleshooting knowledge, API rules, product rules, or known error handling guidance."
+        ),
+        parameters=RAG_SEARCH_PARAMETERS,
+    )
+    registry.register_public(
+        "get_knowledge",
+        build_get_knowledge_tool(knowledge_service),
+        "Legacy alias for knowledge base search. Prefer rag_search_tool for new prompts, but keep this tool available for compatibility.",
+        parameters=GET_KNOWLEDGE_PARAMETERS,
+    )
     registry.register_public("calculator_tool", calculator_tool, "Calculate simple arithmetic expressions.")
     registry.register_public("current_time_tool", current_time_tool, "Return current time.")

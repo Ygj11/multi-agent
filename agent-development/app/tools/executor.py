@@ -62,6 +62,18 @@ class ToolExecutor:
             await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf)
             return result
 
+        missing_arguments = self._missing_required_arguments(tool_name, arguments)
+        if missing_arguments:
+            result = ToolResult(
+                name=tool_name,
+                agent_name=agent_name,
+                allowed=True,
+                success=False,
+                error=f"missing_required_argument:{','.join(missing_arguments)}",
+            )
+            await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf)
+            return result
+
         if self._requires_approval(definition, tool_name):
             approval_payload = {
                 "agent_name": agent_name,
@@ -144,6 +156,19 @@ class ToolExecutor:
 
         if not self.registry.is_tool_available_for_agent(agent_name, tool_name, agent_card):
             result = ToolResult(name=tool_name, agent_name=agent_name, allowed=False, success=False, error="tool_not_available_for_agent", approval_id=approval_id)
+            await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf, approval_id=approval_id)
+            return result
+
+        missing_arguments = self._missing_required_arguments(tool_name, arguments)
+        if missing_arguments:
+            result = ToolResult(
+                name=tool_name,
+                agent_name=agent_name,
+                allowed=True,
+                success=False,
+                error=f"missing_required_argument:{','.join(missing_arguments)}",
+                approval_id=approval_id,
+            )
             await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf, approval_id=approval_id)
             return result
 
@@ -249,6 +274,10 @@ class ToolExecutor:
         definition = self.registry.get_definition(name)
         return definition.source if definition else None
 
+    def _missing_required_arguments(self, tool_name: str, arguments: dict[str, Any]) -> list[str]:
+        required = self.registry.get_required_arguments(tool_name)
+        return [name for name in required if name not in arguments or arguments.get(name) is None]
+
     @staticmethod
     def _operation_type(tool_name: str) -> str:
         lowered = tool_name.lower()
@@ -259,7 +288,7 @@ class ToolExecutor:
 
     @classmethod
     def _requires_approval(cls, definition, tool_name: str) -> bool:
-        return bool(getattr(definition, "is_write", False)) or cls._operation_type(tool_name) != "write" or "write" in tool_name.lower()
+        return bool(getattr(definition, "is_write", False))
 
     @classmethod
     def _validate_approved_tool_request(

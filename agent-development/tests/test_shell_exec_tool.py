@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from app.config.settings import Settings
-from app.llm.openai_provider import OpenAICompatibleLLMProvider
+from app.llm.opensdk_provider import OpenSDKLLMProvider
 from app.tools.shell_exec_tool import ShellExecTool
 
 
@@ -34,6 +34,6 @@ async def test_shell_exec_enabled_rejects_non_allowlisted_command():
     assert "allowlisted" in result["error"]
 
 
-def test_openai_provider_default_does_not_require_api_key():
-    provider = OpenAICompatibleLLMProvider(Settings(enable_real_llm=False, openai_api_key=None))
+def test_opensdk_provider_default_does_not_require_api_key():
+    provider = OpenSDKLLMProvider(Settings(enable_real_llm=False, openai_api_key=None))
     assert provider.client is None
