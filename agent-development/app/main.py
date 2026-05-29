@@ -20,14 +20,13 @@ from app.compliance.final_checker import FinalComplianceChecker
 from app.config.settings import get_settings
 from app.knowledge.factory import build_knowledge_service
 from app.llm.factory import build_llm_provider
-from app.memory.long_term_memory_manager import LongTermMemoryManager
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
 from app.mcp.capability_registry import MCPCapabilityRegistry
 from app.mcp.client_manager import MCPClientManager
 from app.observability.logger import log_event, preview_text
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.query.query_rewrite_node import QueryRewriteNode
-from app.runtime.checkpoint import SQLiteCheckpointStore
+from app.runtime.checkpoint import SQLiteCheckpointStore, build_checkpointer
 from app.runtime.context_builder import ContextBuilder
 from app.runtime.graph import AgentGraphFactory
 from app.runtime.orchestrator import AgentOrchestrator
@@ -63,9 +62,9 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     llm_provider = build_llm_provider(settings)
     short_memory = ShortTermMemoryManager(db=db, llm_provider=llm_provider)
     checkpoint_store = SQLiteCheckpointStore(db=db)
+    langgraph_checkpointer = build_checkpointer(settings)
     tool_execution_log_store = ToolExecutionLogStore(db=db)
     approval_store = SQLiteApprovalStore(db=db)
-    _long_memory = LongTermMemoryManager()
     knowledge_service = build_knowledge_service(settings)
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
@@ -137,14 +136,20 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         log_store=tool_execution_log_store,
         mcp_client_manager=mcp_client_manager,
         approval_store=approval_store,
+        write_idempotency_enabled=settings.tool_write_idempotency_enabled,
     )
-    tool_calling_runner = ToolCallingRunner(llm_provider=llm_provider, tool_executor=tool_executor)
+    tool_calling_runner = ToolCallingRunner(
+        llm_provider=llm_provider,
+        tool_executor=tool_executor,
+        max_iterations=settings.tool_loop_max_iterations,
+        max_consecutive_tool_failures=settings.tool_loop_max_consecutive_failures,
+        max_same_tool_failures=settings.tool_loop_max_same_tool_failures,
+        max_duplicate_tool_calls=settings.tool_loop_max_duplicate_calls,
+    )
     final_compliance_checker = FinalComplianceChecker(llm_provider=llm_provider)
     approval_service = ApprovalService(
         store=approval_store,
         client=ApprovalSystemClient(settings=settings),
-        tool_executor=tool_executor,
-        tool_calling_runner=tool_calling_runner,
         final_compliance_checker=final_compliance_checker,
         message_store=message_store,
         short_memory=short_memory,
@@ -165,6 +170,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     )
 
     subagent_manager = SubAgentManager(skill_catalog=skill_catalog)
+    # Register subagents _catalog
     subagent_manager.register(
         "troubleshooting_agent",
         TroubleshootingAgent(
@@ -225,8 +231,14 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         dispatch_agent_node=DispatchAgentNode(subagent_manager),
         final_compliance_checker=final_compliance_checker,
         approval_service=approval_service,
+        tool_executor=tool_executor,
+        tool_calling_runner=tool_calling_runner,
+        checkpointer=langgraph_checkpointer,
+        max_approval_chain_depth=settings.max_approval_chain_depth,
+        max_write_tools_per_request=settings.max_write_tools_per_request,
     ).build()
     orchestrator = AgentOrchestrator(graph, checkpoint_store=checkpoint_store)
+    approval_service.orchestrator = orchestrator
 
     request_adapter = RequestAdapter()
     response_adapter = ResponseAdapter()
@@ -252,6 +264,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     app.state.message_store = message_store
     app.state.short_memory = short_memory
     app.state.checkpoint_store = checkpoint_store
+    app.state.langgraph_checkpointer = langgraph_checkpointer
     app.state.tool_execution_log_store = tool_execution_log_store
     app.state.approval_store = approval_store
     app.state.approval_service = approval_service

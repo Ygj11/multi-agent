@@ -66,7 +66,7 @@ class ChangeImpactAnalysisAgent:
         sub_context = await self.context_builder.build_for_subagent(
             task=task,
             parent_context=parent_context,
-            allowed_tools=["get_knowledge"],
+            allowed_tools=["rag_search_tool"],
         )
         output = self._analyze(
             ChangeImpactInput(
@@ -79,7 +79,7 @@ class ChangeImpactAnalysisAgent:
         knowledge_result = await self._call_tool(
             task=task,
             agent_card=agent_card,
-            name="get_knowledge",
+            name="rag_search_tool",
             arguments={"query": task.query, "top_k": 3, "selected_skill_id": sub_context.selected_skill_id},
         )
         evidence = [
@@ -93,8 +93,8 @@ class ChangeImpactAnalysisAgent:
             },
             {
                 "type": "knowledge",
-                "source": "get_knowledge",
-                "tool_name": "get_knowledge",
+                "source": "rag_search_tool",
+                "tool_name": "rag_search_tool",
                 "summary": preview_text(str(knowledge_result.result or knowledge_result.error)),
                 "result_preview": {"success": knowledge_result.success, "content_preview": preview_text(str(knowledge_result.result))},
                 "confidence": 0.72 if knowledge_result.success else 0.25,
@@ -148,7 +148,7 @@ class ChangeImpactAnalysisAgent:
         text = payload.change_description
         affected_interfaces: list[str] = []
         affected_fields: list[str] = []
-        affected_tools = ["get_knowledge"]
+        affected_tools = ["rag_search_tool"]
         affected_subagents = ["troubleshooting_agent", "document_parse_agent"]
         recommended_tests = ["知识库命中测试", "多轮问答回归测试"]
 

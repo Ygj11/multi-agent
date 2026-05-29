@@ -34,7 +34,7 @@ required_context:
 执行步骤：
 
 1. 使用 `query_internal_log` 查询内部日志，确认接口名、错误码、签名规则版本和疑似原因。
-2. 使用 `get_knowledge` 查询 E102、签名规则、timestamp、密钥版本、字段排序和空值字段处理知识。
+2. 使用 `rag_search_tool` 查询 E102、签名规则、timestamp、密钥版本、字段排序和空值字段处理知识。
 3. 如内部日志证据不足或需要外部流程证据，使用 AgentCard 授权的 MCP Client 工具，例如 `mcp.workflow.query_refund_task`。
 4. 输出内部日志证据、知识库依据、MCP workflow 证据、初步问题归属和建议动作。
 

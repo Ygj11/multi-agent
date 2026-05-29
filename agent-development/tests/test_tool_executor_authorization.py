@@ -51,7 +51,7 @@ async def test_public_tools_disallowed_when_card_disables_public_tools_and_logs_
     result = await executor.execute(
         agent_name="compliance_agent",
         agent_card=card,
-        tool_name="get_knowledge",
+        tool_name="rag_search_tool",
         arguments={"query": "E102"},
         session_key="s-tools",
     )

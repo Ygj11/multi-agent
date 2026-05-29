@@ -131,7 +131,6 @@ class ContextBuilder:
                 data={"agent_name": task.name, "fallback_skill_id": selection.selected_skill_id, "reason": selection.reason},
             )
         else:
-            # TODO 加载完整的 skills
             loaded_skill = self.skill_loader.load(selection.selected_skill_id)
             entity_bag = EntityBag(**parent_context.entity_bag) if parent_context.entity_bag else EntityBag()
             entity_bag.merge(EntityBag.from_compact_dict(task.entities, source="rule", confidence=0.9))

@@ -23,12 +23,14 @@ class SQLiteApprovalStore:
                 """
                 INSERT INTO approval_requests(
                     approval_id, external_approval_id, session_key, request_id, trace_id,
+                    thread_id, checkpoint_id, parent_approval_id, root_approval_id, approval_depth,
+                    next_approval_id, approval_scope, idempotency_key,
                     agent_name, tool_name, operation_type, risk_level, arguments_json,
-                    reason, status, callback_url, pending_state_json, pending_messages_json,
+                    reason, status, callback_url, pending_state_json, resume_state_json, pending_messages_json,
                     pending_tools_json, pending_tool_call_json, result_json, final_answer,
                     error, approver, comment, created_at, updated_at, decided_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 self._request_values(request),
             )
@@ -55,9 +57,11 @@ class SQLiteApprovalStore:
                 """
                 UPDATE approval_requests
                 SET external_approval_id = ?, session_key = ?, request_id = ?, trace_id = ?,
+                    thread_id = ?, checkpoint_id = ?, parent_approval_id = ?, root_approval_id = ?,
+                    approval_depth = ?, next_approval_id = ?, approval_scope = ?, idempotency_key = ?,
                     agent_name = ?, tool_name = ?, operation_type = ?, risk_level = ?,
                     arguments_json = ?, reason = ?, status = ?, callback_url = ?,
-                    pending_state_json = ?, pending_messages_json = ?, pending_tools_json = ?,
+                    pending_state_json = ?, resume_state_json = ?, pending_messages_json = ?, pending_tools_json = ?,
                     pending_tool_call_json = ?, result_json = ?, final_answer = ?, error = ?,
                     approver = ?, comment = ?, updated_at = ?, decided_at = ?
                 WHERE approval_id = ?
@@ -67,6 +71,14 @@ class SQLiteApprovalStore:
                     request.session_key,
                     request.request_id,
                     request.trace_id,
+                    request.thread_id,
+                    request.checkpoint_id,
+                    request.parent_approval_id,
+                    request.root_approval_id,
+                    request.approval_depth,
+                    request.next_approval_id,
+                    request.approval_scope,
+                    request.idempotency_key,
                     request.agent_name,
                     request.tool_name,
                     request.operation_type,
@@ -76,6 +88,7 @@ class SQLiteApprovalStore:
                     request.status,
                     request.callback_url,
                     self._to_json(request.pending_state),
+                    self._to_json(request.resume_state),
                     self._to_json(request.pending_messages),
                     self._to_json(request.pending_tools),
                     self._to_json(request.pending_tool_call),
@@ -148,6 +161,14 @@ class SQLiteApprovalStore:
             request.session_key,
             request.request_id,
             request.trace_id,
+            request.thread_id,
+            request.checkpoint_id,
+            request.parent_approval_id,
+            request.root_approval_id,
+            request.approval_depth,
+            request.next_approval_id,
+            request.approval_scope,
+            request.idempotency_key,
             request.agent_name,
             request.tool_name,
             request.operation_type,
@@ -157,6 +178,7 @@ class SQLiteApprovalStore:
             request.status,
             request.callback_url,
             cls._to_json(request.pending_state),
+            cls._to_json(request.resume_state),
             cls._to_json(request.pending_messages),
             cls._to_json(request.pending_tools),
             cls._to_json(request.pending_tool_call),
@@ -178,6 +200,14 @@ class SQLiteApprovalStore:
             session_key=row["session_key"],
             request_id=row["request_id"],
             trace_id=row["trace_id"],
+            thread_id=row["thread_id"],
+            checkpoint_id=row["checkpoint_id"],
+            parent_approval_id=row["parent_approval_id"],
+            root_approval_id=row["root_approval_id"],
+            approval_depth=row["approval_depth"] or 0,
+            next_approval_id=row["next_approval_id"],
+            approval_scope=row["approval_scope"] or "single_tool_call",
+            idempotency_key=row["idempotency_key"],
             agent_name=row["agent_name"],
             tool_name=row["tool_name"],
             operation_type=row["operation_type"],
@@ -187,6 +217,7 @@ class SQLiteApprovalStore:
             status=row["status"],
             callback_url=row["callback_url"],
             pending_state=json.loads(row["pending_state_json"]),
+            resume_state=json.loads(row["resume_state_json"]) if row["resume_state_json"] else {},
             pending_messages=json.loads(row["pending_messages_json"]),
             pending_tools=json.loads(row["pending_tools_json"]),
             pending_tool_call=json.loads(row["pending_tool_call_json"]),

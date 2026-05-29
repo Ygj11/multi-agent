@@ -108,12 +108,20 @@ def test_private_tool_schemas_include_descriptions_and_required_parameters():
     update_schema = registry.get_tool_schema("update_policy_status")
     assert "human approval" in update_schema["function"]["description"].lower()
     assert registry.get_definition("update_policy_status").is_write is True
+    for write_tool in (
+        "notice_policy_update",
+        "notice_customer_update",
+        "notice_period_update",
+        "policy_suspendOrRecovery",
+        "notice_finance",
+    ):
+        assert registry.get_definition(write_tool).is_write is True
 
 
 def test_public_knowledge_tools_have_query_schema():
     registry = _registry()
 
-    for tool_name in ("rag_search_tool", "get_knowledge"):
+    for tool_name in ("rag_search_tool",):
         schema = registry.get_tool_schema(tool_name)
         _assert_openai_schema(schema, tool_name)
         assert "query" in schema["function"]["parameters"]["required"]
@@ -171,7 +179,7 @@ def test_agent_visible_tool_schemas_are_standard_and_authorized_only():
     schemas = registry.list_tools_for_agent(card)
     names = {schema["function"]["name"] for schema in schemas}
 
-    assert {"query_policy_status", "rag_search_tool", "get_knowledge"}.issubset(names)
+    assert {"query_policy_status", "rag_search_tool"}.issubset(names)
     assert "query_policy_info" not in names
     assert "calculator_tool" not in names
     for schema in schemas:

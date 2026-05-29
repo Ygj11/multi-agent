@@ -19,7 +19,15 @@ class ToolCallingRunResult(BaseModel):
 
     final_answer: str
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
-    stopped_reason: Literal["final", "error", "max_iterations", "human_approval_required"]
+    stopped_reason: Literal[
+        "final",
+        "error",
+        "max_iterations",
+        "human_approval_required",
+        "max_consecutive_tool_failures",
+        "max_same_tool_failures",
+        "max_duplicate_tool_calls",
+    ]
     iterations: int
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]] = Field(default_factory=list)
@@ -37,11 +45,17 @@ class ToolCallingRunner:
         *,
         llm_provider: LLMProvider,
         tool_executor: ToolExecutor,
-        max_iterations: int = 30,
+        max_iterations: int = 10,
+        max_consecutive_tool_failures: int = 3,
+        max_same_tool_failures: int = 2,
+        max_duplicate_tool_calls: int = 2,
     ) -> None:
         self.llm_provider = llm_provider
         self.tool_executor = tool_executor
         self.max_iterations = max_iterations
+        self.max_consecutive_tool_failures = max_consecutive_tool_failures
+        self.max_same_tool_failures = max_same_tool_failures
+        self.max_duplicate_tool_calls = max_duplicate_tool_calls
 
     async def run(
         self,
@@ -67,6 +81,9 @@ class ToolCallingRunner:
             data={"agent_name": agent_name, "available_tools": visible_tool_names, "max_iterations": limit},
         )
         executed_calls: list[dict[str, Any]] = []
+        consecutive_failures = 0
+        same_tool_failure_counts: dict[str, int] = {}
+        tool_call_counts: dict[str, int] = {}
 
         for iteration in range(1, limit + 1):
             response = await self.llm_provider.chat(
@@ -103,6 +120,7 @@ class ToolCallingRunner:
                             "raw_tool_call": normalized.raw,
                         }
                         executed_calls.append(observation)
+                        consecutive_failures += 1
                         messages.append(
                             {
                                 "role": "tool",
@@ -111,7 +129,44 @@ class ToolCallingRunner:
                                 "content": json.dumps(observation, ensure_ascii=False, default=str),
                             }
                         )
+                        if consecutive_failures >= self.max_consecutive_tool_failures:
+                            return self._stop_for_guardrail(
+                                reason="max_consecutive_tool_failures",
+                                executed_calls=executed_calls,
+                                iteration=iteration,
+                                messages=messages,
+                                tools=tools,
+                            )
                         continue
+
+                    tool_call_key = self._tool_call_key(normalized.name, normalized.arguments)
+                    tool_call_counts[tool_call_key] = tool_call_counts.get(tool_call_key, 0) + 1
+                    if tool_call_counts[tool_call_key] > self.max_duplicate_tool_calls:
+                        observation = {
+                            "name": normalized.name,
+                            "agent_name": agent_name,
+                            "allowed": False,
+                            "success": False,
+                            "error": "max_duplicate_tool_calls",
+                            "arguments": normalized.arguments,
+                            "tool_call_id": normalized.id,
+                        }
+                        executed_calls.append(observation)
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": normalized.id,
+                                "name": normalized.name,
+                                "content": json.dumps(observation, ensure_ascii=False, default=str),
+                            }
+                        )
+                        return self._stop_for_guardrail(
+                            reason="max_duplicate_tool_calls",
+                            executed_calls=executed_calls,
+                            iteration=iteration,
+                            messages=messages,
+                            tools=tools,
+                        )
 
                     tool_result = await self.tool_executor.execute(
                         agent_name=agent_name,
@@ -124,6 +179,12 @@ class ToolCallingRunner:
                     )
                     dumped = tool_result.model_dump()
                     executed_calls.append(dumped)
+                    if tool_result.success:
+                        consecutive_failures = 0
+                        same_tool_failure_counts[tool_call_key] = 0
+                    else:
+                        consecutive_failures += 1
+                        same_tool_failure_counts[tool_call_key] = same_tool_failure_counts.get(tool_call_key, 0) + 1
                     if tool_result.needs_human_approval or tool_result.error == "human_approval_required":
                         pending_tool_call = dumped.get("pending_tool_call") or {
                             "name": normalized.name,
@@ -153,6 +214,22 @@ class ToolCallingRunner:
                             "content": json.dumps(dumped, ensure_ascii=False, default=str),
                         }
                     )
+                    if consecutive_failures >= self.max_consecutive_tool_failures:
+                        return self._stop_for_guardrail(
+                            reason="max_consecutive_tool_failures",
+                            executed_calls=executed_calls,
+                            iteration=iteration,
+                            messages=messages,
+                            tools=tools,
+                        )
+                    if same_tool_failure_counts[tool_call_key] >= self.max_same_tool_failures:
+                        return self._stop_for_guardrail(
+                            reason="max_same_tool_failures",
+                            executed_calls=executed_calls,
+                            iteration=iteration,
+                            messages=messages,
+                            tools=tools,
+                        )
                 continue
 
             messages.append({"role": "assistant", "content": response.content or ""})
@@ -182,3 +259,26 @@ class ToolCallingRunner:
         if isinstance(function, dict):
             return function.get("name")
         return tool.get("name") if isinstance(tool, dict) else None
+
+    @staticmethod
+    def _tool_call_key(tool_name: str, arguments: dict[str, Any]) -> str:
+        return f"{tool_name}:{json.dumps(arguments, sort_keys=True, ensure_ascii=False, default=str)}"
+
+    @staticmethod
+    def _stop_for_guardrail(
+        *,
+        reason: Literal["max_consecutive_tool_failures", "max_same_tool_failures", "max_duplicate_tool_calls"],
+        executed_calls: list[dict[str, Any]],
+        iteration: int,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingRunResult:
+        return ToolCallingRunResult(
+            final_answer="工具调用连续失败或重复调用，已停止自动处理，请人工介入。",
+            tool_calls=executed_calls,
+            stopped_reason=reason,
+            iterations=iteration,
+            messages=messages,
+            tools=tools,
+            error=reason,
+        )

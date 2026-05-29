@@ -47,8 +47,6 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory):
     assert data["approval_id"].startswith("approval_")
     assert data["approval_id"] in data["answer"]
 
-    approval = app.state.approval_store.db
-
     async def _read():
         return await app.state.approval_store.get(data["approval_id"])
 
@@ -57,6 +55,9 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory):
     item = anyio.run(_read)
     assert item is not None
     assert item.status == "pending"
+    assert item.thread_id == f"{item.session_key}:{item.request_id}"
+    assert item.root_approval_id == item.approval_id
+    assert item.approval_depth == 0
     assert item.tool_name == "update_policy_status"
     assert item.pending_tool_call["name"] == "update_policy_status"
 

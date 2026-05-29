@@ -15,6 +15,7 @@ class AgentGraphState(TypedDict, total=False):
     user_id: str
     session_id: str
     session_key: str
+    thread_id: str
 
     original_query: str
     rewritten_query: str
@@ -48,6 +49,13 @@ class AgentGraphState(TypedDict, total=False):
     approval_status: str | None
     approval_request: dict[str, Any] | None
     approval_submit_result: dict[str, Any] | None
+    approval_resume: bool
+    current_approval_id: str | None
+    root_approval_id: str | None
+    parent_approval_id: str | None
+    next_approval_id: str | None
+    approval_depth: int
+    manual_intervention_required: bool
     retry_count: int
     selected_skill_id: str | None
     selected_skill_metadata: dict[str, Any] | None

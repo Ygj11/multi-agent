@@ -26,22 +26,6 @@ RAG_SEARCH_PARAMETERS = {
     "required": ["query"],
 }
 
-GET_KNOWLEDGE_PARAMETERS = {
-    "type": "object",
-    "properties": {
-        "query": {
-            "type": "string",
-            "description": "用于检索知识库的查询语句。",
-        },
-        "top_k": {
-            "type": "integer",
-            "description": "返回的知识片段数量，默认 3。",
-        },
-    },
-    "required": ["query"],
-}
-
-
 def build_rag_search_tool(knowledge_service: KnowledgeService):
     """Build the public RAG search tool."""
 
@@ -55,21 +39,6 @@ def build_rag_search_tool(knowledge_service: KnowledgeService):
         return "\n".join(chunk.content for chunk in chunks)
 
     return rag_search_tool
-
-
-def build_get_knowledge_tool(knowledge_service: KnowledgeService):
-    """Build the legacy get_knowledge public knowledge search alias."""
-
-    async def get_knowledge_tool(query: str, top_k: int = 3, **kwargs: Any) -> str:
-        chunks = await knowledge_service.search(query=query, top_k=top_k)
-        if not chunks:
-            disabled_reason = getattr(knowledge_service, "disabled_reason", None)
-            if disabled_reason:
-                return str(disabled_reason)
-            return "No matching knowledge chunks found."
-        return "\n".join(chunk.content for chunk in chunks)
-
-    return get_knowledge_tool
 
 
 async def calculator_tool(expression: str, **kwargs: Any) -> dict[str, Any]:
@@ -95,12 +64,6 @@ def register_public_tools(registry, knowledge_service: KnowledgeService) -> None
             "troubleshooting knowledge, API rules, product rules, or known error handling guidance."
         ),
         parameters=RAG_SEARCH_PARAMETERS,
-    )
-    registry.register_public(
-        "get_knowledge",
-        build_get_knowledge_tool(knowledge_service),
-        "Legacy alias for knowledge base search. Prefer rag_search_tool for new prompts, but keep this tool available for compatibility.",
-        parameters=GET_KNOWLEDGE_PARAMETERS,
     )
     registry.register_public("calculator_tool", calculator_tool, "Calculate simple arithmetic expressions.")
     registry.register_public("current_time_tool", current_time_tool, "Return current time.")

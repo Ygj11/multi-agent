@@ -67,7 +67,6 @@ class BaseSubAgent(ABC):
                 agent_card=agent_card,
             )
             tool_schemas = self.get_available_tool_schemas(agent_card)
-            # TODO ToolCallingRunner.run
             run_result = await self.tool_calling_runner.run(
                 agent_name=self.name,
                 messages=messages,
@@ -222,7 +221,6 @@ class BaseSubAgent(ABC):
         tool_name = str(item.get("name") or item.get("tool_name") or "")
         mapping = {
             "query_internal_log": ("internal_log", "query_internal_log"),
-            "get_knowledge": ("knowledge", "KnowledgeService"),
             "rag_search_tool": ("knowledge", "KnowledgeService"),
             "mcp.workflow.query_refund_task": ("mcp_workflow", "MCPClientManager"),
             "mcp.logs.query_trace": ("mcp_logs", "MCPClientManager"),

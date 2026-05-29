@@ -28,7 +28,7 @@ async def test_context_builder_uses_lightweight_knowledge_hints():
         recent_messages=[],
         short_summary=None,
         available_subagents=["troubleshooting_agent"],
-        available_tools=["get_knowledge"],
+        available_tools=["rag_search_tool"],
     )
 
     assert context.lightweight_knowledge_hints

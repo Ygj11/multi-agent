@@ -38,8 +38,8 @@ def test_messages_and_summary_survive_app_recreate(app_factory):
     assert "timestamp" in data["answer"]
 
 
-async def test_checkpoint_store_persists_by_session_key(app_factory):
-    """项目内 checkpoint_store 应按 session_key 保存 LangGraph 最终 state。"""
+async def test_checkpoint_store_persists_by_thread_id(app_factory):
+    """项目内 checkpoint_store 应按每次请求的 LangGraph thread_id 保存最终 state。"""
     app = app_factory("checkpoint.sqlite3")
     client = TestClient(app)
     response = client.post(
@@ -53,12 +53,15 @@ async def test_checkpoint_store_persists_by_session_key(app_factory):
         },
     )
     assert response.status_code == 200
+    data = response.json()
+    thread_id = f"{data['session_key']}:{data['request_id']}"
 
-    state = await app.state.checkpoint_store.load("pingan_health:web:u001:s001")
+    state = await app.state.checkpoint_store.load(thread_id)
 
     assert state is not None
     assert state["intent"] == "troubleshooting"
     assert state["session_key"] == "pingan_health:web:u001:s001"
+    assert state["thread_id"] == thread_id
     assert "finalize_response" in state["graph_path"]
 
 

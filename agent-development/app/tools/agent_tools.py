@@ -328,6 +328,7 @@ def register_agent_private_tools(registry) -> None:
         tool=notice_policy_update,
         description="通知保全任务完成，保单更新失败，需要触发保单更新数据。",
         parameters=ENDO_NOTICE_PARAMETERS,
+        is_write=True,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
@@ -335,6 +336,7 @@ def register_agent_private_tools(registry) -> None:
         tool=notice_customer_update,
         description="通知保全任务完成，客户更新失败，需要触发客户更新数据。",
         parameters=ENDO_NOTICE_PARAMETERS,
+        is_write=True,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
@@ -342,6 +344,7 @@ def register_agent_private_tools(registry) -> None:
         tool=notice_period_update,
         description="通知保全任务完成，账单/账期更新失败，需要触发账单更新数据。",
         parameters=ENDO_NOTICE_PARAMETERS,
+        is_write=True,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
@@ -349,6 +352,7 @@ def register_agent_private_tools(registry) -> None:
         tool=policy_suspendOrRecovery,
         description="保单恢复 / 保单解锁。用于 11 节点失败或未发短信场景，触发保单恢复和 E08 相关处理。",
         parameters=POLICY_RECOVERY_PARAMETERS,
+        is_write=True,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
@@ -356,6 +360,7 @@ def register_agent_private_tools(registry) -> None:
         tool=notice_finance,
         description="通知保全任务完成，财务创单失败，需要触发财务创单并进行收退费。",
         parameters=ENDO_NOTICE_PARAMETERS,
+        is_write=True,
     )
     registry.register_private(
         agent_name="policy_query_agent",

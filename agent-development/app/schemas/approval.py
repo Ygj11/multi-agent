@@ -8,7 +8,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-ApprovalStatus = Literal["created", "pending", "approved", "rejected", "expired", "submit_failed", "completed"]
+ApprovalStatus = Literal[
+    "created",
+    "pending",
+    "approved",
+    "executing",
+    "rejected",
+    "expired",
+    "submit_failed",
+    "completed",
+    "failed",
+    "manual_intervention_required",
+]
 
 
 class ApprovalRequest(BaseModel):
@@ -19,6 +30,14 @@ class ApprovalRequest(BaseModel):
     request_id: str | None = None
     trace_id: str | None = None
     session_key: str | None = None
+    thread_id: str | None = None
+    checkpoint_id: str | None = None
+    parent_approval_id: str | None = None
+    root_approval_id: str | None = None
+    approval_depth: int = 0
+    next_approval_id: str | None = None
+    approval_scope: str = "single_tool_call"
+    idempotency_key: str | None = None
     agent_name: str
     tool_name: str
     operation_type: str = "write"
@@ -31,6 +50,7 @@ class ApprovalRequest(BaseModel):
     pending_messages: list[dict[str, Any]] = Field(default_factory=list)
     pending_tools: list[dict[str, Any]] = Field(default_factory=list)
     pending_tool_call: dict[str, Any] = Field(default_factory=dict)
+    resume_state: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] | None = None
     final_answer: str | None = None
     error: str | None = None

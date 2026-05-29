@@ -8,6 +8,7 @@ from app.schemas.approval import ApprovalRequest
 from app.storage.sqlite import SQLiteDatabase
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
+from app.tools.tool_execution_log_store import ToolExecutionLogStore
 
 
 async def _write_tool(value: str = ""):
@@ -149,3 +150,58 @@ async def test_execute_approved_tool_runs_when_approval_matches(tmp_path):
     assert result.success is True
     assert result.approval_id == "approval_1"
     assert result.result == {"success": True, "value": "x"}
+
+
+@pytest.mark.asyncio
+async def test_execute_approved_tool_replays_successful_approval_idempotently(tmp_path):
+    calls: list[str] = []
+
+    async def counted_write_tool(value: str = ""):
+        calls.append(value)
+        return {"success": True, "value": value}
+
+    registry = ToolRegistry()
+    registry.register_private(agent_name="agent_a", name="write_tool", tool=counted_write_tool, is_write=True)
+    db = SQLiteDatabase(tmp_path / "approval_idempotency.sqlite3")
+    store = SQLiteApprovalStore(db)
+    log_store = ToolExecutionLogStore(db)
+    executor = ToolExecutor(registry=registry, log_store=log_store, approval_store=store)
+    await store.create(
+        ApprovalRequest(
+            approval_id="approval_1",
+            session_key="s",
+            request_id="r",
+            agent_name="agent_a",
+            tool_name="write_tool",
+            arguments={"value": "x"},
+            reason="test",
+            status="approved",
+        )
+    )
+
+    first = await executor.execute_approved_tool(
+        approval_id="approval_1",
+        agent_name="agent_a",
+        tool_name="write_tool",
+        arguments={"value": "x"},
+        session_key="s",
+        request_id="r",
+        trace_id=None,
+        agent_card=_card(),
+    )
+    second = await executor.execute_approved_tool(
+        approval_id="approval_1",
+        agent_name="agent_a",
+        tool_name="write_tool",
+        arguments={"value": "x"},
+        session_key="s",
+        request_id="r",
+        trace_id=None,
+        agent_card=_card(),
+    )
+
+    assert first.success is True
+    assert second.success is True
+    assert second.result["reason"] == "idempotent_replay"
+    assert second.result["previous_result"] == {"success": True, "value": "x"}
+    assert calls == ["x"]

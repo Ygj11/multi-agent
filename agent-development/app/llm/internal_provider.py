@@ -172,8 +172,8 @@ class InternalLLMProvider:
             if "query_internal_log" in tool_names:
                 args = {"request_id": request_id_arg} if request_id_arg else {"query": text}
                 next_calls.append(self._tool_call("call_query_internal_log", "query_internal_log", args))
-                if "get_knowledge" in tool_names:
-                    next_calls.append(self._tool_call("call_get_knowledge", "get_knowledge", {"query": text, "top_k": 3}))
+                if "rag_search_tool" in tool_names:
+                    next_calls.append(self._tool_call("call_rag_search", "rag_search_tool", {"query": text, "top_k": 3}))
                 if "mcp.workflow.query_refund_task" in tool_names:
                     next_calls.append(
                         self._tool_call(

@@ -33,7 +33,7 @@ async def test_context_builder_injects_only_selected_skill_content():
     context = await builder.build_for_subagent(
         task=task,
         parent_context=parent_context,
-        allowed_tools=["query_internal_log", "get_knowledge"],
+        allowed_tools=["query_internal_log", "rag_search_tool"],
     )
 
     assert context.selected_skill_id == "troubleshooting_agent.signature_error"
@@ -69,7 +69,7 @@ async def test_context_builder_generic_execution_when_no_confident_skill_match()
     context = await builder.build_for_subagent(
         task=task,
         parent_context=parent_context,
-        allowed_tools=["query_internal_log", "get_knowledge"],
+        allowed_tools=["query_internal_log", "rag_search_tool"],
     )
 
     assert context.selected_skill_id is None

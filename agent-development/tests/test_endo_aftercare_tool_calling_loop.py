@@ -41,7 +41,7 @@ def _card():
     )
 
 
-async def test_endo_aftercare_tool_calling_loop_policy_update_mock_success():
+async def test_endo_aftercare_tool_calling_loop_policy_update_requires_approval():
     registry = ToolRegistry()
     register_agent_private_tools(registry)
     llm = SequencedLLM(
@@ -74,7 +74,6 @@ async def test_endo_aftercare_tool_calling_loop_policy_update_mock_success():
                 has_tool_calls=True,
                 finish_reason="tool_calls",
             ),
-            LLMResponse(content="已查询 9 节点失败并通知保单更新。", has_tool_calls=False),
         ]
     )
     runner = ToolCallingRunner(llm_provider=llm, tool_executor=ToolExecutor(registry))
@@ -89,9 +88,10 @@ async def test_endo_aftercare_tool_calling_loop_policy_update_mock_success():
         request_id="r",
     )
 
-    assert result.stopped_reason == "final"
-    assert result.needs_human_approval is False
+    assert result.stopped_reason == "human_approval_required"
+    assert result.needs_human_approval is True
     assert [call["name"] for call in result.tool_calls] == ["query_endo_task_record", "notice_policy_update"]
     assert "保单更新错误" in str(result.tool_calls[0]["result"])
-    assert result.tool_calls[1]["result"]["mock"] is True
-    assert result.tool_calls[1]["result"]["success"] is True
+    assert result.tool_calls[1]["success"] is False
+    assert result.tool_calls[1]["error"] == "human_approval_required"
+    assert result.pending_tool_call["name"] == "notice_policy_update"

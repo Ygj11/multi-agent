@@ -58,7 +58,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_change_impact_analysis_agent_uses_knowledge_tool(app_factory):
-    """变更影响分析 Agent 能分析签名规则变更并通过 get_knowledge 查询知识。"""
+    """变更影响分析 Agent 能分析签名规则变更并通过 rag_search_tool 查询知识。"""
     app = app_factory("impact.sqlite3")
     client = TestClient(app)
     response = client.post(
@@ -83,7 +83,7 @@ async def test_change_impact_analysis_agent_uses_knowledge_tool(app_factory):
     assert "变更影响分析完成" in body["answer"]
     assert "submitProposal" in body["answer"]
     assert "timestamp" in body["answer"]
-    assert "get_knowledge" in body["answer"]
+    assert "rag_search_tool" in body["answer"]
 
     logs = await app.state.tool_execution_log_store.list_by_session(body["session_key"])
-    assert any(item["tool_name"] == "get_knowledge" for item in logs)
+    assert any(item["tool_name"] == "rag_search_tool" for item in logs)

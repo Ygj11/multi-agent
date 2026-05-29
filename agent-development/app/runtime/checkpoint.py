@@ -7,11 +7,44 @@ from __future__ import annotations
 """
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from app.config.settings import get_settings
 from app.storage.sqlite import SQLiteDatabase
+
+logger = logging.getLogger(__name__)
+
+
+def build_checkpointer(settings=None):
+    """Build the LangGraph-native checkpointer.
+
+    The project currently ships LangGraph's in-memory saver by default. Some
+    deployments may install the optional SQLite checkpointer package; when it is
+    unavailable we explicitly fall back to MemorySaver while keeping
+    SQLiteCheckpointStore as the project-level final state snapshot store.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
+
+    settings = settings or get_settings()
+    backend = (getattr(settings, "checkpoint_backend", "memory") or "memory").lower()
+    if backend == "memory":
+        return MemorySaver()
+    if backend == "sqlite":
+        try:
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # type: ignore
+        except Exception as exc:  # pragma: no cover - depends on optional package
+            logger.warning(
+                "LangGraph SQLite checkpointer is not installed; falling back to MemorySaver. "
+                "SQLiteCheckpointStore still persists final state snapshots. error=%s",
+                exc,
+            )
+            return MemorySaver()
+
+        db_path = getattr(settings, "checkpoint_db_path", None) or getattr(settings, "sqlite_db_path", None)
+        return AsyncSqliteSaver.from_conn_string(str(db_path))
+    raise ValueError(f"unsupported_checkpoint_backend:{backend}")
 
 
 class SQLiteCheckpointStore:

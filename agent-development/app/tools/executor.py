@@ -25,11 +25,13 @@ class ToolExecutor:
         log_store: ToolExecutionLogStore | None = None,
         mcp_client_manager=None,
         approval_store: SQLiteApprovalStore | None = None,
+        write_idempotency_enabled: bool = True,
     ) -> None:
         self.registry = registry
         self.log_store = log_store
         self.mcp_client_manager = mcp_client_manager
         self.approval_store = approval_store
+        self.write_idempotency_enabled = write_idempotency_enabled
 
     async def execute(
         self,
@@ -145,6 +147,24 @@ class ToolExecutor:
         )
         if error:
             result = ToolResult(name=tool_name, agent_name=agent_name, allowed=False, success=False, error=error, approval_id=approval_id)
+            await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf, approval_id=approval_id)
+            return result
+
+        previous_success = await self._find_successful_approval_execution(approval_id) if self.write_idempotency_enabled else None
+        if previous_success is not None:
+            result = ToolResult(
+                name=tool_name,
+                agent_name=agent_name,
+                allowed=True,
+                success=True,
+                result={
+                    "skipped": True,
+                    "reason": "idempotent_replay",
+                    "previous_result": previous_success.get("result"),
+                    "previous_log_id": previous_success.get("id"),
+                },
+                approval_id=approval_id,
+            )
             await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf, approval_id=approval_id)
             return result
 
@@ -277,6 +297,14 @@ class ToolExecutor:
     def _missing_required_arguments(self, tool_name: str, arguments: dict[str, Any]) -> list[str]:
         required = self.registry.get_required_arguments(tool_name)
         return [name for name in required if name not in arguments or arguments.get(name) is None]
+
+    async def _find_successful_approval_execution(self, approval_id: str) -> dict[str, Any] | None:
+        if self.log_store is None:
+            return None
+        finder = getattr(self.log_store, "find_success_by_approval", None)
+        if finder is None:
+            return None
+        return await finder(approval_id)
 
     @staticmethod
     def _operation_type(tool_name: str) -> str:

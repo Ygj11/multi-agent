@@ -13,6 +13,10 @@ async def _tool2(value: str = ""):
     return {"tool": "tool2", "value": value}
 
 
+async def _failing_tool(value: str = ""):
+    return {"success": False, "error": f"failed:{value}"}
+
+
 class SequencedLLM:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -27,6 +31,7 @@ def _runner(responses):
     registry = ToolRegistry()
     registry.register_private(agent_name="agent_a", name="tool1", tool=_tool1)
     registry.register_private(agent_name="agent_a", name="tool2", tool=_tool2)
+    registry.register_private(agent_name="agent_a", name="failing_tool", tool=_failing_tool)
     executor = ToolExecutor(registry=registry)
     llm = SequencedLLM(responses)
     return ToolCallingRunner(llm_provider=llm, tool_executor=executor), llm
@@ -41,7 +46,7 @@ def _card():
         supported_intents=["test"],
         required_entities=[],
         output_schema="SubAgentResult",
-        private_tools=["tool1", "tool2"],
+        private_tools=["tool1", "tool2", "failing_tool"],
         public_tools_allowed=False,
         skills=["agent_a.default"],
         rag_namespaces=[],
@@ -137,3 +142,123 @@ async def test_runner_adds_observation_for_tool_failure_and_parse_error():
     assert any(call.get("error", "").startswith("tool_arguments_invalid_json") for call in result.tool_calls)
     assert [message["role"] for message in result.messages].count("tool") == 2
 
+
+async def test_runner_stops_on_duplicate_tool_call_limit():
+    runner, _ = _runner(
+        [
+            LLMResponse(content=None, tool_calls=[{"name": "tool1", "arguments": {"value": "same"}}], has_tool_calls=True),
+            LLMResponse(content=None, tool_calls=[{"name": "tool1", "arguments": {"value": "same"}}], has_tool_calls=True),
+            LLMResponse(content=None, tool_calls=[{"name": "tool1", "arguments": {"value": "same"}}], has_tool_calls=True),
+        ]
+    )
+    runner.max_duplicate_tool_calls = 2
+
+    result = await runner.run(
+        agent_name="agent_a",
+        agent_card=_card(),
+        messages=[{"role": "user", "content": "loop"}],
+        tools=[],
+        session_key="s",
+        request_id="r",
+        max_iterations=5,
+    )
+
+    assert result.stopped_reason == "max_duplicate_tool_calls"
+    assert result.error == "max_duplicate_tool_calls"
+    assert result.tool_calls[-1]["error"] == "max_duplicate_tool_calls"
+
+
+async def test_runner_stops_on_consecutive_tool_failures():
+    runner, _ = _runner(
+        [
+            LLMResponse(content=None, tool_calls=[{"name": "failing_tool", "arguments": {"value": "a"}}], has_tool_calls=True),
+            LLMResponse(content=None, tool_calls=[{"name": "failing_tool", "arguments": {"value": "b"}}], has_tool_calls=True),
+        ]
+    )
+    runner.max_consecutive_tool_failures = 2
+    runner.max_same_tool_failures = 10
+    runner.max_duplicate_tool_calls = 10
+
+    result = await runner.run(
+        agent_name="agent_a",
+        agent_card=_card(),
+        messages=[{"role": "user", "content": "fail"}],
+        tools=[],
+        session_key="s",
+        request_id="r",
+        max_iterations=5,
+    )
+
+    assert result.stopped_reason == "max_consecutive_tool_failures"
+    assert result.error == "max_consecutive_tool_failures"
+
+
+async def test_runner_stops_on_same_tool_same_arguments_failures():
+    runner, _ = _runner(
+        [
+            LLMResponse(content=None, tool_calls=[{"name": "failing_tool", "arguments": {"value": "same"}}], has_tool_calls=True),
+            LLMResponse(content=None, tool_calls=[{"name": "failing_tool", "arguments": {"value": "same"}}], has_tool_calls=True),
+        ]
+    )
+    runner.max_consecutive_tool_failures = 10
+    runner.max_same_tool_failures = 2
+    runner.max_duplicate_tool_calls = 10
+
+    result = await runner.run(
+        agent_name="agent_a",
+        agent_card=_card(),
+        messages=[{"role": "user", "content": "fail same"}],
+        tools=[],
+        session_key="s",
+        request_id="r",
+        max_iterations=5,
+    )
+
+    assert result.stopped_reason == "max_same_tool_failures"
+    assert result.error == "max_same_tool_failures"
+
+
+async def test_runner_stops_missing_required_argument_loop():
+    registry = ToolRegistry()
+
+    async def required_tool(apply_seq: str | None = None):
+        return {"apply_seq": apply_seq}
+
+    registry.register_private(
+        agent_name="agent_a",
+        name="query_endo_task_record",
+        tool=required_tool,
+        parameters={
+            "type": "object",
+            "properties": {"apply_seq": {"type": "string", "description": "Apply sequence."}},
+            "required": ["apply_seq"],
+        },
+    )
+    executor = ToolExecutor(registry=registry)
+    llm = SequencedLLM(
+        [
+            LLMResponse(content=None, tool_calls=[{"name": "query_endo_task_record", "arguments": {}}], has_tool_calls=True),
+            LLMResponse(content=None, tool_calls=[{"name": "query_endo_task_record", "arguments": {}}], has_tool_calls=True),
+        ]
+    )
+    runner = ToolCallingRunner(
+        llm_provider=llm,
+        tool_executor=executor,
+        max_consecutive_tool_failures=2,
+        max_same_tool_failures=10,
+        max_duplicate_tool_calls=10,
+    )
+    card = _card().model_copy(update={"private_tools": ["query_endo_task_record"]})
+
+    result = await runner.run(
+        agent_name="agent_a",
+        agent_card=card,
+        messages=[{"role": "user", "content": "missing"}],
+        tools=[],
+        session_key="s",
+        request_id="r",
+        max_iterations=5,
+    )
+
+    assert result.stopped_reason == "max_consecutive_tool_failures"
+    assert result.tool_calls[0]["error"] == "missing_required_argument:apply_seq"

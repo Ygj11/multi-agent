@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """Human approval workflow service."""
 
-import json
 from datetime import UTC, datetime
 from uuid import uuid4
 from typing import Any
@@ -11,7 +10,6 @@ from app.approval.client import ApprovalSystemClient
 from app.approval.store import SQLiteApprovalStore
 from app.compliance.final_checker import FinalComplianceChecker
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
-from app.schemas.agent_card import AgentCard
 from app.schemas.approval import (
     ApprovalCallbackHandleResult,
     ApprovalCallbackRequest,
@@ -20,8 +18,6 @@ from app.schemas.approval import (
     ApprovalSubmitResult,
 )
 from app.session.message_store import MessageStore
-from app.subagents.tool_calling_runner import ToolCallingRunner
-from app.tools.executor import ToolExecutor
 
 
 class ApprovalService:
@@ -32,21 +28,19 @@ class ApprovalService:
         *,
         store: SQLiteApprovalStore,
         client: ApprovalSystemClient,
-        tool_executor: ToolExecutor,
-        tool_calling_runner: ToolCallingRunner,
         final_compliance_checker: FinalComplianceChecker,
         message_store: MessageStore,
         short_memory: ShortTermMemoryManager,
         callback_url: str,
+        orchestrator: Any | None = None,
     ) -> None:
         self.store = store
         self.client = client
-        self.tool_executor = tool_executor
-        self.tool_calling_runner = tool_calling_runner
         self.final_compliance_checker = final_compliance_checker
         self.message_store = message_store
         self.short_memory = short_memory
         self.callback_url = callback_url
+        self.orchestrator = orchestrator
 
     async def create_approval_request(
         self,
@@ -54,6 +48,13 @@ class ApprovalService:
         session_key: str,
         request_id: str,
         trace_id: str | None,
+        thread_id: str | None = None,
+        checkpoint_id: str | None = None,
+        parent_approval_id: str | None = None,
+        root_approval_id: str | None = None,
+        approval_depth: int = 0,
+        approval_scope: str = "single_tool_call",
+        idempotency_key: str | None = None,
         agent_name: str,
         tool_name: str,
         operation_type: str,
@@ -61,15 +62,24 @@ class ApprovalService:
         arguments: dict[str, Any],
         reason: str,
         pending_state: dict[str, Any],
+        resume_state: dict[str, Any] | None = None,
         pending_messages: list[dict[str, Any]],
         pending_tools: list[dict[str, Any]],
         pending_tool_call: dict[str, Any],
     ) -> ApprovalRequest:
+        approval_id = f"approval_{uuid4().hex}"
         request = ApprovalRequest(
-            approval_id=f"approval_{uuid4().hex}",
+            approval_id=approval_id,
             session_key=session_key,
             request_id=request_id,
             trace_id=trace_id,
+            thread_id=thread_id,
+            checkpoint_id=checkpoint_id,
+            parent_approval_id=parent_approval_id,
+            root_approval_id=root_approval_id or approval_id,
+            approval_depth=approval_depth,
+            approval_scope=approval_scope,
+            idempotency_key=idempotency_key,
             agent_name=agent_name,
             tool_name=tool_name,
             operation_type=operation_type,
@@ -78,6 +88,7 @@ class ApprovalService:
             reason=reason,
             callback_url=self.callback_url,
             pending_state=pending_state,
+            resume_state=resume_state or pending_state,
             pending_messages=pending_messages,
             pending_tools=pending_tools,
             pending_tool_call=pending_tool_call,
@@ -110,7 +121,7 @@ class ApprovalService:
         if approval_request is None:
             raise KeyError(callback.approval_id)
 
-        if approval_request.status in {"completed", "rejected"}:
+        if approval_request.status in {"completed", "rejected", "manual_intervention_required"}:
             return ApprovalCallbackHandleResult(
                 approval_request=approval_request,
                 resumed=False,
@@ -138,7 +149,7 @@ class ApprovalService:
             event_type="approved",
             payload=callback.model_dump(),
         )
-        resume = await self.resume_after_approval(approval_request)
+        resume = await self.resume_graph_after_approval(approval_request)
         refreshed = await self.store.get(callback.approval_id) or approval_request
         return ApprovalCallbackHandleResult(
             approval_request=refreshed,
@@ -147,67 +158,62 @@ class ApprovalService:
             error=resume.error,
         )
 
-    async def resume_after_approval(self, approval_request: ApprovalRequest) -> ApprovalResumeResult:
-        pending_state = approval_request.pending_state
-        pending_messages = list(approval_request.pending_messages)
-        pending_tools = list(approval_request.pending_tools)
-        pending_tool_call = approval_request.pending_tool_call
-        agent_card = self._agent_card_from_state(pending_state)
-        tool_call_id = pending_tool_call.get("tool_call_id") or pending_tool_call.get("id") or f"approved_{approval_request.approval_id}"
+    async def resume_graph_after_approval(self, approval_request: ApprovalRequest) -> ApprovalResumeResult:
+        if self.orchestrator is None:
+            raise RuntimeError("approval_resume_orchestrator_not_configured")
 
-        tool_result = await self.tool_executor.execute_approved_tool(
-            approval_id=approval_request.approval_id,
-            agent_name=approval_request.agent_name,
-            tool_name=approval_request.tool_name,
-            arguments=approval_request.arguments,
-            session_key=approval_request.session_key or "",
-            request_id=approval_request.request_id or "",
-            trace_id=approval_request.trace_id,
-            agent_card=agent_card,
+        state = await self.orchestrator.resume_after_approval(approval_request)
+        refreshed = await self.store.get(approval_request.approval_id) or approval_request
+        final_answer = state.get("answer")
+        new_approval_id = state.get("approval_id")
+        has_next_approval = bool(
+            state.get("approval_required") and new_approval_id and new_approval_id != approval_request.approval_id
         )
-        dumped_tool_result = tool_result.model_dump()
-        pending_messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "name": approval_request.tool_name,
-                "content": json.dumps(dumped_tool_result, ensure_ascii=False, default=str),
+
+        if has_next_approval:
+            refreshed.status = "completed"
+            refreshed.next_approval_id = new_approval_id
+            refreshed.error = None
+            refreshed.final_answer = final_answer
+            refreshed.result = {
+                **(refreshed.result or {}),
+                "next_approval_id": new_approval_id,
+                "graph_path": state.get("graph_path", []),
             }
-        )
+            await self.store.update(
+                refreshed,
+                event_type="completed_with_next_approval",
+                payload={"next_approval_id": new_approval_id, "final_answer": final_answer},
+            )
+        elif state.get("manual_intervention_required"):
+            refreshed.status = "manual_intervention_required"
+            refreshed.error = "manual_intervention_required"
+            refreshed.final_answer = final_answer
+            refreshed.result = {"graph_path": state.get("graph_path", []), "manual_intervention_required": True}
+            await self.store.update(
+                refreshed,
+                event_type="manual_intervention_required",
+                payload={"final_answer": final_answer},
+            )
+        else:
+            refreshed.status = "completed"
+            refreshed.error = state.get("error")
+            refreshed.final_answer = final_answer
+            refreshed.result = {
+                "graph_path": state.get("graph_path", []),
+                "subagent_result": state.get("subagent_result"),
+            }
+            await self.store.update(
+                refreshed,
+                event_type="completed",
+                payload={"final_answer": final_answer, "error": refreshed.error},
+            )
 
-        run_result = await self.tool_calling_runner.run(
-            agent_name=approval_request.agent_name,
-            messages=pending_messages,
-            tools=pending_tools,
-            session_key=approval_request.session_key or "",
-            request_id=approval_request.request_id or "",
-            trace_id=approval_request.trace_id,
-            agent_card=agent_card,
-        )
-        final_answer = run_result.final_answer or run_result.error or "审批通过后继续执行失败。"
-        final_answer = await self._sanitize_and_persist_answer(
-            approval_request=approval_request,
-            raw_answer=final_answer,
-            subagent_result={"tool_result": dumped_tool_result, "runner": run_result.model_dump()},
-        )
-        approval_request.status = "completed"
-        approval_request.result = {
-            "tool_result": dumped_tool_result,
-            "runner": run_result.model_dump(),
-        }
-        approval_request.final_answer = final_answer
-        approval_request.error = run_result.error if run_result.stopped_reason != "final" else None
-        await self.store.update(
-            approval_request,
-            event_type="completed",
-            payload={"final_answer": final_answer, "tool_result": dumped_tool_result},
-        )
         return ApprovalResumeResult(
-            approval_id=approval_request.approval_id,
-            status=approval_request.status,
-            final_answer=final_answer,
-            error=approval_request.error,
-            tool_result=dumped_tool_result,
+            approval_id=refreshed.approval_id,
+            status=refreshed.status,
+            final_answer=refreshed.final_answer,
+            error=refreshed.error,
         )
 
     async def _finalize_rejected(self, approval_request: ApprovalRequest) -> str:
@@ -263,11 +269,6 @@ class ApprovalService:
             subagent_result=subagent_result,
         )
         return final_answer
-
-    @staticmethod
-    def _agent_card_from_state(state: dict[str, Any]) -> AgentCard | None:
-        data = state.get("selected_agent_card")
-        return AgentCard(**data) if isinstance(data, dict) else None
 
     @staticmethod
     def _now() -> str:

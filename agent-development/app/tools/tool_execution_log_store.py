@@ -119,6 +119,30 @@ class ToolExecutionLogStore:
 
         return await self.db.run(read)
 
+    async def find_success_by_approval(self, approval_id: str) -> dict[str, Any] | None:
+        """Return the first successful execution for an approval id, if any."""
+
+        def read(conn):
+            row = conn.execute(
+                """
+                SELECT *
+                FROM tool_execution_logs
+                WHERE approval_id = ? AND success = 1
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (approval_id,),
+            ).fetchone()
+            return self._row_to_dict(row) if row else None
+
+        item = await self.db.run(read)
+        if item and item.get("result_json"):
+            try:
+                item["result"] = json.loads(item["result_json"])
+            except json.JSONDecodeError:
+                item["result"] = item["result_json"]
+        return item
+
     @staticmethod
     def _row_to_dict(row) -> dict[str, Any]:
         return {

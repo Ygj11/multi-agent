@@ -89,6 +89,14 @@ class SQLiteDatabase:
                     session_key TEXT,
                     request_id TEXT,
                     trace_id TEXT,
+                    thread_id TEXT,
+                    checkpoint_id TEXT,
+                    parent_approval_id TEXT,
+                    root_approval_id TEXT,
+                    approval_depth INTEGER NOT NULL DEFAULT 0,
+                    next_approval_id TEXT,
+                    approval_scope TEXT NOT NULL DEFAULT 'single_tool_call',
+                    idempotency_key TEXT,
                     agent_name TEXT NOT NULL,
                     tool_name TEXT NOT NULL,
                     operation_type TEXT NOT NULL,
@@ -98,6 +106,7 @@ class SQLiteDatabase:
                     status TEXT NOT NULL,
                     callback_url TEXT,
                     pending_state_json TEXT NOT NULL,
+                    resume_state_json TEXT,
                     pending_messages_json TEXT NOT NULL,
                     pending_tools_json TEXT NOT NULL,
                     pending_tool_call_json TEXT NOT NULL,
@@ -133,6 +142,15 @@ class SQLiteDatabase:
             self._ensure_column(conn, "tool_execution_logs", "server_name", "TEXT")
             self._ensure_column(conn, "tool_execution_logs", "original_tool_name", "TEXT")
             self._ensure_column(conn, "tool_execution_logs", "approval_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "thread_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "checkpoint_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "parent_approval_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "root_approval_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "approval_depth", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "approval_requests", "next_approval_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "approval_scope", "TEXT NOT NULL DEFAULT 'single_tool_call'")
+            self._ensure_column(conn, "approval_requests", "idempotency_key", "TEXT")
+            self._ensure_column(conn, "approval_requests", "resume_state_json", "TEXT")
 
     def connect(self) -> sqlite3.Connection:
         """创建 SQLite 连接，并返回 dict-like row。"""
