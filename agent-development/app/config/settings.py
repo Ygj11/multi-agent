@@ -90,6 +90,8 @@ class Settings:
     tool_loop_max_same_tool_failures: int = 2
     tool_loop_max_duplicate_calls: int = 2
     tool_write_idempotency_enabled: bool = True
+    auth_mode: str = "dev_header"
+    allow_request_body_identity_fallback: bool = True
 
 
 def get_settings(dotenv_path: Path | None = None) -> Settings:
@@ -149,4 +151,6 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
         tool_loop_max_same_tool_failures=int(os.getenv("TOOL_LOOP_MAX_SAME_TOOL_FAILURES", "2")),
         tool_loop_max_duplicate_calls=int(os.getenv("TOOL_LOOP_MAX_DUPLICATE_CALLS", "2")),
         tool_write_idempotency_enabled=_as_bool(os.getenv("TOOL_WRITE_IDEMPOTENCY_ENABLED"), True),
+        auth_mode=os.getenv("AUTH_MODE", "dev_header"),
+        allow_request_body_identity_fallback=_as_bool(os.getenv("ALLOW_REQUEST_BODY_IDENTITY_FALLBACK"), True),
     )

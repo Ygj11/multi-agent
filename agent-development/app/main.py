@@ -5,18 +5,23 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
 from app.approval.client import ApprovalSystemClient
 from app.approval.service import ApprovalService
-from app.approval.store import SQLiteApprovalStore
+from app.auth.authorization_service import AuthorizationService, ResourceAccessService
+from app.auth.dependencies import get_current_principal
+from app.auth.principal import Principal
 from app.agents.card_loader import AgentCardLoader
 from app.agents.dispatcher import DispatchAgentNode
 from app.agents.selection import AgentSelectionNode
 from app.agents.task_assembler import AgentTaskAssembler
 from app.adapters.request_adapter import RequestAdapter
 from app.adapters.response_adapter import ResponseAdapter
-from app.compliance.final_checker import FinalComplianceChecker
+from app.bootstrap.agents import build_subagent_manager
+from app.bootstrap.storage import build_storage
+from app.bootstrap.tools import register_admin_restricted_tools
+from app.bootstrap.verification import build_verification_service
 from app.config.settings import get_settings
 from app.knowledge.factory import build_knowledge_service
 from app.llm.factory import build_llm_provider
@@ -26,117 +31,57 @@ from app.mcp.client_manager import MCPClientManager
 from app.observability.logger import log_event, preview_text
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.query.query_rewrite_node import QueryRewriteNode
-from app.runtime.checkpoint import SQLiteCheckpointStore, build_checkpointer
+from app.runtime.checkpoint import build_checkpointer
 from app.runtime.context_builder import ContextBuilder
 from app.runtime.graph import AgentGraphFactory
 from app.runtime.orchestrator import AgentOrchestrator
 from app.schemas.approval import ApprovalCallbackRequest, ApprovalCallbackResponse
 from app.schemas.message import ChatRequest, ChatResponse
-from app.session.message_store import MessageStore
 from app.session.session_manager import SessionManager
-from app.storage.sqlite import SQLiteDatabase
 from app.skills.catalog import SkillCatalog
 from app.skills.selector import SkillSelector
-from app.subagents.claim_agent import ClaimAgent
-from app.subagents.change_impact_analysis_agent import ChangeImpactAnalysisAgent
-from app.subagents.compliance_security_agent import ComplianceSecurityAgent
-from app.subagents.document_parse_agent import DocumentParseAgent
-from app.subagents.manager import SubAgentManager
-from app.subagents.policy_query_agent import PolicyQueryAgent
-from app.subagents.troubleshooting_agent import TroubleshootingAgent
 from app.subagents.tool_calling_runner import ToolCallingRunner
-from app.tools.tool_execution_log_store import ToolExecutionLogStore
 from app.tools.agent_tools import register_agent_private_tools
-from app.tools.http_tools import HTTPRequestTool, MCPHTTPCallTool
 from app.tools.executor import ToolExecutor
 from app.tools.public_tools import register_public_tools
 from app.tools.registry import ToolRegistry
-from app.tools.shell_exec_tool import ShellExecTool
 
 
 def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     """创建应用"""
     settings = get_settings()
-    db = SQLiteDatabase(sqlite_db_path or settings.sqlite_db_path)
-    message_store = MessageStore(db=db)
+    storage = build_storage(settings, sqlite_db_path)
+    db = storage.db
+    message_store = storage.message_store
     llm_provider = build_llm_provider(settings)
     short_memory = ShortTermMemoryManager(db=db, llm_provider=llm_provider)
-    checkpoint_store = SQLiteCheckpointStore(db=db)
+    checkpoint_store = storage.checkpoint_store
     langgraph_checkpointer = build_checkpointer(settings)
-    tool_execution_log_store = ToolExecutionLogStore(db=db)
-    approval_store = SQLiteApprovalStore(db=db)
+    tool_execution_log_store = storage.tool_execution_log_store
+    evidence_store = storage.evidence_store
+    approval_store = storage.approval_store
     knowledge_service = build_knowledge_service(settings)
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
 
     session_manager = SessionManager(message_store=message_store, short_memory=short_memory)
     tool_registry = ToolRegistry()
+    authorization_service = AuthorizationService()
+    resource_access_service = ResourceAccessService()
     register_public_tools(tool_registry, knowledge_service)
     register_agent_private_tools(tool_registry)
-    # Keep restricted operational tools registered but unavailable unless a card explicitly opts in.
-    tool_registry.register_private(
-        agent_name="admin_agent",
-        name="shell_exec",
-        tool=ShellExecTool(project_root=settings.project_root, enabled=settings.enable_shell_exec),
-        description="Run a tightly restricted allowlisted shell command. Disabled by default.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "command": {"type": "array", "description": "Allowlisted command argv, for example ['echo', 'hello']."},
-                "timeout": {"type": "number", "description": "Maximum command timeout in seconds, capped by the tool."},
-            },
-            "required": ["command"],
-        },
-        is_write=False,
-    )
-    tool_registry.register_private(
-        agent_name="admin_agent",
-        name="http_request",
-        tool=HTTPRequestTool(
-            timeout=settings.http_tool_timeout,
-            enabled=settings.enable_http_tools,
-            allowed_hosts=settings.allowed_http_tool_hosts,
-        ),
-        description="Run a restricted allowlisted HTTP GET or POST request. Disabled by default.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "method": {"type": "string", "description": "HTTP method, GET or POST."},
-                "url": {"type": "string", "description": "Target URL. Host must be allowlisted."},
-                "params": {"type": "object", "description": "Optional query parameters."},
-                "json_body": {"type": "object", "description": "Optional JSON request body."},
-                "timeout": {"type": "number", "description": "Optional timeout in seconds, capped by the tool."},
-            },
-            "required": ["method", "url"],
-        },
-    )
-    tool_registry.register_private(
-        agent_name="admin_agent",
-        name="mcp_http.call_tool",
-        tool=MCPHTTPCallTool(
-            timeout=settings.http_tool_timeout,
-            enabled=settings.enable_http_tools,
-            allowed_hosts=settings.allowed_http_tool_hosts,
-        ),
-        description="Call an MCP HTTP gateway through the restricted HTTP request tool. Disabled by default.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "base_url": {"type": "string", "description": "MCP HTTP gateway base URL. Host must be allowlisted."},
-                "tool_name": {"type": "string", "description": "MCP tool name to call."},
-                "arguments": {"type": "object", "description": "Arguments passed to the MCP tool."},
-                "endpoint_path": {"type": "string", "description": "Gateway endpoint path, default /mcp/tools/call."},
-                "timeout": {"type": "number", "description": "Optional timeout in seconds, capped by the tool."},
-            },
-            "required": ["base_url", "tool_name"],
-        },
-    )
+    register_admin_restricted_tools(tool_registry, settings)
+    verification_service = build_verification_service(llm_provider)
     tool_executor = ToolExecutor(
         registry=tool_registry,
         log_store=tool_execution_log_store,
         mcp_client_manager=mcp_client_manager,
         approval_store=approval_store,
         write_idempotency_enabled=settings.tool_write_idempotency_enabled,
+        authorization_service=authorization_service,
+        resource_access_service=resource_access_service,
+        verification_service=verification_service,
+        evidence_store=evidence_store,
     )
     tool_calling_runner = ToolCallingRunner(
         llm_provider=llm_provider,
@@ -146,11 +91,10 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         max_same_tool_failures=settings.tool_loop_max_same_tool_failures,
         max_duplicate_tool_calls=settings.tool_loop_max_duplicate_calls,
     )
-    final_compliance_checker = FinalComplianceChecker(llm_provider=llm_provider)
     approval_service = ApprovalService(
         store=approval_store,
         client=ApprovalSystemClient(settings=settings),
-        final_compliance_checker=final_compliance_checker,
+        verification_service=verification_service,
         message_store=message_store,
         short_memory=short_memory,
         callback_url=settings.approval_callback_url,
@@ -169,47 +113,11 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         ),
     )
 
-    subagent_manager = SubAgentManager(skill_catalog=skill_catalog)
-    # Register subagents _catalog
-    subagent_manager.register(
-        "troubleshooting_agent",
-        TroubleshootingAgent(
-            context_builder=context_builder,
-            tool_executor=tool_executor,
-            tool_calling_runner=tool_calling_runner,
-        ),
-    )
-    subagent_manager.register(
-        "compliance_agent",
-        ComplianceSecurityAgent(
-            context_builder=context_builder,
-            tool_executor=tool_executor,
-            tool_calling_runner=tool_calling_runner,
-        ),
-    )
-    subagent_manager.register(
-        "document_parse_agent",
-        DocumentParseAgent(context_builder=context_builder, tool_executor=tool_executor),
-    )
-    subagent_manager.register(
-        "change_impact_analysis_agent",
-        ChangeImpactAnalysisAgent(context_builder=context_builder, tool_executor=tool_executor),
-    )
-    subagent_manager.register(
-        "policy_query_agent",
-        PolicyQueryAgent(
-            context_builder=context_builder,
-            tool_executor=tool_executor,
-            tool_calling_runner=tool_calling_runner,
-        ),
-    )
-    subagent_manager.register(
-        "claim_agent",
-        ClaimAgent(
-            context_builder=context_builder,
-            tool_executor=tool_executor,
-            tool_calling_runner=tool_calling_runner,
-        ),
+    subagent_manager = build_subagent_manager(
+        skill_catalog=skill_catalog,
+        context_builder=context_builder,
+        tool_executor=tool_executor,
+        tool_calling_runner=tool_calling_runner,
     )
 
     cards_root = Path(__file__).resolve().parent / "agents" / "cards"
@@ -229,13 +137,14 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         agent_selection_node=AgentSelectionNode(agent_card_loader, llm_provider=llm_provider),
         task_assembler=AgentTaskAssembler(),
         dispatch_agent_node=DispatchAgentNode(subagent_manager),
-        final_compliance_checker=final_compliance_checker,
         approval_service=approval_service,
         tool_executor=tool_executor,
         tool_calling_runner=tool_calling_runner,
         checkpointer=langgraph_checkpointer,
         max_approval_chain_depth=settings.max_approval_chain_depth,
         max_write_tools_per_request=settings.max_write_tools_per_request,
+        authorization_service=authorization_service,
+        verification_service=verification_service,
     ).build()
     orchestrator = AgentOrchestrator(graph, checkpoint_store=checkpoint_store)
     approval_service.orchestrator = orchestrator
@@ -266,6 +175,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     app.state.checkpoint_store = checkpoint_store
     app.state.langgraph_checkpointer = langgraph_checkpointer
     app.state.tool_execution_log_store = tool_execution_log_store
+    app.state.evidence_store = evidence_store
     app.state.approval_store = approval_store
     app.state.approval_service = approval_service
     app.state.knowledge_service = knowledge_service
@@ -275,13 +185,16 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     app.state.agent_card_loader = agent_card_loader
     app.state.tool_registry = tool_registry
     app.state.tool_executor = tool_executor
+    app.state.authorization_service = authorization_service
+    app.state.resource_access_service = resource_access_service
+    app.state.verification_service = verification_service
     app.state.llm_provider = llm_provider
     app.state.tool_calling_runner = tool_calling_runner
     app.state.sqlite_db = db
     app.state.orchestrator = orchestrator
 
     @app.post("/api/chat", response_model=ChatResponse)
-    async def chat(request: ChatRequest) -> ChatResponse:
+    async def chat(request: ChatRequest, principal: Principal | None = Depends(get_current_principal)) -> ChatResponse:
         """聊天接口：请求适配 -> LangGraph 执行 -> 响应适配。"""
         log_event(
             "request_received",
@@ -297,7 +210,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             },
         )
         try:
-            inbound = request_adapter.adapt(request)
+            inbound = request_adapter.adapt(request, principal=principal)
             state = await orchestrator.run(inbound)
             response = response_adapter.adapt(state)
             log_event(
@@ -314,6 +227,8 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             return response
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     @app.post("/api/approval/callback", response_model=ApprovalCallbackResponse)
     async def approval_callback(request: ApprovalCallbackRequest) -> ApprovalCallbackResponse:

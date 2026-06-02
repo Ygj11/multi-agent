@@ -38,6 +38,16 @@ class ApprovalRequest(BaseModel):
     next_approval_id: str | None = None
     approval_scope: str = "single_tool_call"
     idempotency_key: str | None = None
+    tenant_id: str | None = None
+    subject: str | None = None
+    user_id: str | None = None
+    org_id: str | None = None
+    org_path: list[str] = Field(default_factory=list)
+    principal_snapshot: dict[str, Any] = Field(default_factory=dict)
+    auth_context_snapshot: dict[str, Any] = Field(default_factory=dict)
+    resource_type: str | None = None
+    resource_id: str | None = None
+    tool_required_scopes: list[str] = Field(default_factory=list)
     agent_name: str
     tool_name: str
     operation_type: str = "write"

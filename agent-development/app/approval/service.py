@@ -8,7 +8,6 @@ from typing import Any
 
 from app.approval.client import ApprovalSystemClient
 from app.approval.store import SQLiteApprovalStore
-from app.compliance.final_checker import FinalComplianceChecker
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
 from app.schemas.approval import (
     ApprovalCallbackHandleResult,
@@ -18,6 +17,8 @@ from app.schemas.approval import (
     ApprovalSubmitResult,
 )
 from app.session.message_store import MessageStore
+from app.verification.schemas import VerificationInput
+from app.verification.service import VerificationService
 
 
 class ApprovalService:
@@ -28,7 +29,7 @@ class ApprovalService:
         *,
         store: SQLiteApprovalStore,
         client: ApprovalSystemClient,
-        final_compliance_checker: FinalComplianceChecker,
+        verification_service: VerificationService,
         message_store: MessageStore,
         short_memory: ShortTermMemoryManager,
         callback_url: str,
@@ -36,7 +37,7 @@ class ApprovalService:
     ) -> None:
         self.store = store
         self.client = client
-        self.final_compliance_checker = final_compliance_checker
+        self.verification_service = verification_service
         self.message_store = message_store
         self.short_memory = short_memory
         self.callback_url = callback_url
@@ -55,6 +56,16 @@ class ApprovalService:
         approval_depth: int = 0,
         approval_scope: str = "single_tool_call",
         idempotency_key: str | None = None,
+        tenant_id: str | None = None,
+        subject: str | None = None,
+        user_id: str | None = None,
+        org_id: str | None = None,
+        org_path: list[str] | None = None,
+        principal_snapshot: dict[str, Any] | None = None,
+        auth_context_snapshot: dict[str, Any] | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        tool_required_scopes: list[str] | None = None,
         agent_name: str,
         tool_name: str,
         operation_type: str,
@@ -80,6 +91,16 @@ class ApprovalService:
             approval_depth=approval_depth,
             approval_scope=approval_scope,
             idempotency_key=idempotency_key,
+            tenant_id=tenant_id,
+            subject=subject,
+            user_id=user_id,
+            org_id=org_id,
+            org_path=org_path or [],
+            principal_snapshot=principal_snapshot or {},
+            auth_context_snapshot=auth_context_snapshot or {},
+            resource_type=resource_type,
+            resource_id=resource_id,
+            tool_required_scopes=tool_required_scopes or [],
             agent_name=agent_name,
             tool_name=tool_name,
             operation_type=operation_type,
@@ -240,8 +261,25 @@ class ApprovalService:
         raw_answer: str,
         subagent_result: dict[str, Any],
     ) -> str:
-        compliance = await self.final_compliance_checker.check(raw_answer)
-        final_answer = compliance.sanitized_answer if compliance.passed else compliance.fallback_answer
+        verification = await self.verification_service.verify(
+            VerificationInput(
+                stage="pre_answer",
+                request_id=approval_request.request_id,
+                trace_id=approval_request.trace_id,
+                session_key=approval_request.session_key,
+                principal=approval_request.principal_snapshot or None,
+                auth_context=approval_request.auth_context_snapshot or {},
+                agent_name=approval_request.agent_name,
+                answer=raw_answer,
+                metadata={"approval_id": approval_request.approval_id, "approval_status": approval_request.status},
+            )
+        )
+        if verification.action == "patch" and isinstance(verification.patched_output, str):
+            final_answer = verification.patched_output
+        elif verification.action in {"allow", "patch"} and verification.passed:
+            final_answer = raw_answer
+        else:
+            final_answer = "当前回复未通过最终验证，已拦截原始内容。请补充更具体的业务问题，我会在不暴露敏感信息的前提下重新说明。"
         pending_state = approval_request.pending_state
         await self.message_store.append(
             session_key=approval_request.session_key or "",

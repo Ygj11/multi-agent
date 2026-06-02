@@ -30,7 +30,8 @@ def build_rag_search_tool(knowledge_service: KnowledgeService):
     """Build the public RAG search tool."""
 
     async def rag_search_tool(query: str, top_k: int = 3, namespace: str | None = None, **kwargs: Any) -> str:
-        chunks = await knowledge_service.search(query=query, top_k=top_k)
+        namespaces = [namespace] if namespace else None
+        chunks = await knowledge_service.search(query=query, top_k=top_k, namespaces=namespaces)
         if not chunks:
             disabled_reason = getattr(knowledge_service, "disabled_reason", None)
             if disabled_reason:

@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+"""Trusted request principal schemas."""
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+
+class Principal(BaseModel):
+    """Trusted access subject derived from headers, JWT, or a gateway."""
+
+    tenant_id: str
+    subject: str
+    user_id: str | None = None
+    org_id: str | None = None
+    org_path: list[str] = Field(default_factory=list)
+    branch_code: str | None = None
+    channel: str | None = None
+    roles: list[str] = Field(default_factory=list)
+    scopes: list[str] = Field(default_factory=list)
+    data_permissions: list[str] = Field(default_factory=list)
+    resource_domains: list[str] = Field(default_factory=list)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def effective_user_id(self) -> str:
+        return self.user_id or self.subject
+
+
+class AuthContext(BaseModel):
+    """Serializable authentication context propagated through graph state."""
+
+    principal: Principal
+    auth_source: Literal["gateway", "jwt", "dev_header", "body_fallback", "service_account"] = "dev_header"
+    raw_claims: dict[str, Any] = Field(default_factory=dict)
+    authenticated_at: str | None = None
+

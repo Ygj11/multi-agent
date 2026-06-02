@@ -28,9 +28,9 @@ class ContextBuilder:
         skill_catalog: SkillCatalog | None = None,
         skill_selector: SkillSelector | None = None,
     ) -> None:
-        self.skills_root = skills_root
+        self.skills_root = Path(skills_root)
         self.knowledge_service = knowledge_service
-        self.skill_catalog = skill_catalog or SkillCatalog(skills_root)
+        self.skill_catalog = skill_catalog or SkillCatalog(self.skills_root)
         self.skill_loader = SkillLoader(self.skill_catalog)
         self.skill_selector = skill_selector or SkillSelector()
         self.required_entity_checker = RequiredEntityChecker()
@@ -51,6 +51,8 @@ class ContextBuilder:
         available_subagents: list[str],
         available_tools: list[str],
         agent_candidate_summaries: list[dict[str, Any]] | None = None,
+        principal: dict[str, Any] | None = None,
+        auth_context: dict[str, Any] | None = None,
     ) -> OrchestratorContext:
         hints = await self._build_lightweight_hints(
             query=f"{original_query} {rewritten_query}",
@@ -71,6 +73,8 @@ class ContextBuilder:
             available_tools=available_tools,
             agent_candidate_summaries=agent_candidate_summaries or [],
             lightweight_knowledge_hints=hints,
+            principal=principal,
+            auth_context=auth_context,
         )
 
     async def build_for_subagent(
@@ -161,7 +165,8 @@ class ContextBuilder:
                 },
             )
 
-        knowledge_hint = await self._build_subagent_knowledge_hint(parent_context.rewritten_query)
+        namespaces = agent_card_data.get("rag_namespaces", []) if isinstance(agent_card_data, dict) else []
+        knowledge_hint = await self._build_subagent_knowledge_hint(parent_context.rewritten_query, namespaces=namespaces)
         return SubAgentContext(
             task=task.model_dump(),
             rewritten_query=parent_context.rewritten_query,
@@ -176,6 +181,8 @@ class ContextBuilder:
             need_clarification=entity_check.need_clarification if entity_check else False,
             clarification_question=entity_check.clarification_question if entity_check else None,
             knowledge_hint=knowledge_hint,
+            principal=parent_context.principal,
+            auth_context=parent_context.auth_context,
         )
 
     def build_skill_selection_context(
@@ -242,10 +249,10 @@ class ContextBuilder:
         )
         return [chunk.content for chunk in chunks]
 
-    async def _build_subagent_knowledge_hint(self, query: str) -> str | None:
+    async def _build_subagent_knowledge_hint(self, query: str, namespaces: list[str] | None = None) -> str | None:
         if self.knowledge_service is None:
             return None
-        chunks = await self.knowledge_service.search(query=query, top_k=3)
+        chunks = await self.knowledge_service.search(query=query, top_k=3, namespaces=namespaces or None)
         log_event(
             "subagent_context_built",
             node="context_builder",

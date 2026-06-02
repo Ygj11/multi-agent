@@ -97,6 +97,16 @@ class SQLiteDatabase:
                     next_approval_id TEXT,
                     approval_scope TEXT NOT NULL DEFAULT 'single_tool_call',
                     idempotency_key TEXT,
+                    tenant_id TEXT,
+                    subject TEXT,
+                    user_id TEXT,
+                    org_id TEXT,
+                    org_path_json TEXT,
+                    principal_snapshot_json TEXT,
+                    auth_context_snapshot_json TEXT,
+                    resource_type TEXT,
+                    resource_id TEXT,
+                    tool_required_scopes_json TEXT,
                     agent_name TEXT NOT NULL,
                     tool_name TEXT NOT NULL,
                     operation_type TEXT NOT NULL,
@@ -150,6 +160,16 @@ class SQLiteDatabase:
             self._ensure_column(conn, "approval_requests", "next_approval_id", "TEXT")
             self._ensure_column(conn, "approval_requests", "approval_scope", "TEXT NOT NULL DEFAULT 'single_tool_call'")
             self._ensure_column(conn, "approval_requests", "idempotency_key", "TEXT")
+            self._ensure_column(conn, "approval_requests", "tenant_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "subject", "TEXT")
+            self._ensure_column(conn, "approval_requests", "user_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "org_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "org_path_json", "TEXT")
+            self._ensure_column(conn, "approval_requests", "principal_snapshot_json", "TEXT")
+            self._ensure_column(conn, "approval_requests", "auth_context_snapshot_json", "TEXT")
+            self._ensure_column(conn, "approval_requests", "resource_type", "TEXT")
+            self._ensure_column(conn, "approval_requests", "resource_id", "TEXT")
+            self._ensure_column(conn, "approval_requests", "tool_required_scopes_json", "TEXT")
             self._ensure_column(conn, "approval_requests", "resume_state_json", "TEXT")
 
     def connect(self) -> sqlite3.Connection:

@@ -37,6 +37,8 @@ class InboundMessage(BaseModel):
     session_key: str
     original_query: str
     messages: list[ChatMessage]
+    principal: dict[str, Any] | None = None
+    auth_context: dict[str, Any] | None = None
 
 
 class ChatResponse(BaseModel):

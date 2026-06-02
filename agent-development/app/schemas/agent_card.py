@@ -33,6 +33,7 @@ class AgentCard(BaseModel):
     rag_namespaces: list[str] = Field(default_factory=list)
     memory_policy: MemoryPolicy = Field(default_factory=MemoryPolicy)
     examples: list[dict[str, Any]] = Field(default_factory=list)
+    access_policy: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     version: str
 

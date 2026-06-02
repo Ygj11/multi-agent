@@ -28,6 +28,8 @@ class AgentOrchestrator:
             "session_id": inbound.session_id,
             "session_key": inbound.session_key,
             "thread_id": thread_id,
+            "principal": inbound.principal,
+            "auth_context": inbound.auth_context,
             "original_query": inbound.original_query,
             "error": None,
             "graph_path": [],

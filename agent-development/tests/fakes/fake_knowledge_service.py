@@ -16,8 +16,8 @@ class FakeKnowledgeService:
             )
         ]
 
-    async def search(self, query: str, top_k: int = 3) -> list[KnowledgeChunk]:
+    async def search(self, query: str, top_k: int = 3, namespaces: list[str] | None = None) -> list[KnowledgeChunk]:
         return self.chunks[:top_k]
 
-    async def pre_search(self, query: str, intent: str, top_k: int = 3) -> list[KnowledgeChunk]:
-        return await self.search(query, top_k)
+    async def pre_search(self, query: str, intent: str, top_k: int = 3, namespaces: list[str] | None = None) -> list[KnowledgeChunk]:
+        return await self.search(query, top_k, namespaces=namespaces)

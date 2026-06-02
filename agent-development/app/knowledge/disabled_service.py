@@ -11,20 +11,20 @@ class DisabledKnowledgeService:
 
     disabled_reason = "knowledge api disabled"
 
-    async def search(self, query: str, top_k: int = 3) -> list[KnowledgeChunk]:
+    async def search(self, query: str, top_k: int = 3, namespaces: list[str] | None = None) -> list[KnowledgeChunk]:
         log_event(
             "knowledge_api_disabled",
             node="knowledge_service",
             message="Knowledge API is disabled; search returns no chunks",
-            data={"query": query, "top_k": top_k},
+            data={"query": query, "top_k": top_k, "namespaces": namespaces or []},
         )
         return []
 
-    async def pre_search(self, query: str, intent: str, top_k: int = 3) -> list[KnowledgeChunk]:
+    async def pre_search(self, query: str, intent: str, top_k: int = 3, namespaces: list[str] | None = None) -> list[KnowledgeChunk]:
         log_event(
             "knowledge_api_disabled",
             node="knowledge_service",
             message="Knowledge API is disabled; pre_search returns no chunks",
-            data={"query": query, "intent": intent, "top_k": top_k},
+            data={"query": query, "intent": intent, "top_k": top_k, "namespaces": namespaces or []},
         )
         return []

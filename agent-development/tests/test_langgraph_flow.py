@@ -1,4 +1,4 @@
-"""LangGraph task-level orchestration flow tests."""
+﻿"""LangGraph task-level orchestration flow tests."""
 
 from app.adapters.request_adapter import RequestAdapter
 from app.schemas.message import ChatMessage, ChatRequest
@@ -25,7 +25,7 @@ async def test_langgraph_flow_selects_and_dispatches_troubleshooting_agent(app_f
     assert "select_agent" in state["graph_path"]
     assert "assemble_task" in state["graph_path"]
     assert "dispatch_agent" in state["graph_path"]
-    assert "final_compliance_check" in state["graph_path"]
+    assert "pre_answer_verify" in state["graph_path"]
     assert "route_intent" not in state["graph_path"]
     assert "call_troubleshooting_agent" not in state["graph_path"]
     assert state["graph_path"][-1] == "finalize_response"

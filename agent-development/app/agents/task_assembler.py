@@ -37,5 +37,12 @@ class AgentTaskAssembler:
             short_summary=orchestrator_context.short_summary if selected_card.memory_policy.use_short_summary else None,
             recent_messages=orchestrator_context.recent_messages[-recent_limit:] if recent_limit else [],
             lightweight_knowledge_hints=orchestrator_context.lightweight_knowledge_hints,
-            metadata={"request_id": request_id, "trace_id": trace_id},
+            metadata={
+                "request_id": request_id,
+                "trace_id": trace_id,
+                "principal": orchestrator_context.principal,
+                "auth_context": orchestrator_context.auth_context,
+            },
+            principal=orchestrator_context.principal,
+            auth_context=orchestrator_context.auth_context,
         )

@@ -25,12 +25,13 @@ class KnowledgeAPIClient:
         self,
         query: str,
         top_k: int = 3,
+        namespaces: list[str] | None = None,
         request_id: str | None = None,
         trace_id: str | None = None,
     ) -> list[KnowledgeChunk]:
         return await self._search(
             path="/knowledge/search",
-            payload={"query": query, "top_k": top_k},
+            payload={"query": query, "top_k": top_k, "namespaces": namespaces or []},
             query=query,
             top_k=top_k,
             request_id=request_id,
@@ -43,12 +44,13 @@ class KnowledgeAPIClient:
         query: str,
         intent: str,
         top_k: int = 3,
+        namespaces: list[str] | None = None,
         request_id: str | None = None,
         trace_id: str | None = None,
     ) -> list[KnowledgeChunk]:
         return await self._search(
             path="/knowledge/pre-search",
-            payload={"query": query, "intent": intent, "top_k": top_k},
+            payload={"query": query, "intent": intent, "top_k": top_k, "namespaces": namespaces or []},
             query=query,
             top_k=top_k,
             request_id=request_id,

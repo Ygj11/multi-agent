@@ -1,4 +1,4 @@
-from app.adapters.request_adapter import RequestAdapter
+﻿from app.adapters.request_adapter import RequestAdapter
 from app.schemas.message import ChatMessage, ChatRequest
 
 
@@ -10,7 +10,7 @@ async def test_full_architecture_acceptance_refund_failure_flow(app_factory):
             channel="web",
             user_id="u-accept",
             session_id="s-accept",
-            messages=[ChatMessage(role="user", content="保单9201344266为什么退保没有成功")],
+            messages=[ChatMessage(role="user", content="保单9201344266为什么退保没有成功？")],
         )
     )
 
@@ -27,9 +27,10 @@ async def test_full_architecture_acceptance_refund_failure_flow(app_factory):
     assert state["subagent_result"]["metadata"]["tool_calling_runner"]["stopped_reason"] == "final"
     assert "query_claim_case" not in state["subagent_result"]["metadata"]["tool_calling_runner"]["visible_tools"]
     assert "query_internal_log" not in state["orchestrator_context"]["available_tools"] or "query_internal_log" in state["selected_agent_card"]["private_tools"]
-    assert "final_compliance_check" in state["graph_path"]
-    assert state["final_compliance_result"]["passed"] is True
-    assert state["answer"] == state["final_compliance_result"]["sanitized_answer"]
+    assert "pre_answer_verify" in state["graph_path"]
+    assert state["pre_answer_verification_result"]["passed"] is True
+    assert state["pre_answer_verification_result"]["stage"] == "pre_answer"
+    assert state["pre_answer_verification_result"]["action"] in {"allow", "patch"}
 
     messages = await app.state.message_store.list_by_session(inbound.session_key)
     summary = await app.state.short_memory.get_summary(inbound.session_key)

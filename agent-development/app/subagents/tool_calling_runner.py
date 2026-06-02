@@ -68,6 +68,9 @@ class ToolCallingRunner:
         trace_id: str | None = None,
         max_iterations: int | None = None,
         agent_card: AgentCard | None = None,
+        principal: dict[str, Any] | None = None,
+        auth_context: dict[str, Any] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
     ) -> ToolCallingRunResult:
         limit = max_iterations or self.max_iterations
         visible_tool_names = [self._tool_name(tool) for tool in tools]
@@ -176,6 +179,9 @@ class ToolCallingRunner:
                         session_key=session_key,
                         request_id=request_id,
                         trace_id=trace_id,
+                        principal=principal,
+                        auth_context=auth_context,
+                        evidence=evidence or executed_calls,
                     )
                     dumped = tool_result.model_dump()
                     executed_calls.append(dumped)
