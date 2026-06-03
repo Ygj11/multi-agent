@@ -12,7 +12,7 @@ from app.agents.dispatcher import DispatchAgentNode
 from app.agents.selection import AgentSelectionNode
 from app.agents.task_assembler import AgentTaskAssembler
 from app.auth.authorization_service import AuthorizationService
-from app.auth.principal import Principal
+from app.auth.principal import principal_from_auth_context
 from app.approval.service import ApprovalService
 from app.observability.logger import log_event, preview_text
 from app.query.intent_recognition_node import IntentRecognitionNode
@@ -21,6 +21,7 @@ from app.runtime.context_builder import ContextBuilder
 from app.runtime.graph_state import AgentGraphState
 from app.runtime.handlers.approval_handler import ApprovalGraphHandler
 from app.runtime.handlers.clarification_handler import ClarificationHandler
+from app.runtime.handlers.memory_commit_handler import MemoryCommitHandler
 from app.runtime.handlers.message_commit_handler import MessageCommitHandler
 from app.runtime.handlers.verification_handler import VerificationHandler
 from app.schemas.agent_card import AgentCard, AgentSelectionResult
@@ -84,7 +85,8 @@ class AgentGraphFactory:
         self.authorization_service = authorization_service
         self.verification_service = verification_service
         self.clarification_handler = ClarificationHandler()
-        self.message_commit_handler = MessageCommitHandler(message_store=message_store, short_memory=short_memory)
+        self.message_commit_handler = MessageCommitHandler(message_store=message_store)
+        self.memory_commit_handler = MemoryCommitHandler(short_memory=short_memory)
         self.verification_handler = VerificationHandler(verification_service=verification_service)
         self.approval_handler = ApprovalGraphHandler(
             approval_service=approval_service,
@@ -250,7 +252,6 @@ class AgentGraphFactory:
             "clarification_question": result.clarification_question,
             "clarification_source": "intent_recognition" if result.need_clarification else state.get("clarification_source"),
             "missing_required_entities": result.missing_required_entities,
-            "target_subagent": None,
             "graph_path": self._append_path(state, "intent_recognition"),
         }
 
@@ -269,7 +270,6 @@ class AgentGraphFactory:
             short_summary=state.get("short_summary"),
             available_subagents=self.subagent_manager.list_agents(),
             available_tools=self.tool_registry.list_tools(),
-            principal=state.get("principal"),
             auth_context=state.get("auth_context"),
         )
         self._log_node_exit(state, "build_orchestrator_context")
@@ -353,10 +353,6 @@ class AgentGraphFactory:
         return {
             "subagent_result": result.model_dump(),
             "answer": result.answer,
-            "selected_skill_id": result.selected_skill_id,
-            "selected_skill_metadata": result.selected_skill_metadata,
-            "skill_selection_score": result.skill_selection_score,
-            "skill_selection_reason": result.skill_selection_reason,
             "graph_path": self._append_path(state, "dispatch_agent"),
         }
 
@@ -443,7 +439,7 @@ class AgentGraphFactory:
 
     async def compress_short_memory(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "compress_short_memory")
-        updates = await self.message_commit_handler.compress_short_memory(state)
+        updates = await self.memory_commit_handler.compress_short_memory(state)
         self._log_node_exit(state, "compress_short_memory")
         return {**updates, "graph_path": self._append_path(state, "compress_short_memory")}
 
@@ -496,13 +492,7 @@ class AgentGraphFactory:
     def _check_agent_access(self, state: AgentGraphState, card: AgentCard) -> dict[str, Any]:
         if self.authorization_service is None:
             return {"allowed": True}
-        principal = None
-        principal_data = state.get("principal")
-        if isinstance(principal_data, dict):
-            try:
-                principal = Principal(**principal_data)
-            except Exception:
-                principal = None
+        principal = principal_from_auth_context(state.get("auth_context"))
         decision = self.authorization_service.check_agent_access(principal=principal, agent_card=card)
         return decision.model_dump()
 

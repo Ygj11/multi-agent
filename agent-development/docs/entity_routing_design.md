@@ -70,13 +70,13 @@ Clarification can be produced by query rewrite, intent recognition, agent select
 ```text
 query_rewrite / intent_recognition / select_agent
 -> build_clarification_answer
--> final_compliance_check
+-> pre_answer_verify
 -> save_assistant_message
 -> compress_short_memory
 -> finalize_response
 ```
 
-Skill-level clarification happens inside `BaseSubAgent.run`, then continues through `final_compliance_check` like any other answer.
+Skill-level clarification happens inside `BaseSubAgent.run`, then continues through `pre_answer_verify` like any other answer. `pre_answer_verify` calls `VerificationService(stage="pre_answer")`; compliance redaction is now implemented as a verifier, not as a separate graph node.
 
 ## Tests
 

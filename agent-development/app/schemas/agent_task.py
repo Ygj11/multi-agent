@@ -26,5 +26,4 @@ class AgentTaskEnvelope(BaseModel):
     recent_messages: list[dict[str, Any]] = Field(default_factory=list)
     lightweight_knowledge_hints: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    principal: dict[str, Any] | None = None
     auth_context: dict[str, Any] | None = None

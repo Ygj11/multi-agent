@@ -36,3 +36,27 @@ class AuthContext(BaseModel):
     raw_claims: dict[str, Any] = Field(default_factory=dict)
     authenticated_at: str | None = None
 
+
+def principal_from_auth_context(value: AuthContext | dict[str, Any] | None) -> Principal | None:
+    """Extract the trusted Principal from an AuthContext payload."""
+    if value is None:
+        return None
+    if isinstance(value, AuthContext):
+        return value.principal
+    if not isinstance(value, dict):
+        return None
+    principal_data = value.get("principal")
+    if isinstance(principal_data, Principal):
+        return principal_data
+    if isinstance(principal_data, dict):
+        try:
+            return Principal(**principal_data)
+        except Exception:
+            return None
+    return None
+
+
+def principal_dict_from_auth_context(value: AuthContext | dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return a serializable Principal dict from an AuthContext payload."""
+    principal = principal_from_auth_context(value)
+    return principal.model_dump() if principal else None

@@ -19,7 +19,18 @@ class AuthorizationDecision(BaseModel):
 
 
 class AuthorizationService:
-    """Deterministic, service-side authorization checks."""
+    """Deterministic service-side authorization checks.
+
+    This service handles coarse access decisions that should not be delegated to
+    the LLM:
+
+    - agent access: whether the principal may use a selected AgentCard.
+    - tool access: whether the principal has the scopes required by a tool.
+
+    Resource ownership and organization-level restrictions are handled by
+    `ResourceAccessService` so the same tool can return different outcomes for
+    different principals without duplicating tool definitions.
+    """
 
     def check_agent_access(self, *, principal: Principal | None, agent_card: AgentCard) -> AuthorizationDecision:
         policy = getattr(agent_card, "access_policy", {}) or {}
@@ -63,7 +74,7 @@ class AuthorizationService:
 
 
 class ResourceAccessService:
-    """MVP resource access service.
+    """MVP resource access service for organization/resource boundaries.
 
     The enterprise version should delegate to an organization/resource policy
     service. This local implementation supports allowlists in principal
@@ -88,4 +99,3 @@ class ResourceAccessService:
         if isinstance(allowlist, list) and allowlist and resource_id not in {str(item) for item in allowlist}:
             return AuthorizationDecision(allowed=False, reason="resource_not_allowed", denied_by="resource_access")
         return AuthorizationDecision(allowed=True)
-

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""SQLite evidence store."""
+"""SQLite evidence store.
+
+Evidence is a reusable reference index for answers, verification, and future
+audit review. It complements, but does not replace, the append-only
+`tool_execution_logs` facts or the business-state `approval_requests` table.
+"""
 
 import json
 from typing import Any
@@ -11,6 +16,8 @@ from app.storage.sqlite import SQLiteDatabase
 
 
 class EvidenceStore:
+    """Persist evidence extracted from tool results and other trusted sources."""
+
     def __init__(self, db: SQLiteDatabase | None = None) -> None:
         self.db = db or SQLiteDatabase(get_settings().sqlite_db_path)
         self._initialize()
@@ -108,4 +115,3 @@ class EvidenceStore:
     @staticmethod
     def _to_json(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, default=str)
-

@@ -93,7 +93,6 @@ class RequestAdapter:
             session_key=session_key,
             original_query=original_query,
             messages=request.messages,
-            principal=auth_context.principal.model_dump(),
             auth_context=auth_context.model_dump(),
         )
 

@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-"""SQLite tool execution log store."""
+"""SQLite tool execution log store.
+
+This is the authoritative execution ledger for ToolExecutor attempts. It stores
+masked arguments, result/error, timing, source, and approval_id. Approval
+workflow state remains in `ApprovalStore`; reusable answer evidence is copied to
+`EvidenceStore` by ToolExecutor when configured.
+"""
 
 import json
 from typing import Any
@@ -36,7 +42,7 @@ def to_json(value: Any) -> str:
 
 
 class ToolExecutionLogStore:
-    """Writes ToolExecutor logs to tool_execution_logs."""
+    """Writes append-only ToolExecutor facts to tool_execution_logs."""
 
     def __init__(self, db: SQLiteDatabase | None = None) -> None:
         self.db = db or SQLiteDatabase(get_settings().sqlite_db_path)

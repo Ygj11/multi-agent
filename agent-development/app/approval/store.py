@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-"""SQLite approval request store."""
+"""SQLite approval request store.
+
+ApprovalStore owns approval business records and callback events. It deliberately
+does not replace LangGraph checkpoints or ToolExecutionLogStore: checkpoints
+resume graph state, tool logs prove execution, and approvals track human
+decisions plus pending tool metadata.
+"""
 
 import json
 from datetime import UTC, datetime

@@ -1,12 +1,24 @@
 from __future__ import annotations
 
-"""Composable verification service."""
+"""Composable verification service.
+
+Verification is the broad policy engine for runtime checks that need pluggable
+verifiers. The current main path uses it for:
+
+- `pre_tool`: optional verifier checks before a tool call executes.
+- `pre_answer`: final outbound verification, including compliance redaction.
+
+Authorization remains separate and deterministic; verification can inspect
+answers, evidence, tool calls, and policy-specific metadata.
+"""
 
 from app.verification.base import BaseVerifier
 from app.verification.schemas import VerificationInput, VerificationResult
 
 
 class VerificationService:
+    """Runs registered verifiers for one stage and aggregates their result."""
+
     def __init__(self, verifiers: list[BaseVerifier] | None = None) -> None:
         self.verifiers = verifiers or []
 
@@ -59,4 +71,3 @@ class VerificationService:
 
     async def verify(self, input: VerificationInput) -> VerificationResult:
         return self.aggregate(input, await self.verify_all(input))
-

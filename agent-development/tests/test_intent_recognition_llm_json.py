@@ -7,8 +7,10 @@ from app.query.intent_recognition_node import IntentRecognitionNode
 class JsonLLM:
     def __init__(self, payload):
         self.payload = payload
+        self.calls = []
 
     async def chat(self, *args, **kwargs):
+        self.calls.append({"args": args, "kwargs": kwargs})
         return LLMResponse(content=json.dumps(self.payload, ensure_ascii=False), finish_reason="stop", model="fake")
 
 
@@ -55,3 +57,107 @@ async def test_intent_invalid_json_fallback_business_cases():
         assert result.intent == intent
         assert result.sub_intent == sub_intent
         assert isinstance(result.entities, dict)
+
+
+async def test_intent_llm_prompt_contains_dynamic_candidate_space():
+    llm = JsonLLM(
+        {
+            "intent": "troubleshooting",
+            "sub_intent": "refund_failure",
+            "confidence": 0.91,
+            "entities": {"policy_no": "9201344266"},
+            "need_clarification": False,
+            "reason": "json",
+        }
+    )
+    node = IntentRecognitionNode(llm_provider=llm)
+
+    result = await node.recognize(
+        "refund failed for policy 9201344266",
+        "refund failed for policy 9201344266",
+        agent_card_summaries=[
+            {
+                "agent_name": "troubleshooting_agent",
+                "description": "Troubleshooting.",
+                "supported_intents": ["troubleshooting", "refund_failure"],
+                "capabilities": ["refund_failure"],
+                "required_entities": [],
+                "optional_entities": ["policy_no"],
+                "examples": [{"query": "refund failed", "intent": "troubleshooting"}],
+            }
+        ],
+    )
+
+    assert result.intent == "troubleshooting"
+    assert result.sub_intent == "refund_failure"
+    prompt = llm.calls[0]["kwargs"]["messages"][1]["content"]
+    assert "Allowed intents: ['refund_failure', 'troubleshooting']" in prompt
+    assert "Candidate sub intents by intent:" in prompt
+
+
+async def test_intent_llm_invalid_intent_falls_back_to_rules():
+    node = IntentRecognitionNode(
+        llm_provider=JsonLLM(
+            {
+                "intent": "made_up_intent",
+                "sub_intent": "made_up_sub_intent",
+                "confidence": 0.99,
+                "entities": {},
+                "need_clarification": False,
+                "reason": "bad",
+            }
+        )
+    )
+
+    result = await node.recognize(
+        "REQ_001 returned E102",
+        "REQ_001 returned E102",
+        agent_card_summaries=[
+            {
+                "agent_name": "troubleshooting_agent",
+                "description": "Troubleshooting.",
+                "supported_intents": ["troubleshooting"],
+                "capabilities": ["signature_error"],
+                "required_entities": [],
+                "optional_entities": ["request_id", "error_code"],
+                "examples": [{"query": "E102", "intent": "troubleshooting"}],
+            }
+        ],
+    )
+
+    assert result.intent == "troubleshooting"
+    assert result.sub_intent == "signature_error"
+    assert result.reason == "entity_aware_rule_fallback"
+
+
+async def test_intent_llm_invalid_sub_intent_is_not_accepted():
+    node = IntentRecognitionNode(
+        llm_provider=JsonLLM(
+            {
+                "intent": "troubleshooting",
+                "sub_intent": "not_in_candidates",
+                "confidence": 0.9,
+                "entities": {},
+                "need_clarification": False,
+            }
+        )
+    )
+
+    result = await node.recognize(
+        "Need troubleshooting help",
+        "Need troubleshooting help",
+        agent_card_summaries=[
+            {
+                "agent_name": "troubleshooting_agent",
+                "description": "Troubleshooting.",
+                "supported_intents": ["troubleshooting"],
+                "capabilities": ["signature_error"],
+                "required_entities": [],
+                "optional_entities": [],
+                "examples": [],
+            }
+        ],
+    )
+
+    assert result.intent == "troubleshooting"
+    assert result.sub_intent is None

@@ -30,7 +30,7 @@ User query
 -> source=local: call local function
 -> source=mcp: MCPClientManager.call_tool(...)
 -> tool_execution_logs
--> final_compliance_check
+-> pre_answer_verify / VerificationService
 ```
 
 `LLMProvider` and `ToolCallingRunner` do not know MCP protocol details. MCP routing belongs to `ToolExecutor`.

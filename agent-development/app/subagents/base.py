@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from app.auth.principal import principal_dict_from_auth_context
 from app.runtime.context_builder import ContextBuilder
 from app.observability.logger import log_event, preview_text
 from app.schemas.agent_card import AgentCard
@@ -66,7 +67,8 @@ class BaseSubAgent(ABC):
                 sub_context=sub_context,
                 agent_card=agent_card,
             )
-            tool_schemas = self.get_available_tool_schemas(agent_card, principal=task.metadata.get("principal"))
+            principal = principal_dict_from_auth_context(task.metadata.get("auth_context"))
+            tool_schemas = self.get_available_tool_schemas(agent_card, principal=principal)
             run_result = await self.tool_calling_runner.run(
                 agent_name=self.name,
                 messages=messages,
@@ -75,7 +77,7 @@ class BaseSubAgent(ABC):
                 request_id=str(task.metadata.get("request_id") or task.task_id or ""),
                 trace_id=task.metadata.get("trace_id"),
                 agent_card=agent_card,
-                principal=task.metadata.get("principal"),
+                principal=principal,
                 auth_context=task.metadata.get("auth_context"),
             )
             result = self.build_result_from_runner(
@@ -143,7 +145,7 @@ class BaseSubAgent(ABC):
             request_id=task.metadata.get("request_id"),
             trace_id=task.metadata.get("trace_id"),
             session_key=task.session_key,
-            principal=task.metadata.get("principal"),
+            principal=principal_dict_from_auth_context(task.metadata.get("auth_context")),
             auth_context=task.metadata.get("auth_context"),
         )
 

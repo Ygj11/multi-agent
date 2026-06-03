@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.auth.principal import principal_dict_from_auth_context
 from app.approval.service import ApprovalService
 from app.schemas.agent_card import AgentCard
 from app.schemas.approval import ApprovalRequest
@@ -50,6 +51,8 @@ class ApprovalGraphHandler:
         agent_card = self._agent_card_from_state(state) or self._agent_card_from_state(approval_request.pending_state)
         tool_call_id = pending_tool_call.get("tool_call_id") or pending_tool_call.get("id") or f"approved_{approval_id}"
 
+        auth_context = state.get("auth_context") or approval_request.pending_state.get("auth_context")
+        principal = principal_dict_from_auth_context(auth_context)
         tool_result = await self.tool_executor.execute_approved_tool(
             approval_id=approval_id,
             agent_name=approval_request.agent_name,
@@ -59,8 +62,8 @@ class ApprovalGraphHandler:
             request_id=approval_request.request_id or state.get("request_id", ""),
             trace_id=approval_request.trace_id or state.get("trace_id"),
             agent_card=agent_card,
-            principal=state.get("principal") or approval_request.pending_state.get("principal"),
-            auth_context=state.get("auth_context") or approval_request.pending_state.get("auth_context"),
+            principal=principal,
+            auth_context=auth_context,
         )
         dumped_tool_result = tool_result.model_dump()
         pending_messages.append(
@@ -95,8 +98,8 @@ class ApprovalGraphHandler:
                 request_id=approval_request.request_id or state.get("request_id", ""),
                 trace_id=approval_request.trace_id or state.get("trace_id"),
                 agent_card=agent_card,
-                principal=state.get("principal") or approval_request.pending_state.get("principal"),
-                auth_context=state.get("auth_context") or approval_request.pending_state.get("auth_context"),
+                principal=principal,
+                auth_context=auth_context,
                 evidence=[dumped_tool_result],
             )
             needs_approval = run_result.needs_human_approval or run_result.stopped_reason == "human_approval_required"
@@ -163,7 +166,8 @@ class ApprovalGraphHandler:
         }
         thread_id = state.get("thread_id") or self._thread_id(state)
         root_approval_id = state.get("root_approval_id") or current_approval_id
-        principal_snapshot = state.get("principal") if isinstance(state.get("principal"), dict) else {}
+        auth_context_snapshot = state.get("auth_context") or {}
+        principal_snapshot = principal_dict_from_auth_context(auth_context_snapshot) or {}
         approval_request = await self.approval_service.create_approval_request(
             session_key=state["session_key"],
             request_id=state["request_id"],
@@ -178,7 +182,7 @@ class ApprovalGraphHandler:
             org_id=(principal_snapshot or {}).get("org_id"),
             org_path=(principal_snapshot or {}).get("org_path") or [],
             principal_snapshot=principal_snapshot or {},
-            auth_context_snapshot=state.get("auth_context") or {},
+            auth_context_snapshot=auth_context_snapshot,
             resource_type=payload.get("resource_type"),
             resource_id=payload.get("resource_id"),
             tool_required_scopes=payload.get("required_scopes") or [],
@@ -210,7 +214,6 @@ class ApprovalGraphHandler:
         return {
             "approval_id": approval_request.approval_id,
             "approval_status": approval_request.status,
-            "approval_request": approval_request.model_dump(),
             "parent_approval_id": approval_request.parent_approval_id,
             "root_approval_id": approval_request.root_approval_id,
             "approval_depth": approval_request.approval_depth,
@@ -228,7 +231,6 @@ class ApprovalGraphHandler:
         refreshed = await self.approval_service.store.get(approval_request.approval_id)
         return {
             "approval_status": refreshed.status if refreshed else submit_result.status,
-            "approval_request": refreshed.model_dump() if refreshed else approval_request.model_dump(),
             "approval_submit_result": submit_result.model_dump(),
         }
 
@@ -274,20 +276,17 @@ class ApprovalGraphHandler:
 
     async def _approval_request_from_state(self, state: dict[str, Any], approval_id: str | None) -> ApprovalRequest | None:
         if self.approval_service is not None and approval_id:
-            stored = await self.approval_service.store.get(approval_id)
-            if stored is not None:
-                return stored
-        snapshot = state.get("approval_request")
-        return ApprovalRequest(**snapshot) if isinstance(snapshot, dict) else None
+            return await self.approval_service.store.get(approval_id)
+        return None
 
     @staticmethod
     def _skill_selection_from_subagent_result(state: dict[str, Any]) -> dict[str, Any]:
         result = state.get("subagent_result") if isinstance(state.get("subagent_result"), dict) else {}
         return {
-            "selected_skill_id": result.get("selected_skill_id") or state.get("selected_skill_id"),
-            "selected_skill_metadata": result.get("selected_skill_metadata") or state.get("selected_skill_metadata"),
-            "skill_selection_score": result.get("skill_selection_score") or state.get("skill_selection_score"),
-            "skill_selection_reason": result.get("skill_selection_reason") or state.get("skill_selection_reason"),
+            "selected_skill_id": result.get("selected_skill_id"),
+            "selected_skill_metadata": result.get("selected_skill_metadata"),
+            "skill_selection_score": result.get("skill_selection_score"),
+            "skill_selection_reason": result.get("skill_selection_reason"),
         }
 
     @staticmethod

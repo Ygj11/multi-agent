@@ -24,7 +24,6 @@ class OrchestratorContext(BaseModel):
     available_tools: list[str] = Field(default_factory=list)
     agent_candidate_summaries: list[dict[str, Any]] = Field(default_factory=list)
     lightweight_knowledge_hints: list[str] = Field(default_factory=list)
-    principal: dict[str, Any] | None = None
     auth_context: dict[str, Any] | None = None
 
 
@@ -44,5 +43,4 @@ class SubAgentContext(BaseModel):
     need_clarification: bool = False
     clarification_question: str | None = None
     knowledge_hint: str | None = None
-    principal: dict[str, Any] | None = None
     auth_context: dict[str, Any] | None = None

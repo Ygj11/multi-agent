@@ -40,9 +40,7 @@ class AgentTaskAssembler:
             metadata={
                 "request_id": request_id,
                 "trace_id": trace_id,
-                "principal": orchestrator_context.principal,
                 "auth_context": orchestrator_context.auth_context,
             },
-            principal=orchestrator_context.principal,
             auth_context=orchestrator_context.auth_context,
         )

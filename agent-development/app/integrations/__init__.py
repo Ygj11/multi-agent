@@ -1,5 +1,6 @@
-"""未来真实外部 API 接入示例。
+"""External integration adapters and examples.
 
-这些 client 只提供完整代码样例，默认不接入当前主流程。
+Modules in this package are not implicitly wired into the application main path.
+Treat them as future integration clients unless `app/main.py` or a factory
+explicitly injects them into the runtime graph.
 """
-

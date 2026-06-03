@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.auth.principal import principal_dict_from_auth_context
 from app.verification.schemas import VerificationInput, VerificationResult
 from app.verification.service import VerificationService
 
@@ -23,8 +24,8 @@ class VerificationHandler:
                     request_id=state.get("request_id"),
                     trace_id=state.get("trace_id"),
                     session_key=state.get("session_key"),
-                    principal=state.get("principal"),
                     auth_context=state.get("auth_context") or {},
+                    principal=principal_dict_from_auth_context(state.get("auth_context")),
                     agent_name=state.get("selected_agent"),
                     answer=answer,
                     evidence=(state.get("subagent_result") or {}).get("evidence", [])

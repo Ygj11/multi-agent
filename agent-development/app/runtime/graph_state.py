@@ -14,12 +14,6 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "session_id": {"owner": "session_identity", "source": "RequestAdapter", "kind": "authoritative"},
     "session_key": {"owner": "session_identity", "source": "RequestAdapter", "kind": "authoritative"},
     "thread_id": {"owner": "graph_execution", "source": "AgentOrchestrator", "kind": "authoritative"},
-    "principal": {
-        "owner": "auth_cache",
-        "source": "auth_context.principal expanded cache",
-        "kind": "cache",
-        "delete_after": "all auth consumers can expand Principal from auth_context",
-    },
     "auth_context": {"owner": "auth", "source": "RequestAdapter", "kind": "authoritative"},
     "original_query": {"owner": "request", "source": "RequestAdapter", "kind": "authoritative"},
     "rewritten_query": {"owner": "understanding", "source": "query_rewrite", "kind": "authoritative"},
@@ -30,12 +24,6 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "entity_bag": {"owner": "rich_entities", "source": "query_rewrite", "kind": "authoritative"},
     "conversation_window": {"owner": "history_snapshot", "source": "query_rewrite", "kind": "snapshot"},
     "is_follow_up": {"owner": "understanding", "source": "query_rewrite", "kind": "authoritative"},
-    "target_subagent": {
-        "owner": "routing_compat",
-        "source": "intent_recognition legacy placeholder",
-        "kind": "deprecated",
-        "delete_after": "no node/test consumes target_subagent",
-    },
     "need_clarification": {
         "owner": "clarification_route",
         "source": "query_rewrite / intent_recognition / select_agent / subagent_result",
@@ -71,12 +59,6 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "approval_payloads": {"owner": "approval_summary", "source": "subagent_result.approval_payloads", "kind": "snapshot"},
     "approval_id": {"owner": "approval_summary", "source": "create_approval_request / ApprovalStore", "kind": "authoritative"},
     "approval_status": {"owner": "approval_summary", "source": "ApprovalStore", "kind": "authoritative"},
-    "approval_request": {
-        "owner": "approval_snapshot",
-        "source": "ApprovalStore",
-        "kind": "snapshot",
-        "delete_after": "callback/resume reads all approval details from ApprovalStore by approval_id",
-    },
     "approval_submit_result": {"owner": "approval_trace", "source": "submit_approval_request", "kind": "snapshot"},
     "approval_resume": {"owner": "approval_route", "source": "ApprovalService.resume_graph_after_approval", "kind": "authoritative"},
     "pending_messages": {"owner": "approval_resume_snapshot", "source": "ApprovalStore.pending_messages", "kind": "snapshot"},
@@ -93,30 +75,6 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
         "kind": "authoritative",
     },
     "retry_count": {"owner": "verification_route", "source": "load_session / regenerate_compliant_answer", "kind": "authoritative"},
-    "selected_skill_id": {
-        "owner": "execution_result_cache",
-        "source": "subagent_result",
-        "kind": "cache",
-        "delete_after": "all tests and consumers read subagent_result.selected_skill_id",
-    },
-    "selected_skill_metadata": {
-        "owner": "execution_result_cache",
-        "source": "subagent_result",
-        "kind": "cache",
-        "delete_after": "all tests and consumers read subagent_result.selected_skill_metadata",
-    },
-    "skill_selection_score": {
-        "owner": "execution_result_cache",
-        "source": "subagent_result",
-        "kind": "cache",
-        "delete_after": "all tests and consumers read subagent_result.skill_selection_score",
-    },
-    "skill_selection_reason": {
-        "owner": "execution_result_cache",
-        "source": "subagent_result",
-        "kind": "cache",
-        "delete_after": "all tests and consumers read subagent_result.skill_selection_reason",
-    },
     "answer": {"owner": "response_text", "source": "dispatch / clarification / approval / pre_answer_verify", "kind": "authoritative"},
     "error": {"owner": "error_trace", "source": "node-specific controlled failures", "kind": "debug"},
     "graph_path": {"owner": "debug_trace", "source": "AgentGraphFactory node wrappers", "kind": "debug"},
@@ -134,7 +92,6 @@ class AgentGraphState(TypedDict, total=False):
     session_id: str
     session_key: str
     thread_id: str
-    principal: dict[str, Any] | None
     auth_context: dict[str, Any] | None
 
     original_query: str
@@ -146,7 +103,6 @@ class AgentGraphState(TypedDict, total=False):
     entity_bag: dict[str, Any]
     conversation_window: dict[str, Any]
     is_follow_up: bool
-    target_subagent: str | None
     need_clarification: bool
     clarification_question: str | None
     clarification_source: str | None
@@ -168,7 +124,6 @@ class AgentGraphState(TypedDict, total=False):
     approval_payloads: list[dict[str, Any]]
     approval_id: str | None
     approval_status: str | None
-    approval_request: dict[str, Any] | None
     approval_submit_result: dict[str, Any] | None
     approval_resume: bool
     pending_messages: list[dict[str, Any]]
@@ -181,10 +136,6 @@ class AgentGraphState(TypedDict, total=False):
     approval_depth: int
     manual_intervention_required: bool
     retry_count: int
-    selected_skill_id: str | None
-    selected_skill_metadata: dict[str, Any] | None
-    skill_selection_score: float | None
-    skill_selection_reason: str | None
     answer: str
 
     error: str | None

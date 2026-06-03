@@ -30,9 +30,11 @@
 - [x] troubleshooting_agent, claim_agent, policy_query_agent, and compliance_agent use BaseSubAgent.
 - [x] SubAgentResult includes agent name, task id, evidence, tool calls, confidence, approval flag, risk level, and metadata.
 
-## Stage 6: Final Compliance
+## Stage 6: Pre-answer Verification
 
-- [x] All main graph responses pass through `final_compliance_check`.
+- [x] All main graph responses pass through `pre_answer_verify`.
+- [x] `pre_answer_verify` calls `VerificationService(stage="pre_answer")`.
+- [x] Compliance redaction is provided by `ComplianceVerifier` inside VerificationService.
 - [x] Sensitive values are redacted.
 - [x] Raw tool output can trigger retry/fallback routing.
 - [x] Retry routing is limited to one retry.

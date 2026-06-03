@@ -26,7 +26,6 @@ class DispatchAgentNode:
             metadata={
                 **task_envelope.metadata,
                 "agent_card": task_envelope.agent_card.model_dump(),
-                "principal": task_envelope.principal,
                 "auth_context": task_envelope.auth_context,
             },
         )

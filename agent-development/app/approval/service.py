@@ -8,6 +8,7 @@ from typing import Any
 
 from app.approval.client import ApprovalSystemClient
 from app.approval.store import SQLiteApprovalStore
+from app.auth.principal import principal_dict_from_auth_context
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
 from app.schemas.approval import (
     ApprovalCallbackHandleResult,
@@ -96,7 +97,7 @@ class ApprovalService:
             user_id=user_id,
             org_id=org_id,
             org_path=org_path or [],
-            principal_snapshot=principal_snapshot or {},
+            principal_snapshot=principal_snapshot or principal_dict_from_auth_context(auth_context_snapshot) or {},
             auth_context_snapshot=auth_context_snapshot or {},
             resource_type=resource_type,
             resource_id=resource_id,
@@ -267,8 +268,10 @@ class ApprovalService:
                 request_id=approval_request.request_id,
                 trace_id=approval_request.trace_id,
                 session_key=approval_request.session_key,
-                principal=approval_request.principal_snapshot or None,
                 auth_context=approval_request.auth_context_snapshot or {},
+                principal=principal_dict_from_auth_context(approval_request.auth_context_snapshot)
+                or approval_request.principal_snapshot
+                or None,
                 agent_name=approval_request.agent_name,
                 answer=raw_answer,
                 metadata={"approval_id": approval_request.approval_id, "approval_status": approval_request.status},

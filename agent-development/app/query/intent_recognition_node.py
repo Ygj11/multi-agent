@@ -65,14 +65,32 @@ class IntentRecognitionNode:
     ) -> IntentResult | None:
         if not self._should_use_llm_json():
             return None
+        allowed_intents = self._allowed_intents(agent_card_summaries)
+        candidate_sub_intents = self._candidate_sub_intents(agent_card_summaries)
         response = await self.llm_provider.chat(
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "Classify user intent. Return only JSON with keys: intent, sub_intent, "
-                        "confidence, entities, missing_required_entities, need_clarification, "
-                        "clarification_question, is_follow_up, reason. Do not choose tools."
+                        "You are the intent recognition node of a multi-agent health insurance system. "
+                        "Classify the user's business intent, but do not select an agent or tools. "
+                        "Rules: intent must be one of allowed_intents, or unknown. Do not invent intent values. "
+                        "sub_intent should be selected from candidate_sub_intents when possible; use null if none fits. "
+                        "Never output required_tools, selected_agent, or tool names. If confidence is below 0.5, "
+                        "set need_clarification=true. Confidence scoring guide: 0.90-1.00 means the query clearly "
+                        "matches exactly one allowed_intent with strong evidence from rewritten_query, entities, "
+                        "AgentCard summaries, examples, or capabilities; use this range only for a clear single best "
+                        "intent. 0.75-0.89 means one intent is likely, but sub_intent or some context may be uncertain. "
+                        "0.50-0.74 means partial evidence or multiple plausible intents; set need_clarification=true "
+                        "when the user action is ambiguous. 0.35-0.49 means low confidence and must set "
+                        "need_clarification=true. 0.00-0.34 means unknown, out of domain, or insufficient information; "
+                        "intent should be unknown and need_clarification=true. Increase confidence when entities match "
+                        "the candidate intent domain, examples/capabilities clearly match the query, and sub_intent is "
+                        "selected from candidate_sub_intents. Decrease confidence when multiple intents are plausible, "
+                        "key business objects are missing, the query is a vague follow-up, or the sub_intent is uncertain. "
+                        "Return strict JSON only with keys: intent, sub_intent, "
+                        "confidence, entities, missing_required_entities, need_clarification, clarification_question, "
+                        "is_follow_up, reason."
                     ),
                 },
                 {
@@ -82,6 +100,8 @@ class IntentRecognitionNode:
                         f"Rewritten query: {rewritten_query}\n"
                         f"Entities: {entities}\n"
                         f"Conversation window: {window.model_dump()}\n"
+                        f"Allowed intents: {allowed_intents}\n"
+                        f"Candidate sub intents by intent: {candidate_sub_intents}\n"
                         f"AgentCard summaries: {agent_card_summaries}"
                     ),
                 },
@@ -93,13 +113,16 @@ class IntentRecognitionNode:
         if data is None:
             return None
         intent = str(data.get("intent") or "unknown")
+        if not self._is_allowed_intent(intent, allowed_intents):
+            return None
         confidence = float(data.get("confidence", 0.0) or 0.0)
         need_clarification = bool(data.get("need_clarification", False)) or confidence < 0.35
         llm_entities = data.get("entities") if isinstance(data.get("entities"), dict) else {}
         merged_entities = {**entities, **llm_entities}
+        sub_intent = self._validated_sub_intent(data.get("sub_intent"), intent, candidate_sub_intents)
         return IntentResult(
             intent=intent,
-            sub_intent=data.get("sub_intent"),
+            sub_intent=sub_intent,
             confidence=confidence,
             entities=merged_entities,
             missing_required_entities=[str(item) for item in data.get("missing_required_entities") or []],
@@ -185,6 +208,58 @@ class IntentRecognitionNode:
         if self.llm_provider.__class__.__name__ == "InternalLLMProvider" and not getattr(self.llm_provider, "base_url", None):
             return False
         return True
+
+    @staticmethod
+    def _allowed_intents(agent_card_summaries: list[dict[str, Any]]) -> list[str]:
+        intents: set[str] = set()
+        for card in agent_card_summaries:
+            for intent in card.get("supported_intents") or []:
+                if intent:
+                    intents.add(str(intent))
+        return sorted(intents)
+
+    @classmethod
+    def _candidate_sub_intents(cls, agent_card_summaries: list[dict[str, Any]]) -> dict[str, list[str]]:
+        by_intent: dict[str, set[str]] = {}
+        for card in agent_card_summaries:
+            supported = [str(item) for item in card.get("supported_intents") or [] if item]
+            capabilities = [str(item) for item in card.get("capabilities") or [] if item]
+            examples = cls._example_intents(card.get("examples") or [])
+            candidates = set(supported + capabilities + examples)
+            for intent in supported:
+                values = by_intent.setdefault(intent, set())
+                values.update(item for item in candidates if item != intent)
+        return {intent: sorted(values) for intent, values in sorted(by_intent.items())}
+
+    @staticmethod
+    def _example_intents(examples: Any) -> list[str]:
+        values: list[str] = []
+        if not isinstance(examples, list):
+            return values
+        for item in examples:
+            if isinstance(item, dict) and item.get("intent"):
+                values.append(str(item["intent"]))
+        return values
+
+    @staticmethod
+    def _is_allowed_intent(intent: str, allowed_intents: list[str]) -> bool:
+        if intent == "unknown":
+            return True
+        if not allowed_intents:
+            return True
+        return intent in set(allowed_intents)
+
+    @staticmethod
+    def _validated_sub_intent(value: Any, intent: str, candidate_sub_intents: dict[str, list[str]]) -> str | None:
+        if value in (None, ""):
+            return None
+        sub_intent = str(value)
+        if not candidate_sub_intents:
+            return sub_intent
+        allowed = set(candidate_sub_intents.get(intent) or [])
+        if not allowed:
+            return sub_intent
+        return sub_intent if sub_intent in allowed else None
 
     @classmethod
     def _troubleshooting_sub_intent(cls, text: str, entities: dict[str, Any]) -> str:
