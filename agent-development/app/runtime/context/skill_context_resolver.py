@@ -54,13 +54,18 @@ class SkillContextResolver:
     ) -> SkillResolution:
         selection_context = self.build_selection_context(task=task, parent_context=parent_context)
         candidates = self.build_candidates(task=task)
+
+        """Select the best skill from candidates using metadata only, without loading skill bodies."""
         selection = await self.skill_selector.select(
             agent_name=task.name,
             context=selection_context,
             candidates=candidates,
         )
+
         self.write_selection_metadata(task, selection)
 
+
+        """not select skills, use generic_skill_content"""
         if selection.fallback:
             task.metadata["selected_skill_id"] = None
             task.metadata["selected_skill_metadata"] = None
@@ -78,9 +83,13 @@ class SkillContextResolver:
             )
             return SkillResolution(selection=selection, skill_content=self.generic_skill_content, entity_check=None)
 
+        """Load the selected skill content and check required entities."""
         loaded_skill = self.skill_loader.load(selection.selected_skill_id)
+
         entity_bag = EntityBag(**parent_context.entity_bag) if parent_context.entity_bag else EntityBag()
         entity_bag.merge(EntityBag.from_compact_dict(task.entities, source="rule", confidence=0.9))
+
+        """Check required entities and determine if clarification is needed."""
         entity_check = self.required_entity_checker.check(
             skill=selection.selected_skill_metadata,
             entities=task.entities,
@@ -139,6 +148,7 @@ class SkillContextResolver:
     ) -> SkillSelectionContext:
         recent_summary = " ".join(str(item.get("content", "")) for item in parent_context.recent_messages[-6:])
         query = f"{task.original_query} {task.query} {parent_context.rewritten_query}"
+        merged_entities = {**parent_context.entities, **task.entities}
         return SkillSelectionContext(
             agent_name=task.name,
             intent=task.intent,
@@ -153,9 +163,9 @@ class SkillContextResolver:
             lightweight_knowledge_hints=parent_context.lightweight_knowledge_hints,
             request_id=task.metadata.get("request_id"),
             trace_id=task.metadata.get("trace_id"),
-            extracted_error_code=self.extract_error_code(query),
-            extracted_request_id=self.extract_request_id(query),
-            extracted_interface_name=self.extract_interface_name(query),
+            extracted_error_code=self._entity_value(merged_entities, "error_code") or self.extract_error_code(query),
+            extracted_request_id=self._entity_value(merged_entities, "request_id") or self.extract_request_id(query),
+            extracted_interface_name=self._entity_value(merged_entities, "interface_name") or self.extract_interface_name(query),
         )
 
     @staticmethod
@@ -182,3 +192,12 @@ class SkillContextResolver:
         if "submitProposal" in text:
             return "submitProposal"
         return None
+
+    @staticmethod
+    def _entity_value(entities: dict[str, object], entity_type: str) -> str | None:
+        value = entities.get(entity_type)
+        if value in (None, "", []):
+            return None
+        if isinstance(value, list):
+            return str(value[0]) if value else None
+        return str(value)

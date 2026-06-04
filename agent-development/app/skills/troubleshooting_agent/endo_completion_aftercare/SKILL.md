@@ -38,6 +38,21 @@ required_context:
   - apply_seq
   - policy_no
   - endorseType
+routing_keywords:
+  - 保全
+  - 保全任务完成
+  - 保单信息未更新
+  - 保单未解锁
+  - 未发起退费
+  - 没有发短信
+  - E08
+  - 财务创单
+  - apply_
+  - apply_seq
+routing_negative_keywords:
+  - E102
+  - 字段缺失
+  - 回调失败
 ---
 
 # 保全任务完成后异常处理 Skill

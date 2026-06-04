@@ -25,6 +25,16 @@ business_domain:
   - health_insurance_onboarding
 required_context:
   - policy_no
+routing_keywords:
+  - 退保
+  - 退款
+  - refund
+  - 退费
+  - 退保失败
+routing_negative_keywords:
+  - 回调失败
+  - 字段缺失
+  - 保全任务完成
 ---
 
 # 退保失败排查 Skill

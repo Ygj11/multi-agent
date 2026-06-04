@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.llm.base import LLMProvider
+from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.query.json_utils import parse_json_object
 from app.schemas.skill import SkillMetadata, SkillSelectionContext
 from app.skills.scorer import ScoredSkill
@@ -34,6 +35,7 @@ class SkillLLMReranker:
         min_margin: float = 3.0,
         min_confident_score: float = 7.0,
         min_llm_confidence: float = 0.45,
+        prompt_loader: PromptLoader | None = None,
     ) -> None:
         self.llm_provider = llm_provider
         self.enabled = enabled
@@ -41,6 +43,7 @@ class SkillLLMReranker:
         self.min_margin = min_margin
         self.min_confident_score = min_confident_score
         self.min_llm_confidence = min_llm_confidence
+        self.prompt_loader = prompt_loader or default_prompt_loader
 
     def should_rerank(self, context: SkillSelectionContext, scored: list[ScoredSkill]) -> bool:
         if not self.enabled or self.llm_provider is None or len(scored) <= 1:
@@ -87,21 +90,19 @@ class SkillLLMReranker:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are a metadata-only Skill router. Select exactly one skill_id from the provided "
-                        "candidates. Do not invent skill_id. Return only JSON: selected_skill_id, confidence, reason."
-                    ),
+                    "content": self.prompt_loader.render("skill_selection/system.md"),
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Agent: {agent_name}\n"
-                        f"Original query: {context.original_query}\n"
-                        f"Rewritten query: {context.rewritten_query}\n"
-                        f"Intent: {context.intent}\n"
-                        f"Sub intent: {context.sub_intent}\n"
-                        f"Entities: {context.entities}\n"
-                        f"Candidates: {summaries}"
+                    "content": self.prompt_loader.render(
+                        "skill_selection/user.md",
+                        agent_name=agent_name,
+                        original_query=context.original_query,
+                        rewritten_query=context.rewritten_query,
+                        intent=context.intent,
+                        sub_intent=context.sub_intent,
+                        entities=context.entities,
+                        candidates=summaries,
                     ),
                 },
             ],
@@ -145,6 +146,8 @@ class SkillLLMReranker:
             "optional_entities": skill.optional_entities,
             "required_context": skill.required_context,
             "business_domain": skill.business_domain,
+            "routing_keywords": skill.routing_keywords,
+            "routing_negative_keywords": skill.routing_negative_keywords,
             "private_tools": skill.private_tools,
             "public_tools": skill.public_tools,
             "mcp_tools": skill.mcp_tools,

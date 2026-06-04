@@ -22,6 +22,17 @@ business_domain:
   - health_insurance_onboarding
 required_context:
   - interface_name
+routing_keywords:
+  - appId
+  - field
+  - 字段
+  - 字段缺失
+  - 不能为空
+  - 必填字段
+routing_negative_keywords:
+  - E102
+  - 回调失败
+  - 保全任务完成
 ---
 
 # 字段缺失排查 Skill

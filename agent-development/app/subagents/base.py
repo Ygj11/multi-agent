@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from app.auth.principal import principal_dict_from_auth_context
+from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.runtime.context_builder import ContextBuilder
 from app.observability.logger import log_event, preview_text
 from app.schemas.agent_card import AgentCard
@@ -32,10 +33,12 @@ class BaseSubAgent(ABC):
         context_builder: ContextBuilder,
         tool_executor: ToolExecutor | None = None,
         tool_calling_runner: ToolCallingRunner | None = None,
+        prompt_loader: PromptLoader | None = None,
     ) -> None:
         self.context_builder = context_builder
         self.tool_executor = tool_executor
         self.tool_calling_runner = tool_calling_runner
+        self.prompt_loader = prompt_loader or default_prompt_loader
 
     async def run(self, task: SubAgentTask, parent_context: OrchestratorContext) -> SubAgentResult:
         agent_card = self.get_agent_card(task)
@@ -61,6 +64,8 @@ class BaseSubAgent(ABC):
             )
         if self.use_tool_calling_runner and self.tool_calling_runner is not None and agent_card is not None:
             self._log_runner_started(task)
+            """Construct the context for the LLM, including the task, skill, knowledge hints, 
+            conversation summary, and other relevant information."""
             messages = self.build_messages(
                 task=task,
                 parent_context=parent_context,
@@ -161,21 +166,23 @@ class BaseSubAgent(ABC):
         return [
             {
                 "role": "system",
-                "content": (
-                    f"You are {agent_card.agent_name}. {agent_card.description}\n"
-                    "Use only the provided tools. When enough evidence is available, answer the user directly.\n"
-                    f"Skill body:\n{sub_context.skill_content}"
+                "content": self.prompt_loader.render(
+                    "subagent_reasoning/system.md",
+                    agent_name=agent_card.agent_name,
+                    agent_description=agent_card.description,
+                    skill_content=sub_context.skill_content,
                 ),
             },
             {
                 "role": "user",
-                "content": (
-                    f"Original query: {task.original_query}\n"
-                    f"Rewritten query: {sub_context.rewritten_query}\n"
-                    f"Intent: {task.intent}\n"
-                    f"Entities: {task.entities}\n"
-                    f"Short summary: {parent_context.short_summary or ''}\n"
-                    f"Lightweight hints: {parent_context.lightweight_knowledge_hints}"
+                "content": self.prompt_loader.render(
+                    "subagent_reasoning/user.md",
+                    original_query=task.original_query,
+                    rewritten_query=sub_context.rewritten_query,
+                    intent=task.intent,
+                    entities=task.entities,
+                    short_summary=parent_context.short_summary or "",
+                    lightweight_hints=parent_context.lightweight_knowledge_hints,
                 ),
             },
         ]

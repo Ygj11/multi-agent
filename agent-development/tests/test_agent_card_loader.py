@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.agents.card_loader import AgentCardLoader
+from app.schemas.agent_card import AgentAccessPolicy
 from app.skills.catalog import SkillCatalog
 
 
@@ -109,3 +110,42 @@ def test_match_candidates_selects_expected_agent(intent, entities, query, expect
 def test_agent_cards_validate_against_skill_catalog():
     loader = AgentCardLoader(CARDS_ROOT)
     loader.validate_with_skill_catalog(SkillCatalog(SKILLS_ROOT))
+
+
+def test_agent_card_access_policy_uses_schema(tmp_path):
+    cards_root = tmp_path / "cards"
+    cards_root.mkdir()
+    (cards_root / "secure.yaml").write_text(
+        """
+agent_name: secure_agent
+display_name: Secure
+description: Secure agent
+capabilities:
+  - secure_query
+supported_intents:
+  - secure_query
+required_entities: []
+optional_entities: []
+output_schema: SubAgentResult
+private_tools: []
+public_tools_allowed: false
+skills: []
+rag_namespaces: []
+memory_policy: {"use_short_summary": true, "recent_turns": 1}
+examples: []
+access_policy: {"required_roles": ["manager"], "required_scopes": ["secure:read"], "required_data_permissions": ["secure.sensitive.read"], "allowed_org_types": ["headquarter"], "allowed_org_ids": ["org-1"], "denied_org_ids": ["org-9"]}
+enabled: true
+version: "1.0.0"
+""",
+        encoding="utf-8",
+    )
+
+    card = AgentCardLoader(cards_root).load_all(force_reload=True)[0]
+
+    assert isinstance(card.access_policy, AgentAccessPolicy)
+    assert card.access_policy.required_roles == ["manager"]
+    assert card.access_policy.required_scopes == ["secure:read"]
+    assert card.access_policy.required_data_permissions == ["secure.sensitive.read"]
+    assert card.access_policy.allowed_org_types == ["headquarter"]
+    assert card.access_policy.allowed_org_ids == ["org-1"]
+    assert card.access_policy.denied_org_ids == ["org-9"]

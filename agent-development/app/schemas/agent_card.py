@@ -14,6 +14,21 @@ class MemoryPolicy(BaseModel):
     recent_turns: int = 5
 
 
+class AgentAccessPolicy(BaseModel):
+    """Agent-level access policy declared by AgentCard.
+
+    This controls whether a principal may enter a sub-agent at all. Tool-level
+    scopes and resource ownership are checked later by ToolExecutor guards.
+    """
+
+    required_roles: list[str] = Field(default_factory=list)
+    required_scopes: list[str] = Field(default_factory=list)
+    required_data_permissions: list[str] = Field(default_factory=list)
+    allowed_org_types: list[str] = Field(default_factory=list)
+    allowed_org_ids: list[str] = Field(default_factory=list)
+    denied_org_ids: list[str] = Field(default_factory=list)
+
+
 class AgentCard(BaseModel):
     """Structured description of a sub agent discoverable by the main agent."""
 
@@ -33,7 +48,7 @@ class AgentCard(BaseModel):
     rag_namespaces: list[str] = Field(default_factory=list)
     memory_policy: MemoryPolicy = Field(default_factory=MemoryPolicy)
     examples: list[dict[str, Any]] = Field(default_factory=list)
-    access_policy: dict[str, Any] = Field(default_factory=dict)
+    access_policy: AgentAccessPolicy = Field(default_factory=AgentAccessPolicy)
     enabled: bool = True
     version: str
 

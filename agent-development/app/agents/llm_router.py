@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.llm.base import LLMProvider
+from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.query.json_utils import parse_json_object
 from app.schemas.agent_card import AgentCandidate, AgentSelectionResult
 
@@ -12,9 +13,15 @@ from app.schemas.agent_card import AgentCandidate, AgentSelectionResult
 class LLMRouter:
     """Select one agent from Top-K rule candidates using JSON-only LLM output."""
 
-    def __init__(self, llm_provider: LLMProvider | None = None, min_confidence: float = 0.45) -> None:
+    def __init__(
+        self,
+        llm_provider: LLMProvider | None = None,
+        min_confidence: float = 0.45,
+        prompt_loader: PromptLoader | None = None,
+    ) -> None:
         self.llm_provider = llm_provider
         self.min_confidence = min_confidence
+        self.prompt_loader = prompt_loader or default_prompt_loader
 
     async def route(
         self,
@@ -49,16 +56,18 @@ class LLMRouter:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are an AgentCard router. Select exactly one agent from the given candidates. "
-                        "Return only JSON: selected_agent, confidence, reason, need_clarification, clarification_question."
-                    ),
+                    "content": self.prompt_loader.render("agent_selection/system.md"),
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Query: {query}\nIntent: {intent}\nSub intent: {sub_intent}\n"
-                        f"Intent confidence: {intent_confidence}\nEntities: {entities}\nCandidates: {summaries}"
+                    "content": self.prompt_loader.render(
+                        "agent_selection/user.md",
+                        query=query,
+                        intent=intent,
+                        sub_intent=sub_intent,
+                        intent_confidence=intent_confidence,
+                        entities=entities,
+                        candidates=summaries,
                     ),
                 },
             ],

@@ -15,6 +15,7 @@ class AuthorizationDecision(BaseModel):
     allowed: bool
     reason: str | None = None
     missing_scopes: list[str] = Field(default_factory=list)
+    missing_data_permissions: list[str] = Field(default_factory=list)
     denied_by: str | None = None
 
 
@@ -33,14 +34,28 @@ class AuthorizationService:
     """
 
     def check_agent_access(self, *, principal: Principal | None, agent_card: AgentCard) -> AuthorizationDecision:
-        policy = getattr(agent_card, "access_policy", {}) or {}
-        required_roles = set(policy.get("required_roles") or [])
-        required_scopes = set(policy.get("required_scopes") or [])
-        allowed_org_types = set(policy.get("allowed_org_types") or [])
-        if not required_roles and not required_scopes and not allowed_org_types:
+        policy = agent_card.access_policy
+        required_roles = set(policy.required_roles)
+        required_scopes = set(policy.required_scopes)
+        required_data_permissions = set(policy.required_data_permissions)
+        allowed_org_types = set(policy.allowed_org_types)
+        allowed_org_ids = set(policy.allowed_org_ids)
+        denied_org_ids = set(policy.denied_org_ids)
+        if (
+            not required_roles
+            and not required_scopes
+            and not required_data_permissions
+            and not allowed_org_types
+            and not allowed_org_ids
+            and not denied_org_ids
+        ):
             return AuthorizationDecision(allowed=True)
         if principal is None:
             return AuthorizationDecision(allowed=False, reason="principal_required", denied_by="agent_access")
+        if denied_org_ids and principal.org_id in denied_org_ids:
+            return AuthorizationDecision(allowed=False, reason="org_id_denied", denied_by="agent_access")
+        if allowed_org_ids and principal.org_id not in allowed_org_ids:
+            return AuthorizationDecision(allowed=False, reason="org_id_not_allowed", denied_by="agent_access")
         if required_roles and not required_roles.intersection(principal.roles):
             return AuthorizationDecision(allowed=False, reason="missing_required_role", denied_by="agent_access")
         missing_scopes = sorted(required_scopes.difference(principal.scopes))
@@ -49,6 +64,14 @@ class AuthorizationService:
                 allowed=False,
                 reason="missing_required_scope",
                 missing_scopes=missing_scopes,
+                denied_by="agent_access",
+            )
+        missing_data_permissions = sorted(required_data_permissions.difference(principal.data_permissions))
+        if missing_data_permissions:
+            return AuthorizationDecision(
+                allowed=False,
+                reason="missing_required_data_permission",
+                missing_data_permissions=missing_data_permissions,
                 denied_by="agent_access",
             )
         org_type = str(principal.attributes.get("org_type") or "")

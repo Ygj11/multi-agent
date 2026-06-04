@@ -59,6 +59,16 @@ def test_all_active_skill_metadata_is_complete_and_unique():
         assert skill.intent_tags
 
 
+def test_skill_catalog_parses_routing_keywords_metadata():
+    catalog = SkillCatalog(SKILLS_ROOT)
+
+    skill = catalog.get_skill_metadata("troubleshooting_agent.endo_completion_aftercare")
+
+    assert skill is not None
+    assert "保全任务完成" in skill.routing_keywords
+    assert "回调失败" in skill.routing_negative_keywords
+
+
 def test_agent_cards_and_skill_metadata_match():
     cards = {card.agent_name: card for card in AgentCardLoader(CARDS_ROOT).load_all(force_reload=True)}
     skills = {skill.skill_id: skill for skill in SkillCatalog(SKILLS_ROOT).scan(force_reload=True)}

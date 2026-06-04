@@ -49,6 +49,7 @@ class ToolExecutionPipeline:
         self.approval_guard = ToolApprovalGuard(executor)
 
     async def run(self, context: ToolExecutionContext) -> ToolResult:
+        """Tool existence check and Agent visibility check"""
         definition, exists_error = self.availability_guard.check_exists(
             agent_name=context.agent_name,
             tool_name=context.tool_name,
@@ -64,6 +65,8 @@ class ToolExecutionPipeline:
         if visibility_error is not None:
             return visibility_error
 
+        """LLM 可以提出工具调用，但系统必须先检查它给的参数是否满足工具执行契约；
+        不满足就把缺参错误作为 tool observation 返回给 LLM，让 LLM 有机会补参数或向用户澄清。"""
         missing_error = self.argument_guard.check_required(
             agent_name=context.agent_name,
             tool_name=context.tool_name,
@@ -72,7 +75,9 @@ class ToolExecutionPipeline:
         if missing_error is not None:
             return missing_error
 
+        """Pre-tool Authorization Check"""
         principal_obj = self.executor._coerce_principal(context.principal)
+        """in fact: use ToolExecutor._authorize"""
         auth_error = await self.authorization_guard.check(
             definition=definition,
             principal=principal_obj,

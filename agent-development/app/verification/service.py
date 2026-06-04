@@ -27,16 +27,20 @@ class VerificationService:
 
     async def verify_all(self, input: VerificationInput) -> list[VerificationResult]:
         results: list[VerificationResult] = []
+        current_input = input
         for verifier in self.verifiers:
-            if input.stage not in verifier.stages:
+            if current_input.stage not in verifier.stages:
                 continue
             try:
-                results.append(await verifier.verify(input))
+                result = await verifier.verify(current_input)
+                results.append(result)
+                if result.action == "patch" and isinstance(result.patched_output, str):
+                    current_input = current_input.model_copy(update={"answer": result.patched_output})
             except Exception as exc:  # fail closed
                 results.append(
                     VerificationResult(
                         passed=False,
-                        stage=input.stage,
+                        stage=current_input.stage,
                         verifier_name=getattr(verifier, "name", verifier.__class__.__name__),
                         severity="blocking",
                         action="block",

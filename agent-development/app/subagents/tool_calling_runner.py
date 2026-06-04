@@ -89,12 +89,14 @@ class ToolCallingRunner:
         tool_call_counts: dict[str, int] = {}
 
         for iteration in range(1, limit + 1):
+            """Call the LLM with the current messages and tools, and get the response, which may include tool calls."""
             response = await self.llm_provider.chat(
                 messages=messages,
                 tools=tools,
                 scene="subagent_reasoning",
                 request_id=request_id,
             )
+            
             if response.finish_reason == "error":
                 return ToolCallingRunResult(
                     final_answer="",
@@ -171,6 +173,8 @@ class ToolCallingRunner:
                             tools=tools,
                         )
 
+                    """Execute the tool call and capture the result, including success status, errors, 
+                    and any relevant metadata."""
                     tool_result = await self.tool_executor.execute(
                         agent_name=agent_name,
                         tool_name=normalized.name,

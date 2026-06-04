@@ -22,6 +22,15 @@ business_domain:
   - health_insurance_onboarding
 required_context:
   - request_id
+routing_keywords:
+  - callback
+  - 回调
+  - 回调失败
+  - 回调超时
+  - 渠道未收到回调
+routing_negative_keywords:
+  - 字段缺失
+  - 保全任务完成
 ---
 
 # 回调失败排查 Skill

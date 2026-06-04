@@ -1,0 +1,45 @@
+privileged_roles:
+  - compliance_auditor
+  - data_admin
+
+categories:
+  phone_number:
+    action: redact
+    pattern: "(?<!\\d)1[3-9]\\d{9}(?!\\d)"
+    mask: "***PHONE***"
+    allow_permissions:
+      - policy.sensitive.read
+      - pii.full.read
+      - pii.phone.read
+
+  id_card:
+    action: redact
+    pattern: "(?<!\\d)\\d{17}[\\dXx](?!\\d)"
+    mask: "***ID_CARD***"
+    allow_permissions:
+      - policy.sensitive.read
+      - pii.full.read
+      - pii.id_card.read
+
+  bank_card:
+    action: redact
+    pattern: "(?<!\\d)\\d{16,19}(?!\\d)"
+    mask: "***BANK_CARD***"
+    preserve_if_category_allowed: id_card
+    allow_permissions:
+      - policy.sensitive.read
+      - pii.full.read
+      - pii.bank_card.read
+      - payment.sensitive.read
+
+  health_privacy:
+    action: warn
+    keywords:
+      - 病史
+      - 医疗记录
+      - 诊断
+      - 医保
+      - 健康告知
+    allow_permissions:
+      - policy.sensitive.read
+      - health.sensitive.read

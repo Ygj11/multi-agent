@@ -60,6 +60,8 @@ def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata:
         is_default=_as_bool(data["is_default"]),
         business_domain=[str(item) for item in data.get("business_domain", [])],
         required_context=[str(item) for item in data.get("required_context", [])],
+        routing_keywords=[str(item) for item in data.get("routing_keywords", [])],
+        routing_negative_keywords=[str(item) for item in data.get("routing_negative_keywords", [])],
         source_path=source_path,
     )
 

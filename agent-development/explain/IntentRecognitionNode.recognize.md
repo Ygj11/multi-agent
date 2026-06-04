@@ -85,3 +85,7 @@ return IntentResult(
 1. 动态构造候选空间 + 强提示词 + 轻量校验
 2. 工程设计上，把 supported_intents 作为 intent 候选来源，把 capabilities 或更好的 Skill.intent_tags 作为 sub_intent 候选来源，并通过 prompt 做强约束，而不是让 LLM 自由编。
 
+
+
+## 思考
+- 现在的意图识别总感觉不行：使用知识图谱？领域对象？或者什么好的建议？

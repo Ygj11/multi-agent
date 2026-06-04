@@ -1,0 +1,243 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1220" viewBox="0 0 1800 1220">
+  <defs>
+    <style>
+      .title { font: 700 36px "Microsoft YaHei", "Segoe UI", Arial, sans-serif; fill: #102033; }
+      .subtitle { font: 500 18px "Microsoft YaHei", "Segoe UI", Arial, sans-serif; fill: #536170; }
+      .lane-title { font: 700 22px "Microsoft YaHei", "Segoe UI", Arial, sans-serif; fill: #102033; }
+      .box-title { font: 700 18px "Microsoft YaHei", "Segoe UI", Arial, sans-serif; fill: #172334; }
+      .box-text { font: 15px "Microsoft YaHei", "Segoe UI", Arial, sans-serif; fill: #314155; }
+      .small { font: 13px "Microsoft YaHei", "Segoe UI", Arial, sans-serif; fill: #516070; }
+      .note { font: 14px "Microsoft YaHei", "Segoe UI", Arial, sans-serif; fill: #67512d; }
+      .lane { fill: #f6f9fc; stroke: #cbd7e3; stroke-width: 2; rx: 20; }
+      .entry { fill: #eef7ff; stroke: #4c97d8; stroke-width: 2; rx: 14; }
+      .graph { fill: #eff6ff; stroke: #2e73d2; stroke-width: 2; rx: 16; }
+      .subagent { fill: #f1fff4; stroke: #38a169; stroke-width: 2; rx: 14; }
+      .tool { fill: #fff7ed; stroke: #dd8a2b; stroke-width: 2; rx: 14; }
+      .verify { fill: #fff1f2; stroke: #d14b65; stroke-width: 2; rx: 14; }
+      .data { fill: #f7f2ff; stroke: #8b5cf6; stroke-width: 2; rx: 14; }
+      .config { fill: #f7fafc; stroke: #718096; stroke-width: 2; rx: 14; }
+      .arrow { stroke: #26384d; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 8 7; }
+      .redarrow { stroke: #c53030; stroke-width: 2.2; fill: none; marker-end: url(#redarrow); }
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#26384d"/>
+    </marker>
+    <marker id="redarrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#c53030"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1800" height="1220" fill="#ffffff"/>
+  <text x="900" y="54" text-anchor="middle" class="title">当前项目真实架构图：企业级健康险多 Agent Harness MVP</text>
+  <text x="900" y="88" text-anchor="middle" class="subtitle">FastAPI + LangGraph + AgentCard/Skill + ToolCallingRunner + Verification + Approval + KnowledgeService + SQLite</text>
+
+  <!-- Entry lane -->
+  <rect x="40" y="125" width="1720" height="170" class="lane"/>
+  <text x="70" y="160" class="lane-title">1. API 入口与可信身份上下文</text>
+
+  <rect x="70" y="180" width="220" height="80" class="entry"/>
+  <text x="180" y="207" text-anchor="middle" class="box-title">Client / 用户</text>
+  <text x="180" y="232" text-anchor="middle" class="box-text">/api/chat</text>
+  <text x="180" y="252" text-anchor="middle" class="small">message + session_key + headers</text>
+
+  <rect x="350" y="180" width="270" height="80" class="entry"/>
+  <text x="485" y="207" text-anchor="middle" class="box-title">FastAPI + RequestAdapter</text>
+  <text x="485" y="232" text-anchor="middle" class="box-text">ChatRequest -> InboundMessage</text>
+  <text x="485" y="252" text-anchor="middle" class="small">生成 request_id / trace_id</text>
+
+  <rect x="680" y="180" width="260" height="80" class="entry"/>
+  <text x="810" y="207" text-anchor="middle" class="box-title">AuthContext / Principal</text>
+  <text x="810" y="232" text-anchor="middle" class="box-text">优先 Header 身份</text>
+  <text x="810" y="252" text-anchor="middle" class="small">tenant / org / roles / scopes / data_permissions</text>
+
+  <rect x="1000" y="180" width="300" height="80" class="entry"/>
+  <text x="1150" y="207" text-anchor="middle" class="box-title">AgentOrchestrator</text>
+  <text x="1150" y="232" text-anchor="middle" class="box-text">调用 compiled LangGraph</text>
+  <text x="1150" y="252" text-anchor="middle" class="small">thread_id = session/request 隔离</text>
+
+  <rect x="1360" y="180" width="340" height="80" class="entry"/>
+  <text x="1530" y="207" text-anchor="middle" class="box-title">ResponseAdapter</text>
+  <text x="1530" y="232" text-anchor="middle" class="box-text">Graph final_state -> ChatResponse</text>
+  <text x="1530" y="252" text-anchor="middle" class="small">answer / pending / clarification / error</text>
+
+  <path d="M290 220 H350" class="arrow"/>
+  <path d="M620 220 H680" class="arrow"/>
+  <path d="M940 220 H1000" class="arrow"/>
+  <path d="M1300 220 H1360" class="arrow"/>
+
+  <!-- Main graph lane -->
+  <rect x="40" y="330" width="1720" height="310" class="lane"/>
+  <text x="70" y="365" class="lane-title">2. LangGraph 主流程编排：AgentGraphFactory / StateGraph</text>
+
+  <rect x="70" y="395" width="185" height="82" class="graph"/>
+  <text x="162" y="423" text-anchor="middle" class="box-title">load_session</text>
+  <text x="162" y="448" text-anchor="middle" class="box-text">messages + short_summary</text>
+
+  <rect x="285" y="395" width="185" height="82" class="graph"/>
+  <text x="377" y="423" text-anchor="middle" class="box-title">query_rewrite</text>
+  <text x="377" y="448" text-anchor="middle" class="box-text">EntityBag + Prompt</text>
+
+  <rect x="500" y="395" width="185" height="82" class="graph"/>
+  <text x="592" y="423" text-anchor="middle" class="box-title">intent_recognition</text>
+  <text x="592" y="448" text-anchor="middle" class="box-text">动态候选 intent</text>
+
+  <rect x="715" y="395" width="210" height="82" class="graph"/>
+  <text x="820" y="423" text-anchor="middle" class="box-title">build_context</text>
+  <text x="820" y="448" text-anchor="middle" class="box-text">OrchestratorContext</text>
+
+  <rect x="955" y="395" width="185" height="82" class="graph"/>
+  <text x="1047" y="423" text-anchor="middle" class="box-title">discover_agents</text>
+  <text x="1047" y="448" text-anchor="middle" class="box-text">AgentCard cache</text>
+
+  <rect x="1170" y="395" width="185" height="82" class="graph"/>
+  <text x="1262" y="423" text-anchor="middle" class="box-title">select_agent</text>
+  <text x="1262" y="448" text-anchor="middle" class="box-text">规则召回 + LLM Router</text>
+
+  <rect x="1385" y="395" width="185" height="82" class="graph"/>
+  <text x="1477" y="423" text-anchor="middle" class="box-title">assemble_task</text>
+  <text x="1477" y="448" text-anchor="middle" class="box-text">AgentTaskEnvelope</text>
+
+  <rect x="1595" y="395" width="130" height="82" class="graph"/>
+  <text x="1660" y="423" text-anchor="middle" class="box-title">dispatch</text>
+  <text x="1660" y="448" text-anchor="middle" class="box-text">SubAgent</text>
+
+  <path d="M255 436 H285" class="arrow"/>
+  <path d="M470 436 H500" class="arrow"/>
+  <path d="M685 436 H715" class="arrow"/>
+  <path d="M925 436 H955" class="arrow"/>
+  <path d="M1140 436 H1170" class="arrow"/>
+  <path d="M1355 436 H1385" class="arrow"/>
+  <path d="M1570 436 H1595" class="arrow"/>
+
+  <rect x="330" y="525" width="290" height="78" class="verify"/>
+  <text x="475" y="552" text-anchor="middle" class="box-title">clarification branch</text>
+  <text x="475" y="577" text-anchor="middle" class="box-text">前置节点需要澄清时中断 dispatch</text>
+
+  <rect x="685" y="525" width="320" height="78" class="verify"/>
+  <text x="845" y="552" text-anchor="middle" class="box-title">check_human_approval_required</text>
+  <text x="845" y="577" text-anchor="middle" class="box-text">捕获 write tool 审批需求</text>
+
+  <rect x="1070" y="525" width="270" height="78" class="verify"/>
+  <text x="1205" y="552" text-anchor="middle" class="box-title">pre_answer_verify</text>
+  <text x="1205" y="577" text-anchor="middle" class="box-text">VerificationService 统一出口</text>
+
+  <rect x="1405" y="525" width="290" height="78" class="graph"/>
+  <text x="1550" y="552" text-anchor="middle" class="box-title">save / compress / finalize</text>
+  <text x="1550" y="577" text-anchor="middle" class="box-text">消息保存 + 短期记忆 + API 响应</text>
+
+  <path d="M1660 477 C1660 500 1040 500 845 525" class="arrow"/>
+  <path d="M1005 564 H1070" class="arrow"/>
+  <path d="M1340 564 H1405" class="arrow"/>
+  <path d="M475 525 C475 500 1205 500 1205 525" class="arrow dash"/>
+
+  <!-- Subagent lane -->
+  <rect x="40" y="675" width="1080" height="320" class="lane"/>
+  <text x="70" y="710" class="lane-title">3. 子 Agent 执行：AgentCard + Skill + RAG Hint + Tool Loop</text>
+
+  <rect x="70" y="740" width="230" height="100" class="subagent"/>
+  <text x="185" y="768" text-anchor="middle" class="box-title">SubAgentManager</text>
+  <text x="185" y="794" text-anchor="middle" class="box-text">注册真实子 Agent</text>
+  <text x="185" y="817" text-anchor="middle" class="small">troubleshooting / policy / claim / compliance...</text>
+
+  <rect x="335" y="740" width="250" height="100" class="subagent"/>
+  <text x="460" y="768" text-anchor="middle" class="box-title">BaseSubAgent.run</text>
+  <text x="460" y="794" text-anchor="middle" class="box-text">统一执行模板</text>
+  <text x="460" y="817" text-anchor="middle" class="small">AgentCard / context / tools / runner</text>
+
+  <rect x="620" y="740" width="220" height="100" class="subagent"/>
+  <text x="730" y="768" text-anchor="middle" class="box-title">SkillSelector</text>
+  <text x="730" y="794" text-anchor="middle" class="box-text">metadata 规则打分</text>
+  <text x="730" y="817" text-anchor="middle" class="small">LLM rerank Top-K</text>
+
+  <rect x="875" y="740" width="210" height="100" class="subagent"/>
+  <text x="980" y="768" text-anchor="middle" class="box-title">SkillLoader</text>
+  <text x="980" y="794" text-anchor="middle" class="box-text">只加载选中 Skill body</text>
+  <text x="980" y="817" text-anchor="middle" class="small">RequiredEntityChecker</text>
+
+  <rect x="70" y="875" width="250" height="82" class="subagent"/>
+  <text x="195" y="903" text-anchor="middle" class="box-title">KnowledgeHintBuilder</text>
+  <text x="195" y="928" text-anchor="middle" class="box-text">轻量知识提示</text>
+
+  <rect x="360" y="875" width="310" height="82" class="subagent"/>
+  <text x="515" y="903" text-anchor="middle" class="box-title">PromptLoader</text>
+  <text x="515" y="928" text-anchor="middle" class="box-text">app/prompts/* 场景提示词</text>
+
+  <rect x="710" y="875" width="375" height="82" class="tool"/>
+  <text x="897" y="903" text-anchor="middle" class="box-title">ToolCallingRunner</text>
+  <text x="897" y="928" text-anchor="middle" class="box-text">LLM + tools loop / max_iterations / duplicate guard</text>
+
+  <path d="M300 790 H335" class="arrow"/>
+  <path d="M585 790 H620" class="arrow"/>
+  <path d="M840 790 H875" class="arrow"/>
+  <path d="M980 840 C980 865 897 855 897 875" class="arrow"/>
+  <path d="M670 916 H710" class="arrow"/>
+
+  <!-- Tools and governance lane -->
+  <rect x="1160" y="675" width="600" height="320" class="lane"/>
+  <text x="1190" y="710" class="lane-title">4. 工具、安全、审批与最终验证</text>
+
+  <rect x="1190" y="740" width="245" height="92" class="tool"/>
+  <text x="1312" y="768" text-anchor="middle" class="box-title">ToolRegistry</text>
+  <text x="1312" y="792" text-anchor="middle" class="box-text">public / private / MCP tools</text>
+  <text x="1312" y="814" text-anchor="middle" class="small">OpenAI function schema</text>
+
+  <rect x="1475" y="740" width="245" height="92" class="tool"/>
+  <text x="1597" y="768" text-anchor="middle" class="box-title">ToolExecutor</text>
+  <text x="1597" y="792" text-anchor="middle" class="box-text">缺参 / 可见性 / 鉴权 / pre_tool verify</text>
+  <text x="1597" y="814" text-anchor="middle" class="small">local or MCP dispatch</text>
+
+  <rect x="1190" y="865" width="245" height="92" class="verify"/>
+  <text x="1312" y="893" text-anchor="middle" class="box-title">ApprovalService</text>
+  <text x="1312" y="917" text-anchor="middle" class="box-text">is_write 中断 / pending / callback</text>
+  <text x="1312" y="939" text-anchor="middle" class="small">ApprovalStore + resume graph</text>
+
+  <rect x="1475" y="865" width="245" height="92" class="verify"/>
+  <text x="1597" y="893" text-anchor="middle" class="box-title">VerificationService</text>
+  <text x="1597" y="917" text-anchor="middle" class="box-text">DataPermission + Compliance</text>
+  <text x="1597" y="939" text-anchor="middle" class="small">patch / block / retry / allow</text>
+
+  <path d="M1085 916 H1190" class="arrow"/>
+  <path d="M1435 786 H1475" class="arrow"/>
+  <path d="M1597 832 C1597 850 1312 845 1312 865" class="redarrow"/>
+  <path d="M1435 911 H1475" class="arrow"/>
+
+  <!-- Infrastructure lane -->
+  <rect x="40" y="1030" width="1720" height="145" class="lane"/>
+  <text x="70" y="1065" class="lane-title">5. 基础设施与配置化能力</text>
+
+  <rect x="70" y="1090" width="230" height="58" class="data"/>
+  <text x="185" y="1115" text-anchor="middle" class="box-title">SQLite Stores</text>
+  <text x="185" y="1138" text-anchor="middle" class="small">messages / memory / approvals / logs / snapshots</text>
+
+  <rect x="335" y="1090" width="230" height="58" class="data"/>
+  <text x="450" y="1115" text-anchor="middle" class="box-title">KnowledgeService</text>
+  <text x="450" y="1138" text-anchor="middle" class="small">Disabled 默认 / KnowledgeAPIClient 可选</text>
+
+  <rect x="600" y="1090" width="230" height="58" class="data"/>
+  <text x="715" y="1115" text-anchor="middle" class="box-title">MCP Client</text>
+  <text x="715" y="1138" text-anchor="middle" class="small">list_tools -> ToolRegistry -> call_tool</text>
+
+  <rect x="865" y="1090" width="230" height="58" class="config"/>
+  <text x="980" y="1115" text-anchor="middle" class="box-title">AgentCard YAML</text>
+  <text x="980" y="1138" text-anchor="middle" class="small">能力 / intents / tools / access_policy</text>
+
+  <rect x="1130" y="1090" width="230" height="58" class="config"/>
+  <text x="1245" y="1115" text-anchor="middle" class="box-title">Skill Metadata</text>
+  <text x="1245" y="1138" text-anchor="middle" class="small">metadata-first / required_entities</text>
+
+  <rect x="1395" y="1090" width="310" height="58" class="config"/>
+  <text x="1550" y="1115" text-anchor="middle" class="box-title">Config Policies</text>
+  <text x="1550" y="1138" text-anchor="middle" class="small">.env / entity_patterns / field_visibility_policy</text>
+
+  <path d="M185 1030 V957" class="arrow dash"/>
+  <path d="M450 1090 C450 1015 195 1015 195 957" class="arrow dash"/>
+  <path d="M715 1090 C715 1015 1597 1015 1597 832" class="arrow dash"/>
+  <path d="M980 1090 C980 1010 1047 1010 1047 477" class="arrow dash"/>
+  <path d="M1245 1090 C1245 1010 730 1010 730 840" class="arrow dash"/>
+
+  <!-- response line -->
+  <path d="M1550 603 C1550 650 1690 650 1690 260" class="arrow dash"/>
+
+  <text x="70" y="1198" class="note">说明：本图反映当前代码主干。最终出口是 pre_answer_verify / VerificationService；RAG 默认关闭且通过 KnowledgeService 抽象；MCP 为客户端消费方；写工具通过 ApprovalService 中断/恢复。</text>
+</svg>

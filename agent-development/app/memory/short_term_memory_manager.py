@@ -9,6 +9,7 @@ from typing import Any
 from app.config.settings import get_settings
 from app.llm.base import LLMProvider
 from app.observability.logger import log_event, preview_text
+from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.storage.sqlite import SQLiteDatabase
 
 
@@ -17,10 +18,16 @@ class ShortTermMemoryManager:
 
     max_summary_chars = 600
 
-    def __init__(self, db: SQLiteDatabase | None = None, llm_provider: LLMProvider | None = None) -> None:
+    def __init__(
+        self,
+        db: SQLiteDatabase | None = None,
+        llm_provider: LLMProvider | None = None,
+        prompt_loader: PromptLoader | None = None,
+    ) -> None:
         """注入 SQLiteDatabase；未注入时使用默认 SQLITE_DB_PATH。"""
         self.db = db or SQLiteDatabase(get_settings().sqlite_db_path)
         self.llm_provider = llm_provider
+        self.prompt_loader = prompt_loader or default_prompt_loader
 
     async def get_summary(self, session_key: str) -> str | None:
         """从 short_term_memory 表读取指定 session 的摘要。"""
@@ -119,25 +126,14 @@ class ShortTermMemoryManager:
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "你是健康险 Agent 系统的短期记忆压缩器。你的任务是根据 "
-                            "previous_summary 和 current_turn 生成新的 short_summary。"
-                        ),
+                        "content": self.prompt_loader.render("memory_summary/system.md"),
                     },
                     {
                         "role": "user",
-                        "content": (
-                            f"previous_summary:\n{previous_summary or '无'}\n\n"
-                            f"current_turn:\n{current_turn}\n\n"
-                            "要求：\n"
-                            "1. 输出一段中文自然语言摘要。\n"
-                            "2. 不要输出 JSON。\n"
-                            "3. 不要输出 Markdown。\n"
-                            "4. 不要编造不存在的保单号、请求ID、错误码、理赔号、接口名。\n"
-                            "5. 摘要需要承接 previous_summary，而不是只总结当前轮。\n"
-                            "6. 摘要需要保留当前任务、关键业务实体、已知结论和尚未解决的问题。\n"
-                            "7. 如果用户下一轮说“这个/那个/继续/谁的问题”，应能根据摘要判断指代对象。\n"
-                            "8. 摘要长度控制在 150～300 字之间。"
+                        "content": self.prompt_loader.render(
+                            "memory_summary/user.md",
+                            previous_summary=previous_summary or "无",
+                            current_turn=current_turn,
                         ),
                     },
                 ],

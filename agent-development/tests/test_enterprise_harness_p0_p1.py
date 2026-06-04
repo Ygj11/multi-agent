@@ -125,6 +125,94 @@ def test_tool_registry_filters_llm_tools_by_principal_scope():
     assert [item["function"]["name"] for item in schemas] == ["query_policy_info_secure"]
 
 
+def test_agent_access_policy_schema_enforces_principal_boundaries():
+    from app.schemas.agent_card import AgentAccessPolicy, AgentCard
+
+    card = AgentCard(
+        agent_name="secure_agent",
+        display_name="Secure",
+        description="Secure agent",
+        capabilities=["secure"],
+        supported_intents=["secure_query"],
+        output_schema="text",
+        access_policy=AgentAccessPolicy(
+            required_roles=["manager"],
+            required_scopes=["secure:read"],
+            required_data_permissions=["secure.sensitive.read"],
+            allowed_org_types=["headquarter"],
+            allowed_org_ids=["org-1"],
+            denied_org_ids=["org-9"],
+        ),
+        version="1",
+    )
+    service = AuthorizationService()
+
+    denied_without_principal = service.check_agent_access(principal=None, agent_card=card)
+    assert denied_without_principal.allowed is False
+    assert denied_without_principal.reason == "principal_required"
+
+    denied_scope = service.check_agent_access(
+        principal=Principal(
+            tenant_id="t1",
+            subject="u1",
+            roles=["manager"],
+            scopes=[],
+            data_permissions=["secure.sensitive.read"],
+            org_id="org-1",
+            attributes={"org_type": "headquarter"},
+        ),
+        agent_card=card,
+    )
+    assert denied_scope.allowed is False
+    assert denied_scope.reason == "missing_required_scope"
+    assert denied_scope.missing_scopes == ["secure:read"]
+
+    denied_data_permission = service.check_agent_access(
+        principal=Principal(
+            tenant_id="t1",
+            subject="u1",
+            roles=["manager"],
+            scopes=["secure:read"],
+            data_permissions=[],
+            org_id="org-1",
+            attributes={"org_type": "headquarter"},
+        ),
+        agent_card=card,
+    )
+    assert denied_data_permission.allowed is False
+    assert denied_data_permission.reason == "missing_required_data_permission"
+    assert denied_data_permission.missing_data_permissions == ["secure.sensitive.read"]
+
+    denied_org = service.check_agent_access(
+        principal=Principal(
+            tenant_id="t1",
+            subject="u1",
+            roles=["manager"],
+            scopes=["secure:read"],
+            data_permissions=["secure.sensitive.read"],
+            org_id="org-9",
+            attributes={"org_type": "headquarter"},
+        ),
+        agent_card=card,
+    )
+    assert denied_org.allowed is False
+    assert denied_org.reason == "org_id_denied"
+
+    allowed = service.check_agent_access(
+        principal=Principal(
+            tenant_id="t1",
+            subject="u1",
+            roles=["manager"],
+            scopes=["secure:read"],
+            data_permissions=["secure.sensitive.read"],
+            org_id="org-1",
+            attributes={"org_type": "headquarter"},
+        ),
+        agent_card=card,
+    )
+    assert allowed.allowed is True
+
+
 @pytest.mark.asyncio
 async def test_pre_answer_data_permission_verifier_redacts_without_sensitive_permission():
     service = VerificationService([DataPermissionVerifier()])

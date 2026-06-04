@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.llm.base import LLMProvider
+from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.query.entity_extractor import EntityExtractor
 from app.query.json_utils import parse_json_object
 from app.schemas.entities import ConversationWindow, EntityBag, EntityMention
@@ -21,9 +22,11 @@ class QueryRewriteNode:
         self,
         llm_provider: LLMProvider | None = None,
         entity_extractor: EntityExtractor | None = None,
+        prompt_loader: PromptLoader | None = None,
     ) -> None:
         self.llm_provider = llm_provider
         self.entity_extractor = entity_extractor or EntityExtractor()
+        self.prompt_loader = prompt_loader or default_prompt_loader
 
     async def rewrite(
         self,
@@ -62,18 +65,15 @@ class QueryRewriteNode:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are a query rewrite component. Return only JSON with keys: "
-                        "is_follow_up, resolved_query, rewrite_type, entities, inherited_entities, "
-                        "missing_required_entities, need_clarification, clarification_question, confidence, reason."
-                    ),
+                    "content": self.prompt_loader.render("query_rewrite/system.md"),
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Original query: {original_query}\n"
-                        f"Current entities: {current_bag.to_compact_dict()}\n"
-                        f"Conversation window: {window.model_dump()}"
+                    "content": self.prompt_loader.render(
+                        "query_rewrite/user.md",
+                        original_query=original_query,
+                        current_entities=current_bag.to_compact_dict(),
+                        conversation_window=window.model_dump(),
                     ),
                 },
             ],

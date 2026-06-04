@@ -24,6 +24,8 @@ class SkillMetadata(BaseModel):
     is_default: bool
     business_domain: list[str] = Field(default_factory=list)
     required_context: list[str] = Field(default_factory=list)
+    routing_keywords: list[str] = Field(default_factory=list)
+    routing_negative_keywords: list[str] = Field(default_factory=list)
     source_path: str
 
     @model_validator(mode="after")

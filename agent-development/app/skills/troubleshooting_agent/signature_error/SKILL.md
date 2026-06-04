@@ -25,6 +25,17 @@ required_context:
   - request_id
   - error_code
   - interface_name
+routing_keywords:
+  - E102
+  - timestamp
+  - submitProposal
+  - 签名
+  - 签名失败
+  - 验签失败
+routing_negative_keywords:
+  - 回调失败
+  - 字段缺失
+  - 保全任务完成
 ---
 
 # 签名失败排查 Skill

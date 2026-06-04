@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.llm.base import LLMProvider
+from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.query.entity_extractor import EntityExtractor
 from app.query.json_utils import parse_json_object
 from app.schemas.entities import ConversationWindow, EntityBag
@@ -18,9 +19,11 @@ class IntentRecognitionNode:
         self,
         llm_provider: LLMProvider | None = None,
         entity_extractor: EntityExtractor | None = None,
+        prompt_loader: PromptLoader | None = None,
     ) -> None:
         self.llm_provider = llm_provider
         self.entity_extractor = entity_extractor or EntityExtractor()
+        self.prompt_loader = prompt_loader or default_prompt_loader
 
     async def recognize(
         self,
@@ -71,38 +74,19 @@ class IntentRecognitionNode:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are the intent recognition node of a multi-agent health insurance system. "
-                        "Classify the user's business intent, but do not select an agent or tools. "
-                        "Rules: intent must be one of allowed_intents, or unknown. Do not invent intent values. "
-                        "sub_intent should be selected from candidate_sub_intents when possible; use null if none fits. "
-                        "Never output required_tools, selected_agent, or tool names. If confidence is below 0.5, "
-                        "set need_clarification=true. Confidence scoring guide: 0.90-1.00 means the query clearly "
-                        "matches exactly one allowed_intent with strong evidence from rewritten_query, entities, "
-                        "AgentCard summaries, examples, or capabilities; use this range only for a clear single best "
-                        "intent. 0.75-0.89 means one intent is likely, but sub_intent or some context may be uncertain. "
-                        "0.50-0.74 means partial evidence or multiple plausible intents; set need_clarification=true "
-                        "when the user action is ambiguous. 0.35-0.49 means low confidence and must set "
-                        "need_clarification=true. 0.00-0.34 means unknown, out of domain, or insufficient information; "
-                        "intent should be unknown and need_clarification=true. Increase confidence when entities match "
-                        "the candidate intent domain, examples/capabilities clearly match the query, and sub_intent is "
-                        "selected from candidate_sub_intents. Decrease confidence when multiple intents are plausible, "
-                        "key business objects are missing, the query is a vague follow-up, or the sub_intent is uncertain. "
-                        "Return strict JSON only with keys: intent, sub_intent, "
-                        "confidence, entities, missing_required_entities, need_clarification, clarification_question, "
-                        "is_follow_up, reason."
-                    ),
+                    "content": self.prompt_loader.render("intent_recognition/system.md"),
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Original query: {original_query}\n"
-                        f"Rewritten query: {rewritten_query}\n"
-                        f"Entities: {entities}\n"
-                        f"Conversation window: {window.model_dump()}\n"
-                        f"Allowed intents: {allowed_intents}\n"
-                        f"Candidate sub intents by intent: {candidate_sub_intents}\n"
-                        f"AgentCard summaries: {agent_card_summaries}"
+                    "content": self.prompt_loader.render(
+                        "intent_recognition/user.md",
+                        original_query=original_query,
+                        rewritten_query=rewritten_query,
+                        entities=entities,
+                        conversation_window=window.model_dump(),
+                        allowed_intents=allowed_intents,
+                        candidate_sub_intents=candidate_sub_intents,
+                        agent_card_summaries=agent_card_summaries,
                     ),
                 },
             ],
