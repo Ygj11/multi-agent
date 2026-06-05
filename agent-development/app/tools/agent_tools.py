@@ -8,6 +8,7 @@ production integrations should replace these handlers behind the same
 ToolDefinition contract instead of changing AgentGraph or LLMProvider.
 """
 
+from app.integrations.pos_api_client import PosAPIClient
 from app.tools.handlers.mvp_agent_tool_handlers import (
     MVP_LOCAL_TOOL_HANDLERS,
     notice_customer_update,
@@ -24,6 +25,13 @@ from app.tools.handlers.mvp_agent_tool_handlers import (
     query_policy_status,
     query_task_status,
     update_policy_status,
+)
+from app.tools.handlers.pos_query_tool_handlers import (
+    build_pos_calc_surrender_premium_tool,
+    build_pos_query_approval_text_tool,
+    build_pos_query_available_items_tool,
+    build_pos_query_policy_standard_tool,
+    build_pos_submit_verify_tool,
 )
 
 
@@ -173,9 +181,73 @@ POLICY_RECOVERY_PARAMETERS = {
     "required": ["handleType", "premHandleFlag", "reqList"],
 }
 
+POS_QUERY_AVAILABLE_ITEMS_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "policyNo": {"type": "string", "description": "保单号。"},
+        "customerNo": {"type": "string", "description": "保单上的客户号。"},
+        "src": {"type": "integer", "description": "来源，默认 16。"},
+    },
+    "required": ["policyNo", "customerNo"],
+}
 
-def register_agent_private_tools(registry) -> None:
+POS_CALC_SURRENDER_PREMIUM_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "applyDate": {"type": "integer", "description": "受理日期毫秒时间戳。"},
+        "policyNo": {"type": "string", "description": "保单号。"},
+        "endorseType": {"type": "string", "description": "保全项，默认 001028。"},
+        "taskSrc": {"type": "string", "description": "任务来源，默认 01。"},
+        "surrenderType": {"type": "string", "description": "退保类型，默认 1。"},
+        "surDate": {"type": "integer", "description": "退保日期毫秒时间戳。"},
+        "commission": {"type": "string", "description": "佣金标识，默认 1。"},
+        "operatorId": {"type": "string", "description": "操作人，优先从 Principal.user_id 获取。"},
+    },
+    "required": ["applyDate", "policyNo", "surDate"],
+}
+
+POS_QUERY_POLICY_STANDARD_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "policyNo": {"type": "string", "description": "保单号，工具内部映射为接口字段 polNo。"},
+        "withInsureds": {"type": "string", "description": "是否携带被保人信息，默认 Y。"},
+        "extensions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "扩展信息，默认 pollist、assuredPolicyInfo、pollLock。",
+        },
+    },
+    "required": ["policyNo"],
+}
+
+POS_QUERY_APPROVAL_TEXT_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "applySeq": {"type": "string", "description": "保全受理号 / 申请流水号。"},
+        "pageSize": {"type": "integer", "description": "分页大小，默认 0。"},
+        "pageNo": {"type": "integer", "description": "页码，默认 1。"},
+        "operatorId": {"type": "string", "description": "操作人，优先从 Principal.user_id 获取。"},
+    },
+    "required": ["applySeq"],
+}
+
+POS_SUBMIT_VERIFY_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "policyNo": {"type": "string", "description": "保单号。"},
+        "endorseType": {"type": "string", "description": "保全项，默认 001028。"},
+        "payMode": {"type": "string", "description": "支付方式，默认 Y。"},
+        "acceptDate": {"type": "integer", "description": "受理日期毫秒时间戳。"},
+        "surrenderReason": {"type": "string", "description": "退费原因，默认 11。"},
+        "taskSrc": {"type": "string", "description": "任务来源，默认 31。"},
+        "operatorId": {"type": "string", "description": "操作人，优先从 Principal.user_id 获取。"},
+    },
+    "required": ["policyNo", "acceptDate"],
+}
+
+def register_agent_private_tools(registry, pos_api_client: PosAPIClient | None = None) -> None:
     """Register MVP private tools."""
+    pos_api_client = pos_api_client or PosAPIClient(base_url=None, enabled=False)
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="query_task_status",
@@ -282,4 +354,44 @@ def register_agent_private_tools(registry) -> None:
         tool=query_claim_progress,
         description="根据 claim_no 查询理赔进度。",
         parameters=CLAIM_NO_PARAMETERS,
+    )
+    registry.register_private(
+        agent_name="pos_query_agent",
+        name="pos_query_available_items",
+        tool=build_pos_query_available_items_tool(pos_api_client),
+        description="查询保单线上可做保全项。",
+        parameters=POS_QUERY_AVAILABLE_ITEMS_PARAMETERS,
+        operation="read",
+    )
+    registry.register_private(
+        agent_name="pos_query_agent",
+        name="pos_calc_surrender_premium",
+        tool=build_pos_calc_surrender_premium_tool(pos_api_client),
+        description="查询退保试算详情，包括退保金额和试算相关结果。",
+        parameters=POS_CALC_SURRENDER_PREMIUM_PARAMETERS,
+        operation="read",
+    )
+    registry.register_private(
+        agent_name="pos_query_agent",
+        name="pos_query_policy_standard",
+        tool=build_pos_query_policy_standard_tool(pos_api_client),
+        description="查询保全保单标准信息，包含保单、被保人和锁定扩展信息。",
+        parameters=POS_QUERY_POLICY_STANDARD_PARAMETERS,
+        operation="read",
+    )
+    registry.register_private(
+        agent_name="pos_query_agent",
+        name="pos_query_approval_text",
+        tool=build_pos_query_approval_text_tool(pos_api_client),
+        description="通过受理号查询保全批文和变更详情。",
+        parameters=POS_QUERY_APPROVAL_TEXT_PARAMETERS,
+        operation="read",
+    )
+    registry.register_private(
+        agent_name="pos_query_agent",
+        name="pos_submit_verify",
+        tool=build_pos_submit_verify_tool(pos_api_client),
+        description="执行保全任务提交前校验，例如退保提交校验和支付方式校验。",
+        parameters=POS_SUBMIT_VERIFY_PARAMETERS,
+        operation="read",
     )

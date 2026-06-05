@@ -119,4 +119,6 @@ class ToolExecutionPipeline:
             agent_name=context.agent_name,
             tool_name=context.tool_name,
             arguments=context.arguments,
+            principal=principal_obj,
+            auth_context=context.auth_context,
         )

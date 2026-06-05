@@ -9,6 +9,7 @@ from app.subagents.change_impact_analysis_agent import ChangeImpactAnalysisAgent
 from app.subagents.compliance_security_agent import ComplianceSecurityAgent
 from app.subagents.document_parse_agent import DocumentParseAgent
 from app.subagents.manager import SubAgentManager
+from app.subagents.pos_query_agent import PosQueryAgent
 from app.subagents.policy_query_agent import PolicyQueryAgent
 from app.subagents.tool_calling_runner import ToolCallingRunner
 from app.subagents.troubleshooting_agent import TroubleshootingAgent
@@ -58,6 +59,14 @@ def build_subagent_manager(
     manager.register(
         "claim_agent",
         ClaimAgent(
+            context_builder=context_builder,
+            tool_executor=tool_executor,
+            tool_calling_runner=tool_calling_runner,
+        ),
+    )
+    manager.register(
+        "pos_query_agent",
+        PosQueryAgent(
             context_builder=context_builder,
             tool_executor=tool_executor,
             tool_calling_runner=tool_calling_runner,

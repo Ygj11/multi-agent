@@ -166,10 +166,55 @@ class InternalLLMProvider:
         request_id_arg = self._find_request_id(text)
         policy_no = self._find_policy_no(text)
         claim_no = self._find_claim_no(text)
+        apply_seq = self._find_apply_seq(text)
+        customer_no = self._find_customer_no(text)
+        endorse_type = self._find_endorse_type(text)
         next_calls: list[dict[str, Any]] = []
 
         if tool_names and not called_tools:
-            if "query_internal_log" in tool_names:
+            if "pos_query_available_items" in tool_names and self._has_any(
+                text, "可做保全项", "可办理保全", "保全项"
+            ):
+                next_calls.append(
+                    self._tool_call(
+                        "call_pos_query_available_items",
+                        "pos_query_available_items",
+                        {"policyNo": policy_no, "customerNo": customer_no},
+                    )
+                )
+            elif "pos_query_approval_text" in tool_names and self._has_any(text, "批文"):
+                next_calls.append(
+                    self._tool_call(
+                        "call_pos_query_approval_text",
+                        "pos_query_approval_text",
+                        {"applySeq": apply_seq},
+                    )
+                )
+            elif "pos_calc_surrender_premium" in tool_names and self._has_any(text, "试算", "退保"):
+                next_calls.append(
+                    self._tool_call(
+                        "call_pos_calc_surrender_premium",
+                        "pos_calc_surrender_premium",
+                        {"policyNo": policy_no, "endorseType": endorse_type or "001028"},
+                    )
+                )
+            elif "pos_submit_verify" in tool_names and self._has_any(text, "提交校验", "退保提交校验"):
+                next_calls.append(
+                    self._tool_call(
+                        "call_pos_submit_verify",
+                        "pos_submit_verify",
+                        {"policyNo": policy_no, "endorseType": endorse_type or "001028"},
+                    )
+                )
+            elif "pos_query_policy_standard" in tool_names and self._has_any(text, "保单"):
+                next_calls.append(
+                    self._tool_call(
+                        "call_pos_query_policy_standard",
+                        "pos_query_policy_standard",
+                        {"policyNo": policy_no},
+                    )
+                )
+            elif "query_internal_log" in tool_names:
                 args = {"request_id": request_id_arg} if request_id_arg else {"query": text}
                 next_calls.append(self._tool_call("call_query_internal_log", "query_internal_log", args))
                 if "rag_search_tool" in tool_names:
@@ -232,13 +277,39 @@ class InternalLLMProvider:
 
     @staticmethod
     def _find_policy_no(text: str) -> str | None:
-        match = re.search(r"(?:policy_no|保单|淇濆崟)\D*([A-Za-z0-9]{6,})", text, re.IGNORECASE)
+        match = re.search(r"(?:policy_no|policyNo|保单号|保单|淇濆崟)\D*([A-Za-z0-9]{3,20})", text, re.IGNORECASE)
         return match.group(1) if match else None
 
     @staticmethod
     def _find_claim_no(text: str) -> str | None:
         match = re.search(r"\b(?:CLM|CLAIM)[_-]?[A-Za-z0-9]{3,}\b", text, re.IGNORECASE)
         return match.group(0) if match else None
+
+    @staticmethod
+    def _find_apply_seq(text: str) -> str | None:
+        match = re.search(
+            r"(?:apply[_-]?seq|applySeq|受理号|申请号)\D*([A-Za-z0-9_-]{3,})|\bAPPLY[_-]?[A-Za-z0-9_-]+\b",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        return match.group(1) or match.group(0)
+
+    @staticmethod
+    def _find_customer_no(text: str) -> str | None:
+        match = re.search(r"(?:customer[_-]?no|customerNo|客户号)\D*([A-Za-z0-9_-]{3,})", text, re.IGNORECASE)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _find_endorse_type(text: str) -> str | None:
+        match = re.search(r"(?:endorseType|保全项|保全类型)\D*([\u4e00-\u9fa5A-Za-z0-9_-]+)", text, re.IGNORECASE)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _has_any(text: str, *keywords: str) -> bool:
+        lower = text.lower()
+        return any(keyword.lower() in lower for keyword in keywords)
 
     @staticmethod
     def _final_content(text: str, called_tools: list[Any]) -> str:
@@ -252,6 +323,8 @@ class InternalLLMProvider:
             return "保单查询完成：已查询保单基础信息和状态，请以工具返回的脱敏结果为准。"
         if "query_claim_case" in called_tools:
             return "理赔查询完成：已查询赔案信息和处理进度，请以工具返回的脱敏结果为准。"
+        if any(str(name).startswith("pos_") for name in called_tools):
+            return "保全实时查询完成：已调用对应 POS 查询工具，请以工具返回的接口结果为准。"
         if "compliance" in text.lower() or "合规" in text or "鍚堣" in text:
             risk = "high" if any(marker in text for marker in ("13800138000", "110101199003074233", "token", "secret")) else "low"
             return f"合规安全检查 completed: 风险等级 {risk}. Sensitive fields must be redacted before external sharing."

@@ -140,6 +140,10 @@ class IntentRecognitionNode:
             intent, sub_intent, confidence = "document_parse", "api_doc_parse", 0.84
         elif self._has_any(query_raw, "变更影响", "影响分析", "字段变更", "接口变更", "签名规则变更", "change impact"):
             intent, sub_intent, confidence = "change_impact_analysis", "signature_rule_change", 0.86
+        elif self._is_pos_query(query_raw, entities):
+            intent = "pos_query"
+            sub_intent = self._pos_sub_intent(query_raw)
+            confidence = 0.86
         elif self._has_any(query_raw, "理赔", "赔案", "claim") or entities.get("claim_no"):
             intent, sub_intent, confidence = "claim_query", "claim_progress", 0.84
         elif self._has_any(query_raw, "退保失败", "退保没有成功", "没有成功", "回调失败", "签名", "排查", "报错", "失败", "错误", "异常") or entities.get("request_id") or entities.get("error_code"):
@@ -256,3 +260,34 @@ class IntentRecognitionNode:
         if entities.get("error_code") or cls._has_any(text, "E102", "签名"):
             return "signature_error"
         return "general_troubleshooting"
+
+    @classmethod
+    def _is_pos_query(cls, text: str, entities: dict[str, Any]) -> bool:
+        return cls._has_any(
+            text,
+            "保全实时查询",
+            "可做保全项",
+            "可办理保全",
+            "批文查询",
+            "保全批文",
+            "退保试算",
+            "试算详情",
+            "提交校验",
+            "退保提交校验",
+            "保单标准查询",
+            "pos",
+        ) or bool(entities.get("customer_no"))
+
+    @classmethod
+    def _pos_sub_intent(cls, text: str) -> str:
+        if cls._has_any(text, "可做保全项", "可办理保全"):
+            return "pos_available_items"
+        if cls._has_any(text, "批文查询", "保全批文"):
+            return "pos_approval_text_query"
+        if cls._has_any(text, "退保试算", "试算详情"):
+            return "pos_surrender_premium_calc"
+        if cls._has_any(text, "提交校验", "退保提交校验"):
+            return "pos_submit_verify"
+        if cls._has_any(text, "保单标准查询", "保单查询"):
+            return "pos_policy_standard_query"
+        return "pos_query"

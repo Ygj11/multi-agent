@@ -1,0 +1,48 @@
+agent_name: pos_query_agent
+display_name: 保全实时查询智能体
+description: 负责健康险保全实时接口查询，包括可做保全项、退保试算详情、保全保单标准查询、批文查询和退保提交校验。
+capabilities:
+  - 保全实时查询
+  - 可做保全项查询
+  - 退保试算详情查询
+  - 保全保单标准查询
+  - 批文查询
+  - 保全批文查询
+  - 退保提交校验
+supported_intents:
+  - pos_query
+  - pos_available_items
+  - pos_surrender_premium_calc
+  - pos_policy_standard_query
+  - pos_approval_text_query
+  - pos_submit_verify
+required_entities: []
+optional_entities:
+  - policy_no
+  - customer_no
+  - apply_seq
+  - endorseType
+  - applyDate
+  - surDate
+  - payMode
+  - acceptDate
+  - surrenderReason
+  - taskSrc
+  - operatorId
+output_schema: SubAgentResult
+private_tools:
+  - pos_query_available_items
+  - pos_calc_surrender_premium
+  - pos_query_policy_standard
+  - pos_query_approval_text
+  - pos_submit_verify
+public_tools_allowed: false
+mcp_tools: []
+mcp_tool_scopes: []
+skills:
+  - pos_query_agent.realtime_query
+rag_namespaces: []
+memory_policy: {"use_short_summary": true, "recent_turns": 8}
+examples: [{"query": "查询保单 9200130111869934 可以做哪些保全项", "intent": "pos_query"}, {"query": "受理号 930021041267222 的保全批文查询", "intent": "pos_approval_text_query"}, {"query": "退保试算详情，保单号 9200230000453437", "intent": "pos_surrender_premium_calc"}]
+enabled: true
+version: "1.0.0"

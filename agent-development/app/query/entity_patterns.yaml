@@ -46,6 +46,54 @@ patterns:
     sensitive: false
     confidence: 0.85
 
+  - entity_type: customer_no
+    description: 客户号，例如 customerNo、customer_no
+    regex:
+      - "(?:客户号|customer[_-]?no|customerNo)[:：=]?\\s*([A-Za-z0-9_-]+)"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.9
+
+  - entity_type: payMode
+    description: 支付方式，例如 payMode=Y
+    regex:
+      - "(?:支付方式|payMode)[:：=]?\\s*([A-Za-z0-9_-]+)"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.85
+
+  - entity_type: operatorId
+    description: 操作人，例如 operatorId
+    regex:
+      - "(?:操作人|operatorId|operator_id)[:：=]?\\s*([A-Za-z0-9_-]+)"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.85
+
+  - entity_type: applyDate
+    description: 受理日期毫秒时间戳
+    regex:
+      - "(?:受理日期|applyDate)[:：=]?\\s*(\\d{10,13})"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.8
+
+  - entity_type: surDate
+    description: 退保日期毫秒时间戳
+    regex:
+      - "(?:退保日期|surDate)[:：=]?\\s*(\\d{10,13})"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.8
+
+  - entity_type: acceptDate
+    description: 提交校验受理日期毫秒时间戳
+    regex:
+      - "(?:受理日期|acceptDate)[:：=]?\\s*(\\d{10,13})"
+    normalized_type: string
+    sensitive: false
+    confidence: 0.8
+
   - entity_type: claim_no
     description: 理赔号
     regex:

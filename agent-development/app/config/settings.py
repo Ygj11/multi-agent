@@ -81,6 +81,11 @@ class Settings:
     knowledge_api_url: str | None = None
     knowledge_api_timeout: float = 10.0
 
+    # POS real-time API
+    enable_pos_api: bool = False
+    pos_api_base_url: str = "http://ehis-epos-gateway.paic.com.cn"
+    pos_api_timeout: float = 10.0
+
     # Storage and checkpoints
     sqlite_db_path: str = ".data/agent_mvp.sqlite3"
     checkpoint_backend: str = "memory"
@@ -142,6 +147,9 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
         enable_knowledge_api=_as_bool(os.getenv("ENABLE_KNOWLEDGE_API"), False),
         knowledge_api_url=os.getenv("KNOWLEDGE_API_URL") or None,
         knowledge_api_timeout=float(os.getenv("KNOWLEDGE_API_TIMEOUT", "10")),
+        enable_pos_api=_as_bool(os.getenv("ENABLE_POS_API"), False),
+        pos_api_base_url=os.getenv("POS_API_BASE_URL", "http://ehis-epos-gateway.paic.com.cn"),
+        pos_api_timeout=float(os.getenv("POS_API_TIMEOUT", "10")),
         sqlite_db_path=os.getenv("SQLITE_DB_PATH", ".data/agent_mvp.sqlite3"),
         checkpoint_backend=os.getenv("CHECKPOINT_BACKEND", "memory"),
         checkpoint_db_path=os.getenv("CHECKPOINT_DB_PATH") or None,

@@ -21,6 +21,7 @@ from app.tools.registry import ToolRegistry
 from app.verification.schemas import VerificationInput
 from app.verification.service import VerificationService
 import json
+import inspect
 
 
 class ToolExecutor:
@@ -191,19 +192,30 @@ class ToolExecutor:
             agent_name=agent_name,
             tool_name=tool_name,
             arguments=arguments,
+            principal=principal_obj,
+            auth_context=auth_context,
         )
         result.approval_id = approval_id
         await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf, approval_id=approval_id)
         return result
 
-    async def _execute_definition(self, *, definition, agent_name: str, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
+    async def _execute_definition(
+        self,
+        *,
+        definition,
+        agent_name: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        principal: Principal | None = None,
+        auth_context: dict[str, Any] | None = None,
+    ) -> ToolResult:
         try:
             if definition.source == "mcp":
                 if self.mcp_client_manager is None:
                     raise MCPServerUnavailableError("mcp_client_manager_not_configured")
                 raw = await self.mcp_client_manager.call_tool(tool_name, arguments)
             else:
-                raw = await definition.callable(**arguments)
+                raw = await definition.callable(**self._call_arguments(definition, arguments, principal, auth_context))
             success = not (isinstance(raw, dict) and raw.get("success") is False)
             result = ToolResult(
                 name=tool_name,
@@ -226,6 +238,25 @@ class ToolExecutor:
             result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=str(exc))
 
         return result
+
+    @staticmethod
+    def _call_arguments(
+        definition,
+        arguments: dict[str, Any],
+        principal: Principal | None,
+        auth_context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        call_args = dict(arguments)
+        try:
+            signature = inspect.signature(definition.callable)
+        except (TypeError, ValueError):
+            return call_args
+        parameters = signature.parameters
+        if "principal" in parameters:
+            call_args["principal"] = principal
+        if "auth_context" in parameters:
+            call_args["auth_context"] = auth_context
+        return call_args
 
     async def _log(
         self,

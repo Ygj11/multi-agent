@@ -24,6 +24,7 @@ from app.bootstrap.tools import register_admin_restricted_tools
 from app.bootstrap.verification import build_verification_service
 from app.config.settings import get_settings
 from app.knowledge.factory import build_knowledge_service
+from app.integrations.pos_api_client import PosAPIClient
 from app.llm.factory import build_llm_provider
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
 from app.mcp.capability_registry import MCPCapabilityRegistry
@@ -61,6 +62,11 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     evidence_store = storage.evidence_store
     approval_store = storage.approval_store
     knowledge_service = build_knowledge_service(settings)
+    pos_api_client = PosAPIClient(
+        base_url=settings.pos_api_base_url,
+        timeout=settings.pos_api_timeout,
+        enabled=settings.enable_pos_api,
+    )
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
 
@@ -69,7 +75,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     authorization_service = AuthorizationService()
     resource_access_service = ResourceAccessService()
     register_public_tools(tool_registry, knowledge_service)
-    register_agent_private_tools(tool_registry)
+    register_agent_private_tools(tool_registry, pos_api_client=pos_api_client)
     register_admin_restricted_tools(tool_registry, settings)
     verification_service = build_verification_service(llm_provider)
     tool_executor = ToolExecutor(
@@ -179,6 +185,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     app.state.approval_store = approval_store
     app.state.approval_service = approval_service
     app.state.knowledge_service = knowledge_service
+    app.state.pos_api_client = pos_api_client
     app.state.mcp_client_manager = mcp_client_manager
     app.state.mcp_capability_registry = mcp_capability_registry
     app.state.skill_catalog = skill_catalog
