@@ -162,9 +162,7 @@ app/
   subagents/
     base.py                       BaseSubAgent 统一执行模板
     troubleshooting_agent.py      问题排查子 Agent
-    claim_agent.py                理赔查询子 Agent
-    policy_query_agent.py         保单查询子 Agent
-    compliance_security_agent.py  合规子 Agent，AgentCard 名称为 compliance_agent
+    pos_query_agent.py            保全实时查询子 Agent
   skills/
     {agent_name}/{skill_name}/SKILL.md
   tools/
@@ -194,9 +192,7 @@ tests/
 
 ```text
 app/agents/cards/troubleshooting_agent.yaml
-app/agents/cards/claim_agent.yaml
-app/agents/cards/policy_query_agent.yaml
-app/agents/cards/compliance_agent.yaml
+app/agents/cards/pos_query_agent.yaml
 ```
 
 AgentCard 核心 schema：
@@ -207,7 +203,9 @@ class AgentCard(BaseModel):
     display_name: str
     description: str
     capabilities: list[str]
-    supported_intents: list[str]
+    supported_routes: dict[str, list[str]]
+    supported_intents: list[str]      # legacy compatibility, derived from supported_routes
+    supported_sub_intents: list[str]  # legacy compatibility, derived from supported_routes
     required_entities: list[str]
     output_schema: str
     private_tools: list[str]
@@ -226,21 +224,35 @@ AgentCardLoader 提供：
 loader = AgentCardLoader(cards_root=Path("app/agents/cards"))
 
 cards = loader.list_available_agents()          # 只返回 enabled=true
-card = loader.get_agent_card("claim_agent")
+card = loader.get_agent_card("troubleshooting_agent")
 candidates = loader.match_candidates(
     intent="troubleshooting",
     entities={"policy_no": "9201344266"},
     query="保单9201344266为什么退保没有成功",
 )
 loader.validate_with_skill_catalog(skill_catalog)
+loader.validate_with_intent_taxonomy(intent_taxonomy, require_full_coverage=True)
 ```
+
+AgentCard 里的意图边界：
+
+```text
+agent_name = 子 Agent 执行者名称，例如 troubleshooting_agent
+supported_routes = Agent 能处理的 taxonomy route，例如 troubleshooting -> endo_completion_aftercare
+capabilities = Agent 能力画像，例如 internal_log_analysis / task_status_diagnosis
+```
+
+全局 `app/config/intent_taxonomy.yaml` 是合法 `intent/sub_intent` 的唯一来源。`capabilities` 只作为分类和打分证据，不作为合法的 `intent` 或 `sub_intent` 值。
+启动时默认开启 `STRICT_TAXONOMY_ROUTE_COVERAGE=true`，会要求 taxonomy 中每个合法 `intent/sub_intent` 都至少被一个启用的 AgentCard 覆盖；如果只是提前规划 taxonomy、暂时还没有对应 Agent，可以设置为 `false`。
 
 匹配逻辑当前是规则打分，后续可替换为 LLM JSON 选择：
 
 ```python
 score = 0.0
-if intent in card.supported_intents:
+if intent in card.supported_routes:
     score += 5
+if sub_intent in card.supported_routes[intent]:
+    score += 2
 score += matched_required_entities * 2
 score += capability_keyword_hits * 1.5
 score += query_keyword_hits
@@ -328,16 +340,8 @@ subagent_manager.register(
     TroubleshootingAgent(context_builder=context_builder, tool_executor=tool_executor),
 )
 subagent_manager.register(
-    "policy_query_agent",
-    PolicyQueryAgent(context_builder=context_builder, tool_executor=tool_executor),
-)
-subagent_manager.register(
-    "claim_agent",
-    ClaimAgent(context_builder=context_builder, tool_executor=tool_executor),
-)
-subagent_manager.register(
-    "compliance_agent",
-    ComplianceSecurityAgent(context_builder=context_builder, tool_executor=tool_executor),
+    "pos_query_agent",
+    PosQueryAgent(context_builder=context_builder, tool_executor=tool_executor),
 )
 
 agent_card_loader = AgentCardLoader(cards_root=cards_root)
@@ -408,16 +412,21 @@ troubleshooting_agent 私有工具：
   query_task_status
   query_node_status
   query_internal_log
+  query_endo_task_record
+  notice_policy_update
+  notice_customer_update
+  notice_period_update
+  policy_suspendOrRecovery
+  notice_finance
   mcp.workflow.query_refund_task
   mcp.logs.query_trace
 
-policy_query_agent 私有工具：
-  query_policy_info
-  query_policy_status
-
-claim_agent 私有工具：
-  query_claim_case
-  query_claim_progress
+pos_query_agent 私有工具：
+  pos_query_available_items
+  pos_calc_surrender_premium
+  pos_query_policy_standard
+  pos_query_approval_text
+  pos_submit_verify
 ```
 
 工具越权会被 `ToolExecutor` 直接拒绝：
@@ -527,6 +536,9 @@ skill_id: troubleshooting_agent.signature_error
 name: 签名错误排查
 description: 用于排查接口签名校验失败、E102、验签失败等问题
 agent: troubleshooting_agent
+intent: troubleshooting
+sub_intents:
+  - signature_error
 intent_tags:
   - troubleshooting
 required_entities:

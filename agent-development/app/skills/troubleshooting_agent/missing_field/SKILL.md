@@ -3,6 +3,9 @@ skill_id: troubleshooting_agent.missing_field
 name: ??????
 description: ???? submitProposal ??????????????appId ???????????????
 agent: troubleshooting_agent
+intent: troubleshooting
+sub_intents:
+  - missing_field
 intent_tags:
   - troubleshooting
   - missing_field
@@ -45,5 +48,4 @@ routing_negative_keywords:
 2. 对照接口文档或知识库中的字段要求。
 3. 检查渠道报文字段映射、空值处理和字段命名大小写。
 4. 输出缺失字段、影响接口、疑似责任方和补充字段建议。
-
 

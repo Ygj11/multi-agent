@@ -30,11 +30,17 @@ class SkillRuleScorer:
         query_text = self._query_text(context)
         skill_text = self._skill_text(skill)
 
-        if context.intent and any(context.intent.lower() == tag.lower() for tag in skill.intent_tags):
+        if context.intent and skill.intent and context.intent.lower() == skill.intent.lower():
+            score += self.policy.weight("intent_tag_match")
+            reasons.append(f"intent matched: {context.intent}")
+        elif context.intent and any(context.intent.lower() == tag.lower() for tag in skill.intent_tags):
             score += self.policy.weight("intent_tag_match")
             reasons.append(f"intent tag matched: {context.intent}")
 
-        if context.sub_intent and any(context.sub_intent.lower() == tag.lower() for tag in skill.intent_tags):
+        if context.sub_intent and any(context.sub_intent.lower() == item.lower() for item in skill.sub_intents):
+            score += self.policy.weight("sub_intent_tag_match")
+            reasons.append(f"sub_intent matched: {context.sub_intent}")
+        elif context.sub_intent and any(context.sub_intent.lower() == tag.lower() for tag in skill.intent_tags):
             score += self.policy.weight("sub_intent_tag_match")
             reasons.append(f"sub_intent tag matched: {context.sub_intent}")
 
@@ -112,6 +118,8 @@ class SkillRuleScorer:
                 skill.skill_id,
                 skill.name,
                 skill.description,
+                skill.intent or "",
+                " ".join(skill.sub_intents),
                 " ".join(skill.intent_tags),
                 " ".join(skill.required_entities),
                 " ".join(skill.optional_entities),

@@ -3,6 +3,9 @@ skill_id: troubleshooting_agent.refund_failure
 name: 退保失败排查
 description: 用于排查保单退保没有成功、退保任务卡住、退保回调异常等问题
 agent: troubleshooting_agent
+intent: troubleshooting
+sub_intents:
+  - refund_failure
 intent_tags:
   - troubleshooting
   - refund_failure

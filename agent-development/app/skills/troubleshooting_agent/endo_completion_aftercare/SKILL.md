@@ -3,6 +3,9 @@ skill_id: troubleshooting_agent.endo_completion_aftercare
 name: 保全任务完成后异常处理
 description: 处理保全任务完成后保单信息未更新、保单未解锁、未发起退费、未发短信等问题，通过 apply_seq 查询任务节点状态，并根据 9/10/11 节点状态和 response_body 触发对应通知或恢复工具。
 agent: troubleshooting_agent
+intent: troubleshooting
+sub_intents:
+  - endo_completion_aftercare
 intent_tags:
   - troubleshooting
   - endo_completion

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 """AgentCard loading and rule-based matching."""
 
-import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from app.observability.logger import log_event
 from app.schemas.agent_card import AgentCard, AgentCandidate
+from app.schemas.intent_taxonomy import IntentTaxonomy
 from app.skills.catalog import SkillCatalog
 
 
@@ -65,11 +67,12 @@ class AgentCardLoader:
         for card in self.list_available_agents():
             score = 0.0
             reasons: list[str] = []
+            routes = card.normalized_supported_routes()
             # 实体包中，卡片缺失的实体
             missing_entities = [name for name in card.required_entities if name not in entity_keys]
             matched_entities: list[str] = []
 
-            if intent in card.supported_intents:
+            if intent in routes:
                 score += 6
                 reasons.append(f"intent matched: {intent}")
             elif intent != "unknown" and intent in " ".join(card.capabilities + [card.description]):
@@ -77,8 +80,9 @@ class AgentCardLoader:
                 reasons.append(f"intent keyword matched capability: {intent}")
 
             if sub_intent:
-                card_subintent_text = " ".join(card.supported_intents + card.capabilities + [card.description]).lower()
-                if sub_intent.lower() in card_subintent_text:
+                route_sub_intents = routes.get(intent, []) if intent != "unknown" else [item for values in routes.values() for item in values]
+                card_sub_intents = {item.lower() for item in route_sub_intents}
+                if sub_intent.lower() in card_sub_intents:
                     score += 2
                     reasons.append(f"sub_intent matched: {sub_intent}")
 
@@ -114,6 +118,9 @@ class AgentCardLoader:
                     card.description,
                     " ".join(card.capabilities),
                     " ".join(card.supported_intents),
+                    " ".join(card.supported_sub_intents),
+                    " ".join(card.normalized_supported_routes()),
+                    " ".join(item for values in card.normalized_supported_routes().values() for item in values),
                     " ".join(card.optional_entities),
                     " ".join(card.rag_namespaces),
                     " ".join(str(example.get("query", "")) for example in card.examples),
@@ -161,6 +168,12 @@ class AgentCardLoader:
                     continue
                 if skill.agent != card.agent_name:
                     errors.append(f"{skill_id} agent {skill.agent} does not match card {card.agent_name}")
+                routes = card.normalized_supported_routes()
+                if skill.intent and skill.intent not in routes:
+                    errors.append(f"{skill_id} intent {skill.intent} is outside AgentCard supported_routes")
+                for sub_intent in skill.sub_intents:
+                    if skill.intent and sub_intent not in set(routes.get(skill.intent, [])):
+                        errors.append(f"{skill_id} sub_intent {skill.intent}.{sub_intent} is outside AgentCard supported_routes")
                 extra_tools = sorted(set(skill.private_tools) - set(card.private_tools))
                 if extra_tools:
                     errors.append(f"{skill_id} declares private tools outside AgentCard: {extra_tools}")
@@ -169,6 +182,40 @@ class AgentCardLoader:
             if skill.agent not in cards:
                 errors.append(f"{skill.skill_id} references unknown AgentCard agent {skill.agent}")
 
+        if errors:
+            raise ValueError("; ".join(errors))
+
+    def validate_with_intent_taxonomy(self, taxonomy: IntentTaxonomy, *, require_full_coverage: bool = False) -> None:
+        """Validate AgentCard routes and examples against the global taxonomy."""
+        errors: list[str] = []
+        for card in self.load_all():
+            for intent, sub_intents in card.normalized_supported_routes().items():
+                if not taxonomy.is_allowed_intent(intent):
+                    errors.append(f"{card.agent_name} references unknown intent {intent}")
+                    continue
+                for sub_intent in sub_intents:
+                    if not taxonomy.is_allowed_sub_intent(intent, sub_intent):
+                        errors.append(f"{card.agent_name} references invalid sub_intent {intent}.{sub_intent}")
+            for example in card.examples:
+                example_intent = example.get("intent")
+                example_sub_intent = example.get("sub_intent")
+                if example_intent and not taxonomy.is_allowed_intent(str(example_intent)):
+                    errors.append(f"{card.agent_name} example references unknown intent {example_intent}")
+                if example_intent and example_sub_intent and not taxonomy.is_allowed_sub_intent(str(example_intent), str(example_sub_intent)):
+                    errors.append(f"{card.agent_name} example references invalid sub_intent {example_intent}.{example_sub_intent}")
+        if require_full_coverage:
+            covered: dict[str, set[str]] = {}
+            for card in self.list_available_agents():
+                for intent, sub_intents in card.normalized_supported_routes().items():
+                    values = covered.setdefault(intent, set())
+                    values.update(sub_intents)
+            for intent, expected_sub_intents in taxonomy.candidate_sub_intents().items():
+                if intent not in covered:
+                    errors.append(f"taxonomy intent has no enabled AgentCard coverage: {intent}")
+                    continue
+                missing_sub_intents = sorted(set(expected_sub_intents) - covered[intent])
+                for sub_intent in missing_sub_intents:
+                    errors.append(f"taxonomy sub_intent has no enabled AgentCard coverage: {intent}.{sub_intent}")
         if errors:
             raise ValueError("; ".join(errors))
 
@@ -199,38 +246,8 @@ def _tokens(text: str) -> list[str]:
 
 
 def _parse_card_yaml(text: str) -> dict[str, Any]:
-    """Parse the small YAML subset used by AgentCard files.
-
-    Inline JSON is supported for nested fields such as memory_policy/examples.
-    """
-    result: dict[str, Any] = {}
-    current_key: str | None = None
-    for raw_line in text.splitlines():
-        line = raw_line.rstrip()
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith("- ") and current_key:
-            result.setdefault(current_key, []).append(_parse_scalar(stripped[2:].strip()))
-            continue
-        if ":" in stripped:
-            key, value = stripped.split(":", 1)
-            current_key = key.strip()
-            value = value.strip()
-            if value:
-                result[current_key] = _parse_scalar(value)
-            else:
-                result[current_key] = []
-    return result
-
-
-def _parse_scalar(value: str) -> Any:
-    if value.lower() == "true":
-        return True
-    if value.lower() == "false":
-        return False
-    if value.startswith(("{", "[")):
-        return json.loads(value)
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-        return value[1:-1]
-    return value
+    """Parse AgentCard YAML."""
+    parsed = yaml.safe_load(text) or {}
+    if not isinstance(parsed, dict):
+        raise ValueError("AgentCard YAML root must be a mapping")
+    return parsed

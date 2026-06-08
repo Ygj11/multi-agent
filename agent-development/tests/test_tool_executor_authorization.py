@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.agents.card_loader import AgentCardLoader
+from app.schemas.agent_card import AgentCard
 from app.storage.sqlite import SQLiteDatabase
 from app.tools.agent_tools import register_agent_private_tools
 from app.tools.tool_execution_log_store import ToolExecutionLogStore
@@ -46,10 +47,24 @@ async def test_agent_can_call_own_private_tool_and_logs_success(tmp_path):
 @pytest.mark.asyncio
 async def test_public_tools_disallowed_when_card_disables_public_tools_and_logs_failure(tmp_path):
     executor, store = _executor(tmp_path)
-    card = _card("compliance_agent")
+    card = AgentCard(
+        agent_name="troubleshooting_agent",
+        display_name="Troubleshooting Agent",
+        description="Troubleshooting.",
+        capabilities=["troubleshooting"],
+        supported_intents=["troubleshooting"],
+        required_entities=[],
+        output_schema="SubAgentResult",
+        private_tools=["query_internal_log"],
+        public_tools_allowed=False,
+        skills=[],
+        rag_namespaces=[],
+        enabled=True,
+        version="1",
+    )
 
     result = await executor.execute(
-        agent_name="compliance_agent",
+        agent_name="troubleshooting_agent",
         agent_card=card,
         tool_name="rag_search_tool",
         arguments={"query": "E102"},
@@ -66,20 +81,20 @@ async def test_public_tools_disallowed_when_card_disables_public_tools_and_logs_
 @pytest.mark.asyncio
 async def test_agents_cannot_call_other_agent_private_tools(tmp_path):
     executor, store = _executor(tmp_path)
-    card = _card("claim_agent")
+    card = _card("pos_query_agent")
 
     result = await executor.execute(
-        agent_name="claim_agent",
+        agent_name="pos_query_agent",
         agent_card=card,
-        tool_name="query_policy_info",
-        arguments={"policy_no": "P001"},
+        tool_name="query_internal_log",
+        arguments={"request_id": "REQ_001"},
         session_key="s-tools",
     )
 
     logs = await store.list_by_session("s-tools")
     assert result.success is False
     assert result.error == "tool_not_available_for_agent"
-    assert logs[0]["tool_name"] == "query_policy_info"
+    assert logs[0]["tool_name"] == "query_internal_log"
     assert logs[0]["success"] is False
 
 

@@ -110,13 +110,13 @@ async def test_empty_llm_summary_falls_back_to_rules(tmp_path):
 
     summary = await manager.compress_after_turn(
         session_key="s1",
-        original_query="保单状态是什么？",
-        rewritten_query="查询保单状态",
-        intent="policy_query",
-        answer="保单有效。",
+        original_query="保全项有哪些？",
+        rewritten_query="查询可做保全项",
+        intent="pos_query",
+        answer="支持退保试算。",
     )
 
-    assert summary == "上一轮意图为 policy_query，用户问题是：保单状态是什么？"
+    assert summary == "上一轮意图为 pos_query，用户问题是：保全项有哪些？"
 
 
 async def test_json_like_llm_summary_falls_back_and_result_is_str(tmp_path):
@@ -125,15 +125,15 @@ async def test_json_like_llm_summary_falls_back_and_result_is_str(tmp_path):
 
     summary = await manager.compress_after_turn(
         session_key="s1",
-        original_query="理赔进度",
-        rewritten_query="查询理赔进度",
-        intent="claim_query",
-        answer="理赔处理中。",
+        original_query="排查 E102",
+        rewritten_query="查询 E102 签名失败",
+        intent="troubleshooting",
+        answer="签名失败。",
     )
 
     assert isinstance(summary, str)
     assert not summary.strip().startswith("{")
-    assert summary == "上一轮意图为 claim_query，用户问题是：理赔进度"
+    assert summary == "上一轮是健康险个险接口问题排查，重点关注错误码、requestId 和签名校验失败原因。"
 
 
 async def test_short_term_memory_table_schema_unchanged(tmp_path):

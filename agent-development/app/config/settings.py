@@ -116,6 +116,9 @@ class Settings:
     skill_llm_rerank_top_k: int = 3
     skill_llm_rerank_min_margin: float = 3.0
 
+    # Intent taxonomy
+    strict_taxonomy_route_coverage: bool = True
+
 
 def get_settings(dotenv_path: Path | None = None) -> Settings:
     """Create Settings from the current environment and optional .env file."""
@@ -176,4 +179,5 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
         enable_skill_llm_rerank=_as_bool(os.getenv("ENABLE_SKILL_LLM_RERANK"), True),
         skill_llm_rerank_top_k=int(os.getenv("SKILL_LLM_RERANK_TOP_K", "3")),
         skill_llm_rerank_min_margin=float(os.getenv("SKILL_LLM_RERANK_MIN_MARGIN", "3")),
+        strict_taxonomy_route_coverage=_as_bool(os.getenv("STRICT_TAXONOMY_ROUTE_COVERAGE"), True),
     )

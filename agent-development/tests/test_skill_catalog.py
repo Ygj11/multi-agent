@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.agents.card_loader import AgentCardLoader
+from app.query.intent_taxonomy_loader import IntentTaxonomyLoader
 from app.skills.catalog import SkillCatalog
 from app.skills.metadata import metadata_from_skill_file
 
@@ -29,9 +30,11 @@ def test_skill_catalog_scans_metadata_without_body():
     skills = catalog.scan()
     signature = catalog.get_skill_metadata("troubleshooting_agent.signature_error")
 
-    assert len(skills) >= 12
+    assert len(skills) >= 6
     assert signature is not None
     assert signature.agent == "troubleshooting_agent"
+    assert signature.intent == "troubleshooting"
+    assert signature.sub_intents == ["signature_error"]
     assert "执行步骤" not in signature.model_dump_json()
 
 
@@ -56,6 +59,8 @@ def test_all_active_skill_metadata_is_complete_and_unique():
         dumped = skill.model_dump()
         assert REQUIRED_FIELDS.issubset(dumped)
         assert skill.skill_id.startswith(f"{skill.agent}.")
+        assert skill.intent
+        assert skill.sub_intents
         assert skill.intent_tags
 
 
@@ -81,6 +86,13 @@ def test_agent_cards_and_skill_metadata_match():
             skill = skills[skill_id]
             assert skill.agent == card.agent_name
             assert set(skill.private_tools).issubset(set(card.private_tools))
+
+
+def test_skill_metadata_validates_against_intent_taxonomy():
+    catalog = SkillCatalog(SKILLS_ROOT)
+    taxonomy = IntentTaxonomyLoader().load(force_reload=True)
+
+    catalog.validate_with_intent_taxonomy(taxonomy)
 
 
 def test_deprecated_skills_do_not_participate_in_scan():

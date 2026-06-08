@@ -38,6 +38,13 @@ The old fixed follow-up marker path is not the main path. Markers can only be we
 
 It expects LLM JSON with `intent`, `sub_intent`, `confidence`, dynamic `entities`, `missing_required_entities`, and clarification fields. It must not output tools. If JSON is invalid or model use is unavailable, it uses the new entity-aware rule fallback.
 
+Intent boundaries are explicit:
+
+- `app/config/intent_taxonomy.yaml` is the only source of legal `intent` and `sub_intent` values.
+- `AgentCard.supported_routes` declares which taxonomy routes an agent can handle.
+- `SkillMetadata.intent/sub_intents` declares which taxonomy routes a skill handles inside one agent.
+- `capabilities` is evidence for classification and scoring, not an allowed `intent` or `sub_intent` value.
+
 ## Hybrid Agent Selection
 
 `app/agents/card_loader.py::AgentCardLoader.match_candidates` produces deterministic candidates using:

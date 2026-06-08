@@ -52,6 +52,7 @@ class RequestAdapter:
         )
         request_id = f"req_{uuid4().hex}"
         trace_id = f"trace_{uuid4().hex}"
+
         log_event(
             "session_key_created",
             session_key=session_key,
@@ -83,6 +84,7 @@ class RequestAdapter:
             message="Original query extracted",
             data={"original_query_preview": preview_text(original_query)},
         )
+
         return InboundMessage(
             request_id=request_id,
             trace_id=trace_id,

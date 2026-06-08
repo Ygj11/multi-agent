@@ -141,6 +141,8 @@ class SkillLLMReranker:
             "name": skill.name,
             "description": skill.description,
             "agent": skill.agent,
+            "intent": skill.intent,
+            "sub_intents": skill.sub_intents,
             "intent_tags": skill.intent_tags,
             "required_entities": skill.required_entities,
             "optional_entities": skill.optional_entities,

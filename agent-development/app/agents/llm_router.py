@@ -42,7 +42,7 @@ class LLMRouter:
             {
                 "agent_name": candidate.agent_name,
                 "description": candidate.card.description,
-                "supported_intents": candidate.card.supported_intents,
+                "supported_routes": candidate.card.normalized_supported_routes(),
                 "capabilities": candidate.card.capabilities,
                 "required_entities": candidate.card.required_entities,
                 "optional_entities": candidate.card.optional_entities,

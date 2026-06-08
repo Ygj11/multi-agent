@@ -22,8 +22,8 @@ async def test_troubleshooting_req_001_selects_signature_error_skill(app_factory
     assert "E102" in state["answer"]
 
 
-async def test_change_impact_selects_signature_rule_change_skill(app_factory):
-    """签名规则变更影响分析应选择 signature_rule_change skill。"""
+async def test_pos_query_selects_realtime_query_skill(app_factory):
+    """保全实时查询应选择 pos_query_agent.realtime_query。"""
     app = app_factory("skill-change.sqlite3")
     inbound = RequestAdapter().adapt(
         ChatRequest(
@@ -34,7 +34,7 @@ async def test_change_impact_selects_signature_rule_change_skill(app_factory):
             messages=[
                 ChatMessage(
                     role="user",
-                    content="签名规则变更：timestamp 必须加入签名原文。请分析影响哪些接口、错误码和测试。",
+                    content="查询保单 9201344266 可以做哪些保全项，customerNo C001。",
                 )
             ],
         )
@@ -42,5 +42,5 @@ async def test_change_impact_selects_signature_rule_change_skill(app_factory):
 
     state = await app.state.orchestrator.run(inbound)
 
-    assert state["intent"] == "change_impact_analysis"
-    assert state["subagent_result"]["selected_skill_id"] == "change_impact_analysis_agent.signature_rule_change"
+    assert state["intent"] == "pos_query"
+    assert state["subagent_result"]["selected_skill_id"] == "pos_query_agent.realtime_query"

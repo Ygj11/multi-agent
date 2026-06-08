@@ -241,10 +241,6 @@ class BaseSubAgent(ABC):
             "rag_search_tool": ("knowledge", "KnowledgeService"),
             "mcp.workflow.query_refund_task": ("mcp_workflow", "MCPClientManager"),
             "mcp.logs.query_trace": ("mcp_logs", "MCPClientManager"),
-            "query_policy_info": ("policy_info", "query_policy_info"),
-            "query_policy_status": ("policy_status", "query_policy_status"),
-            "query_claim_case": ("claim_case", "query_claim_case"),
-            "query_claim_progress": ("claim_progress", "query_claim_progress"),
         }
         evidence_type, source = mapping.get(tool_name, ("tool_observation", tool_name or "tool_calling_runner"))
         summary = item.get("error") or str(item.get("result") or "")[:180]

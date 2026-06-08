@@ -501,7 +501,7 @@ class AgentGraphFactory:
         return {
             "agent_name": card.agent_name,
             "description": card.description,
-            "supported_intents": card.supported_intents,
+            "supported_routes": card.normalized_supported_routes(),
             "capabilities": card.capabilities,
             "required_entities": card.required_entities,
             "optional_entities": card.optional_entities,

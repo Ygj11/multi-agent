@@ -37,6 +37,8 @@ class AgentCard(BaseModel):
     description: str
     capabilities: list[str] = Field(default_factory=list)
     supported_intents: list[str] = Field(default_factory=list)
+    supported_sub_intents: list[str] = Field(default_factory=list)
+    supported_routes: dict[str, list[str]] = Field(default_factory=dict)
     required_entities: list[str] = Field(default_factory=list)
     optional_entities: list[str] = Field(default_factory=list)
     output_schema: str
@@ -57,9 +59,29 @@ class AgentCard(BaseModel):
         """Keep cards useful for selection instead of merely syntactically valid."""
         if not self.capabilities:
             raise ValueError(f"AgentCard {self.agent_name} must declare capabilities")
-        if not self.supported_intents:
-            raise ValueError(f"AgentCard {self.agent_name} must declare supported_intents")
+        if not self.supported_routes and self.supported_intents:
+            first_intent = self.supported_intents[0]
+            self.supported_routes = {first_intent: list(self.supported_sub_intents)}
+        if self.supported_routes:
+            normalized = self.normalized_supported_routes()
+            self.supported_routes = normalized
+            self.supported_intents = sorted(normalized) if not self.supported_intents else self.supported_intents
+            if not self.supported_sub_intents:
+                self.supported_sub_intents = sorted({sub for values in normalized.values() for sub in values})
+        if not self.supported_routes:
+            raise ValueError(f"AgentCard {self.agent_name} must declare supported_routes or supported_intents")
         return self
+
+    def normalized_supported_routes(self) -> dict[str, list[str]]:
+        """Return stable routes, converting legacy intent fields when needed."""
+        routes = self.supported_routes or {}
+        if not routes and self.supported_intents:
+            routes = {self.supported_intents[0]: list(self.supported_sub_intents)}
+        return {
+            str(intent): sorted({str(sub_intent) for sub_intent in (sub_intents or []) if sub_intent})
+            for intent, sub_intents in sorted(routes.items())
+            if intent
+        }
 
 
 class AgentCandidate(BaseModel):

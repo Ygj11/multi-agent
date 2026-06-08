@@ -16,15 +16,10 @@ from app.tools.handlers.mvp_agent_tool_handlers import (
     notice_period_update,
     notice_policy_update,
     policy_suspendOrRecovery,
-    query_claim_case,
-    query_claim_progress,
     query_endo_task_record,
     query_internal_log,
     query_node_status,
-    query_policy_info,
-    query_policy_status,
     query_task_status,
-    update_policy_status,
 )
 from app.tools.handlers.pos_query_tool_handlers import (
     build_pos_calc_surrender_premium_tool,
@@ -74,43 +69,6 @@ QUERY_INTERNAL_LOG_PARAMETERS = {
         },
     },
     "required": [],
-}
-
-POLICY_NO_PARAMETERS = {
-    "type": "object",
-    "properties": {
-        "policy_no": {
-            "type": "string",
-            "description": "保单号，例如 9201344266。",
-        }
-    },
-    "required": ["policy_no"],
-}
-
-UPDATE_POLICY_STATUS_PARAMETERS = {
-    "type": "object",
-    "properties": {
-        "policy_no": {
-            "type": "string",
-            "description": "保单号，例如 9201344266。",
-        },
-        "status": {
-            "type": "string",
-            "description": "目标保单状态，例如 active、suspended、cancelled。",
-        },
-    },
-    "required": ["policy_no", "status"],
-}
-
-CLAIM_NO_PARAMETERS = {
-    "type": "object",
-    "properties": {
-        "claim_no": {
-            "type": "string",
-            "description": "理赔号，例如 CLM001。",
-        }
-    },
-    "required": ["claim_no"],
 }
 
 APPLY_SEQ_PARAMETERS = {
@@ -315,45 +273,6 @@ def register_agent_private_tools(registry, pos_api_client: PosAPIClient | None =
         description="通知保全任务完成，财务创单失败，需要触发财务创单并进行收退费。",
         parameters=ENDO_NOTICE_PARAMETERS,
         is_write=True,
-    )
-    registry.register_private(
-        agent_name="policy_query_agent",
-        name="query_policy_info",
-        tool=query_policy_info,
-        description="根据 policy_no 查询保单基础信息。",
-        parameters=POLICY_NO_PARAMETERS,
-    )
-    registry.register_private(
-        agent_name="policy_query_agent",
-        name="query_policy_status",
-        tool=query_policy_status,
-        description="根据 policy_no 查询保单状态。",
-        parameters=POLICY_NO_PARAMETERS,
-    )
-    registry.register_private(
-        agent_name="policy_query_agent",
-        name="update_policy_status",
-        tool=update_policy_status,
-        description=(
-            "Update policy status by policy number. This is a write operation and requires human approval before "
-            "execution."
-        ),
-        parameters=UPDATE_POLICY_STATUS_PARAMETERS,
-        is_write=True,
-    )
-    registry.register_private(
-        agent_name="claim_agent",
-        name="query_claim_case",
-        tool=query_claim_case,
-        description="根据 claim_no 查询理赔案件基础信息。",
-        parameters=CLAIM_NO_PARAMETERS,
-    )
-    registry.register_private(
-        agent_name="claim_agent",
-        name="query_claim_progress",
-        tool=query_claim_progress,
-        description="根据 claim_no 查询理赔进度。",
-        parameters=CLAIM_NO_PARAMETERS,
     )
     registry.register_private(
         agent_name="pos_query_agent",

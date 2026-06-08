@@ -39,10 +39,17 @@ class EntityBag(BaseModel):
     entities: dict[str, list[EntityMention]] = Field(default_factory=dict)
 
     def add(self, entity: EntityMention) -> None:
-        """Append one entity mention."""
+        """Add one entity mention, deduplicated by type and effective value."""
         if not entity.type:
             return
-        self.entities.setdefault(entity.type, []).append(entity)
+        mentions = self.entities.setdefault(entity.type, [])
+        for index, existing in enumerate(mentions):
+            if existing.effective_value != entity.effective_value:
+                continue
+            if entity.confidence > existing.confidence:
+                mentions[index] = entity
+            return
+        mentions.append(entity)
 
     def merge(self, other: "EntityBag") -> "EntityBag":
         """Merge another bag into this bag and return self."""

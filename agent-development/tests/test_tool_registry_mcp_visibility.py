@@ -47,7 +47,7 @@ def _registry():
         [
             _cap("mcp.workflow.query_refund_task"),
             _cap("mcp.workflow.query_node"),
-            _cap("mcp.policy.query_policy_detail", server="policy"),
+            _cap("mcp.audit.query_audit_detail", server="audit"),
         ]
     )
     return registry
@@ -62,7 +62,7 @@ def test_register_mcp_tools_and_exact_visibility():
     assert "public_tool" in names
     assert "mcp.workflow.query_refund_task" in names
     assert "mcp.workflow.query_node" not in names
-    assert "mcp.policy.query_policy_detail" not in names
+    assert "mcp.audit.query_audit_detail" not in names
 
 
 def test_scope_visibility_does_not_return_all_mcp_tools():
@@ -72,7 +72,7 @@ def test_scope_visibility_does_not_return_all_mcp_tools():
 
     assert "mcp.workflow.query_refund_task" in names
     assert "mcp.workflow.query_node" in names
-    assert "mcp.policy.query_policy_detail" not in names
+    assert "mcp.audit.query_audit_detail" not in names
 
 
 def test_public_disabled_keeps_private_and_mcp_but_hides_public():
@@ -91,4 +91,3 @@ def test_mcp_schema_generation():
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "mcp.workflow.query_refund_task"
     assert schema["function"]["parameters"]["properties"]["policy_no"]["type"] == "string"
-

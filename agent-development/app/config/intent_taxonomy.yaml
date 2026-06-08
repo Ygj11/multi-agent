@@ -1,0 +1,66 @@
+intents:
+  troubleshooting:
+    display_name: 问题排查
+    description: 诊断接口、任务、回调、保全完成后异常等生产问题。
+    examples:
+      - REQ_001 为什么返回 E102？
+      - 保全任务完成了，但是保单信息没有更新
+    sub_intents:
+      signature_error:
+        display_name: 签名错误
+        description: 签名校验失败、错误码 E102、接口验签问题。
+        examples:
+          - REQ_001 为什么返回 E102？
+      refund_failure:
+        display_name: 退保失败
+        description: 退保未成功、退保任务失败、退保链路异常。
+        examples:
+          - 退保失败，帮我排查
+      callback_failure:
+        display_name: 回调失败
+        description: 回调失败、回调超时、未收到回调。
+        examples:
+          - 回调失败，为什么没有收到回调？
+      missing_field:
+        display_name: 字段缺失
+        description: 必填字段缺失、不能为空、字段校验失败。
+        examples:
+          - 接口提示字段缺失
+      endo_completion_aftercare:
+        display_name: 保全完成后异常
+        description: 保全任务完成后保单未更新、未解锁、未退费、未发短信。
+        examples:
+          - 保全任务完成，保单没有更新
+
+  pos_query:
+    display_name: 保全实时查询
+    description: 查询可做保全项、退保试算、批文、保全保单标准信息和提交校验。
+    examples:
+      - 查询保单可以做哪些保全项
+      - 退保试算详情
+    sub_intents:
+      pos_available_items:
+        display_name: 可做保全项查询
+        description: 查询保单线上可做保全项。
+        examples:
+          - 查询保单 9200130111869934 可以做哪些保全项
+      pos_surrender_premium_calc:
+        display_name: 退保试算详情
+        description: 查询退保试算金额和明细。
+        examples:
+          - 退保试算详情，保单号 9200230000453437
+      pos_policy_standard_query:
+        display_name: 保全保单标准查询
+        description: 查询保全保单标准信息。
+        examples:
+          - 保全保单标准查询
+      pos_approval_text_query:
+        display_name: 保全批文查询
+        description: 查询保全批文或保全变更详情。
+        examples:
+          - 受理号 930021041267222 的保全批文查询
+      pos_submit_verify:
+        display_name: 退保提交校验
+        description: 退保任务提交前校验。
+        examples:
+          - 退保提交校验

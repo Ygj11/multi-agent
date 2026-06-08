@@ -76,7 +76,7 @@ Learning Pipeline 负责 badcase 回灌
    - `agent_name`
    - `description`
    - `capabilities`
-   - `supported_intents`
+   - `supported_routes`
    - `required_entities`
    - `optional_entities`
    - `private_tools`

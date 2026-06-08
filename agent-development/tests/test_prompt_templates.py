@@ -30,8 +30,10 @@ def test_prompt_loader_rejects_missing_template():
 def test_intent_recognition_prompt_contract():
     system_prompt = PromptLoader().load("intent_recognition/system.md")
 
+    assert "IntentTaxonomy is the only source of legal intent and sub_intent values" in system_prompt
     assert "intent must be one of allowed_intents" in system_prompt
-    assert "sub_intent should be selected from candidate_sub_intents" in system_prompt
+    assert "AgentCard supported_routes describe which agents can handle taxonomy routes" in system_prompt
+    assert "Do not use agent_name, skill_id, or capability as intent/sub_intent" in system_prompt
     assert "Never output" in system_prompt
     assert "required_tools" in system_prompt
     assert "Confidence scoring guide" in system_prompt

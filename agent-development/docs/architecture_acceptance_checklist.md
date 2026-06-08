@@ -27,7 +27,7 @@
 ## Stage 5: Sub Agent Protocol
 
 - [x] BaseSubAgent centralizes AgentCard reading, tool visibility, skill context construction, and tool calling.
-- [x] troubleshooting_agent, claim_agent, policy_query_agent, and compliance_agent use BaseSubAgent.
+- [x] troubleshooting_agent and pos_query_agent use BaseSubAgent.
 - [x] SubAgentResult includes agent name, task id, evidence, tool calls, confidence, approval flag, risk level, and metadata.
 
 ## Stage 6: Pre-answer Verification

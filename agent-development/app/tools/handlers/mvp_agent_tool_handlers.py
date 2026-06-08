@@ -73,26 +73,6 @@ def _extract_request_id(text: str) -> str | None:
     return match.group(0) if match else None
 
 
-async def query_policy_info(policy_no: str | None = None, **kwargs: Any) -> dict[str, Any]:
-    return {"found": bool(policy_no), "policy_no": policy_no, "product": "Enterprise Health Individual", "holder": "***"}
-
-
-async def query_policy_status(policy_no: str | None = None, **kwargs: Any) -> dict[str, Any]:
-    return {"found": bool(policy_no), "policy_no": policy_no, "status": "active" if policy_no else "unknown"}
-
-
-async def update_policy_status(policy_no: str | None = None, status: str | None = None, **kwargs: Any) -> dict[str, Any]:
-    return {"success": True, "policy_no": policy_no, "status": status or "updated"}
-
-
-async def query_claim_case(claim_no: str | None = None, **kwargs: Any) -> dict[str, Any]:
-    return {"found": bool(claim_no), "claim_no": claim_no, "status": "processing"}
-
-
-async def query_claim_progress(claim_no: str | None = None, **kwargs: Any) -> dict[str, Any]:
-    return {"found": bool(claim_no), "claim_no": claim_no, "progress": ["submitted", "reviewing"]}
-
-
 async def query_endo_task_record(apply_seq: str | None = None, mock_case: str | None = None, **kwargs: Any) -> dict[str, Any]:
     case = (mock_case or apply_seq or "").upper()
     records = [

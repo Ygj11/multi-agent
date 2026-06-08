@@ -18,8 +18,11 @@ skill_id: <agent_name>.<skill_name>
 name: <中文名称>
 description: <使用场景描述>
 agent: <agent_name>
+intent: <taxonomy_intent>
+sub_intents:
+  - <taxonomy_sub_intent>
 intent_tags:
-  - <intent>
+  - <辅助标签>
 required_entities: []
 
 private_tools: []
@@ -43,6 +46,9 @@ required_context:
 - `skill_id` 必须使用 `<agent_name>.<skill_name>` 格式。
 - `skill_id` 必须以 `agent` 字段开头。
 - `agent` 必须对应真实 `AgentCard.agent_name`。
+- `intent` 必须存在于 `app/config/intent_taxonomy.yaml`。
+- `sub_intents` 必须属于对应的 `intent`。
+- `intent/sub_intents` 必须被所属 AgentCard 的 `supported_routes` 覆盖。
 - `AgentCard.skills` 中声明的 skill 必须能在 `SkillCatalog` 中找到。
 - `skill.private_tools` 必须是该 AgentCard `private_tools` 的子集。
 - 每个 AgentCard 对应的 enabled skill 中至少有一个 `is_default=true`。

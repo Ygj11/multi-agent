@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.observability.logger import log_event
+from app.schemas.intent_taxonomy import IntentTaxonomy
 from app.schemas.skill import SkillContent, SkillMetadata
 from app.skills.metadata import metadata_from_skill_file
 
@@ -79,3 +80,19 @@ class SkillCatalog:
             data={"selected_skill_id": skill_id, "agent_name": metadata.agent},
         )
         return SkillContent(metadata=metadata, content=content)
+
+    def validate_with_intent_taxonomy(self, taxonomy: IntentTaxonomy) -> None:
+        """Validate explicit skill intent bindings against the global taxonomy."""
+        errors: list[str] = []
+        for skill in self.scan(force_reload=True):
+            if skill.intent is None:
+                errors.append(f"{skill.skill_id} must declare intent")
+                continue
+            if not taxonomy.is_allowed_intent(skill.intent):
+                errors.append(f"{skill.skill_id} references unknown intent {skill.intent}")
+                continue
+            for sub_intent in skill.sub_intents:
+                if not taxonomy.is_allowed_sub_intent(skill.intent, sub_intent):
+                    errors.append(f"{skill.skill_id} references invalid sub_intent {skill.intent}.{sub_intent}")
+        if errors:
+            raise ValueError("; ".join(errors))

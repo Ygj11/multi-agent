@@ -6,13 +6,14 @@ capabilities:
   - internal_log_analysis
   - workflow_mcp_diagnosis
   - error_code_diagnosis
-  - endo_completion_aftercare
   - endorsement_task_node_diagnosis
-supported_intents:
-  - troubleshooting
-  - refund_failure
-  - callback_failure
-  - endo_completion_aftercare
+supported_routes:
+  troubleshooting:
+    - refund_failure
+    - callback_failure
+    - signature_error
+    - missing_field
+    - endo_completion_aftercare
 required_entities: []
 optional_entities:
   - policy_no
@@ -50,6 +51,6 @@ rag_namespaces:
   - troubleshooting
   - integration_errors
 memory_policy: {"use_short_summary": true, "recent_turns": 5}
-examples: [{"query": "REQ_001 returned E102 during submitProposal", "intent": "troubleshooting"}]
+examples: [{"query": "REQ_001 returned E102 during submitProposal", "intent": "troubleshooting", "sub_intent": "signature_error"}, {"query": "保全任务完成了，但是保单信息没有更新", "intent": "troubleshooting", "sub_intent": "endo_completion_aftercare"}]
 enabled: true
 version: "1.0.0"

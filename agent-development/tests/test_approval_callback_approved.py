@@ -14,11 +14,24 @@ class SequencedApprovalLLM:
     async def chat(self, messages, tools=None, **kwargs):
         if kwargs.get("scene") == "final_compliance":
             return LLMResponse(content="ok", has_tool_calls=False)
+        if kwargs.get("scene") != "subagent_reasoning":
+            return LLMResponse(content="memory summary", has_tool_calls=False)
         self.subagent_calls += 1
         if self.subagent_calls == 1:
             return LLMResponse(
                 content=None,
-                tool_calls=[{"id": "call_write", "type": "function", "function": {"name": "update_policy_status", "arguments": json.dumps({"policy_no": "P123456", "status": "cancelled"})}}],
+                tool_calls=[
+                    {
+                        "id": "call_write",
+                        "type": "function",
+                        "function": {
+                            "name": "notice_policy_update",
+                            "arguments": json.dumps(
+                                {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                            ),
+                        },
+                    }
+                ],
                 has_tool_calls=True,
                 finish_reason="tool_calls",
             )
@@ -34,15 +47,15 @@ class AcceptingApprovalClient:
 def test_approval_callback_approved_executes_tool_and_saves_result(app_factory):
     calls = []
 
-    async def counted_update_policy_status(policy_no=None, status=None, **kwargs):
-        calls.append({"policy_no": policy_no, "status": status})
-        return {"success": True, "policy_no": policy_no, "status": status}
+    async def counted_notice_policy_update(apply_seq=None, policyNo=None, endorseType=None, **kwargs):
+        calls.append({"apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType})
+        return {"success": True, "apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType}
 
     app = app_factory("approval_approved.sqlite3")
     app.state.tool_registry.register_private(
-        agent_name="policy_query_agent",
-        name="update_policy_status",
-        tool=counted_update_policy_status,
+        agent_name="troubleshooting_agent",
+        name="notice_policy_update",
+        tool=counted_notice_policy_update,
         is_write=True,
     )
     app.state.llm_provider.chat = SequencedApprovalLLM().chat
@@ -56,7 +69,7 @@ def test_approval_callback_approved_executes_tool_and_saves_result(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "policy_no: P123456 update status to cancelled"}],
+            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请通知保单更新"}],
         },
     ).json()
     approval_id = pending["approval_id"]
@@ -78,7 +91,7 @@ def test_approval_callback_approved_executes_tool_and_saves_result(app_factory):
     assert data["resumed"] is True
     assert data["status"] == "completed"
     assert data["final_answer"] == "Policy status update completed after approval."
-    assert calls == [{"policy_no": "P123456", "status": "cancelled"}]
+    assert calls == [{"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}]
 
     query = client.get(f"/api/approval/{approval_id}")
     assert query.status_code == 200

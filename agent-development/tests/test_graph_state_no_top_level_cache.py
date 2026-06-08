@@ -29,8 +29,10 @@ class WriteApprovalLLM:
                     "id": "call_write",
                     "type": "function",
                     "function": {
-                        "name": "update_policy_status",
-                        "arguments": json.dumps({"policy_no": "P123456", "status": "cancelled"}),
+                        "name": "notice_policy_update",
+                        "arguments": json.dumps(
+                            {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                        ),
                     },
                 }
             ],
@@ -76,7 +78,7 @@ def test_pending_approval_checkpoint_has_no_top_level_approval_request(app_facto
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "policy_no: P123456 update status to cancelled"}],
+            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请通知保单更新"}],
         },
     )
 

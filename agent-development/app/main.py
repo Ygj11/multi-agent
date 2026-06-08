@@ -31,6 +31,7 @@ from app.mcp.capability_registry import MCPCapabilityRegistry
 from app.mcp.client_manager import MCPClientManager
 from app.observability.logger import log_event, preview_text
 from app.query.intent_recognition_node import IntentRecognitionNode
+from app.query.intent_taxonomy_loader import IntentTaxonomyLoader
 from app.query.query_rewrite_node import QueryRewriteNode
 from app.runtime.checkpoint import build_checkpointer
 from app.runtime.context_builder import ContextBuilder
@@ -69,6 +70,8 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     )
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
+    intent_taxonomy_loader = IntentTaxonomyLoader()
+    intent_taxonomy = intent_taxonomy_loader.load()
 
     session_manager = SessionManager(message_store=message_store, short_memory=short_memory)
     tool_registry = ToolRegistry()
@@ -128,6 +131,11 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
 
     cards_root = Path(__file__).resolve().parent / "agents" / "cards"
     agent_card_loader = AgentCardLoader(cards_root=cards_root)
+    agent_card_loader.validate_with_intent_taxonomy(
+        intent_taxonomy,
+        require_full_coverage=settings.strict_taxonomy_route_coverage,
+    )
+    skill_catalog.validate_with_intent_taxonomy(intent_taxonomy)
     agent_card_loader.validate_with_skill_catalog(skill_catalog)
 
     graph = AgentGraphFactory(
@@ -135,7 +143,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         message_store=message_store,
         short_memory=short_memory,
         query_rewrite_node=QueryRewriteNode(llm_provider=llm_provider),
-        intent_recognition_node=IntentRecognitionNode(llm_provider=llm_provider),
+        intent_recognition_node=IntentRecognitionNode(llm_provider=llm_provider, intent_taxonomy_loader=intent_taxonomy_loader),
         context_builder=context_builder,
         subagent_manager=subagent_manager,
         tool_registry=tool_registry,
@@ -190,6 +198,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     app.state.mcp_capability_registry = mcp_capability_registry
     app.state.skill_catalog = skill_catalog
     app.state.agent_card_loader = agent_card_loader
+    app.state.intent_taxonomy_loader = intent_taxonomy_loader
     app.state.tool_registry = tool_registry
     app.state.tool_executor = tool_executor
     app.state.authorization_service = authorization_service

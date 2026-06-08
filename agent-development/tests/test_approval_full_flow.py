@@ -12,7 +12,18 @@ class ApprovalLLM:
             return LLMResponse(content="ok", has_tool_calls=False)
         return LLMResponse(
             content=None,
-            tool_calls=[{"id": "call_write", "type": "function", "function": {"name": "update_policy_status", "arguments": json.dumps({"policy_no": "P123456", "status": "cancelled"})}}],
+            tool_calls=[
+                {
+                    "id": "call_write",
+                    "type": "function",
+                    "function": {
+                        "name": "notice_policy_update",
+                        "arguments": json.dumps(
+                            {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                        ),
+                    },
+                }
+            ],
             has_tool_calls=True,
             finish_reason="tool_calls",
         )
@@ -36,7 +47,7 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "policy_no: P123456 update status to cancelled"}],
+            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请通知保单更新"}],
         },
     )
 
@@ -58,13 +69,13 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory):
     assert item.thread_id == f"{item.session_key}:{item.request_id}"
     assert item.root_approval_id == item.approval_id
     assert item.approval_depth == 0
-    assert item.tool_name == "update_policy_status"
-    assert item.pending_tool_call["name"] == "update_policy_status"
+    assert item.tool_name == "notice_policy_update"
+    assert item.pending_tool_call["name"] == "notice_policy_update"
 
     async def _logs():
         return await app.state.tool_execution_log_store.list_by_session("tenant:web:u1:s1")
 
     logs = anyio.run(_logs)
-    assert logs[0]["tool_name"] == "update_policy_status"
+    assert logs[0]["tool_name"] == "notice_policy_update"
     assert logs[0]["success"] is False
     assert logs[0]["error"] == "human_approval_required"

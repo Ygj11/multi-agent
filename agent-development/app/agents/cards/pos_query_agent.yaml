@@ -9,13 +9,13 @@ capabilities:
   - 批文查询
   - 保全批文查询
   - 退保提交校验
-supported_intents:
-  - pos_query
-  - pos_available_items
-  - pos_surrender_premium_calc
-  - pos_policy_standard_query
-  - pos_approval_text_query
-  - pos_submit_verify
+supported_routes:
+  pos_query:
+    - pos_available_items
+    - pos_surrender_premium_calc
+    - pos_policy_standard_query
+    - pos_approval_text_query
+    - pos_submit_verify
 required_entities: []
 optional_entities:
   - policy_no
@@ -43,6 +43,6 @@ skills:
   - pos_query_agent.realtime_query
 rag_namespaces: []
 memory_policy: {"use_short_summary": true, "recent_turns": 8}
-examples: [{"query": "查询保单 9200130111869934 可以做哪些保全项", "intent": "pos_query"}, {"query": "受理号 930021041267222 的保全批文查询", "intent": "pos_approval_text_query"}, {"query": "退保试算详情，保单号 9200230000453437", "intent": "pos_surrender_premium_calc"}]
+examples: [{"query": "查询保单 9200130111869934 可以做哪些保全项", "intent": "pos_query", "sub_intent": "pos_available_items"}, {"query": "受理号 930021041267222 的保全批文查询", "intent": "pos_query", "sub_intent": "pos_approval_text_query"}, {"query": "退保试算详情，保单号 9200230000453437", "intent": "pos_query", "sub_intent": "pos_surrender_premium_calc"}]
 enabled: true
 version: "1.0.0"

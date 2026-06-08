@@ -3,6 +3,13 @@ skill_id: pos_query_agent.realtime_query
 name: 保全实时查询
 description: 用于实时查询可做保全项、退保试算详情、保全保单标准信息、批文信息和退保提交校验。
 agent: pos_query_agent
+intent: pos_query
+sub_intents:
+  - pos_available_items
+  - pos_surrender_premium_calc
+  - pos_policy_standard_query
+  - pos_approval_text_query
+  - pos_submit_verify
 intent_tags:
   - pos_query
   - pos_available_items

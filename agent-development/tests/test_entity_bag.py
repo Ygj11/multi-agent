@@ -23,3 +23,16 @@ def test_entity_bag_from_compact_dict():
 
     assert bag.get_values("claim_no") == ["CLM_001"]
     assert bag.get_values("policy_no") == ["P1", "P2"]
+
+
+def test_entity_bag_deduplicates_same_effective_value_and_keeps_best_confidence():
+    bag = EntityBag()
+
+    bag.add(EntityMention(type="policy_no", value="P100001", confidence=0.7, source="current_query"))
+    bag.add(EntityMention(type="policy_no", value="P100001", confidence=0.6, source="summary"))
+    bag.add(EntityMention(type="policy_no", value="P100001", confidence=0.95, source="llm"))
+
+    assert len(bag.entities["policy_no"]) == 1
+    assert bag.get_values("policy_no") == ["P100001"]
+    assert bag.get_best("policy_no").source == "llm"
+    assert bag.get_best("policy_no").confidence == 0.95

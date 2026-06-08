@@ -165,7 +165,6 @@ class InternalLLMProvider:
         text = "\n".join(str(message.get("content", "")) for message in messages)
         request_id_arg = self._find_request_id(text)
         policy_no = self._find_policy_no(text)
-        claim_no = self._find_claim_no(text)
         apply_seq = self._find_apply_seq(text)
         customer_no = self._find_customer_no(text)
         endorse_type = self._find_endorse_type(text)
@@ -227,12 +226,6 @@ class InternalLLMProvider:
                             {"request_id": request_id_arg, "policy_no": policy_no},
                         )
                     )
-            elif "query_policy_info" in tool_names:
-                next_calls.append(self._tool_call("call_policy_info", "query_policy_info", {"policy_no": policy_no}))
-                next_calls.append(self._tool_call("call_policy_status", "query_policy_status", {"policy_no": policy_no}))
-            elif "query_claim_case" in tool_names:
-                next_calls.append(self._tool_call("call_claim_case", "query_claim_case", {"claim_no": claim_no}))
-                next_calls.append(self._tool_call("call_claim_progress", "query_claim_progress", {"claim_no": claim_no}))
 
         if next_calls:
             return LLMResponse(
@@ -281,11 +274,6 @@ class InternalLLMProvider:
         return match.group(1) if match else None
 
     @staticmethod
-    def _find_claim_no(text: str) -> str | None:
-        match = re.search(r"\b(?:CLM|CLAIM)[_-]?[A-Za-z0-9]{3,}\b", text, re.IGNORECASE)
-        return match.group(0) if match else None
-
-    @staticmethod
     def _find_apply_seq(text: str) -> str | None:
         match = re.search(
             r"(?:apply[_-]?seq|applySeq|受理号|申请号)\D*([A-Za-z0-9_-]{3,})|\bAPPLY[_-]?[A-Za-z0-9_-]+\b",
@@ -319,15 +307,8 @@ class InternalLLMProvider:
                 "重点检查 timestamp 是否参与签名、密钥版本、字段排序、空值处理和 body 序列化方式。"
                 "如 MCP workflow 工具显示退保任务卡在签名或回调节点，需要继续核对上下游任务状态。"
             )
-        if "query_policy_info" in called_tools:
-            return "保单查询完成：已查询保单基础信息和状态，请以工具返回的脱敏结果为准。"
-        if "query_claim_case" in called_tools:
-            return "理赔查询完成：已查询赔案信息和处理进度，请以工具返回的脱敏结果为准。"
         if any(str(name).startswith("pos_") for name in called_tools):
             return "保全实时查询完成：已调用对应 POS 查询工具，请以工具返回的接口结果为准。"
-        if "compliance" in text.lower() or "合规" in text or "鍚堣" in text:
-            risk = "high" if any(marker in text for marker in ("13800138000", "110101199003074233", "token", "secret")) else "low"
-            return f"合规安全检查 completed: 风险等级 {risk}. Sensitive fields must be redacted before external sharing."
         return "已完成任务分析。"
 
     @staticmethod

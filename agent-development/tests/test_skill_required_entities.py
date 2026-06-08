@@ -19,18 +19,18 @@ def test_skill_required_entities_satisfied():
 
 def test_skill_required_entities_missing_clarifies():
     result = RequiredEntityChecker().check(
-        skill=_skill("claim_agent.default"),
+        skill=_skill("troubleshooting_agent.signature_error"),
         entities={},
         entity_bag=EntityBag(),
     )
 
     assert result.need_clarification is True
-    assert result.missing_required_entities == ["claim_no"]
+    assert result.missing_required_entities == ["error_code"]
 
 
 def test_optional_entities_do_not_block():
     result = RequiredEntityChecker().check(
-        skill=_skill("policy_query_agent.default"),
+        skill=_skill("pos_query_agent.realtime_query"),
         entities={"policy_no": "P2021344266"},
         entity_bag=EntityBag(),
     )
@@ -40,21 +40,21 @@ def test_optional_entities_do_not_block():
 
 def test_required_entity_inherited_from_bag():
     bag = EntityBag()
-    bag.add(EntityMention(type="claim_no", value="CLM_001", confidence=0.95, source="summary"))
-    result = RequiredEntityChecker().check(skill=_skill("claim_agent.default"), entities={}, entity_bag=bag)
+    bag.add(EntityMention(type="error_code", value="E102", confidence=0.95, source="summary"))
+    result = RequiredEntityChecker().check(skill=_skill("troubleshooting_agent.signature_error"), entities={}, entity_bag=bag)
 
-    assert result.entities["claim_no"] == "CLM_001"
+    assert result.entities["error_code"] == "E102"
     assert result.need_clarification is False
 
 
 def test_multiple_candidates_clarify():
     bag = EntityBag()
-    bag.add(EntityMention(type="claim_no", value="CLM_001", confidence=0.95, source="summary"))
-    bag.add(EntityMention(type="claim_no", value="CLM_002", confidence=0.95, source="summary"))
-    result = RequiredEntityChecker().check(skill=_skill("claim_agent.default"), entities={}, entity_bag=bag)
+    bag.add(EntityMention(type="error_code", value="E102", confidence=0.95, source="summary"))
+    bag.add(EntityMention(type="error_code", value="E103", confidence=0.95, source="summary"))
+    result = RequiredEntityChecker().check(skill=_skill("troubleshooting_agent.signature_error"), entities={}, entity_bag=bag)
 
     assert result.need_clarification is True
-    assert result.missing_required_entities == ["claim_no"]
+    assert result.missing_required_entities == ["error_code"]
 
 
 def test_endo_completion_aftercare_requires_apply_seq_policy_no_and_endorse_type():

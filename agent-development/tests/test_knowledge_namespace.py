@@ -42,21 +42,21 @@ async def test_context_builder_passes_agent_card_rag_namespaces_to_subagent_sear
     service = NamespaceRecordingKnowledgeService()
     builder = ContextBuilder(skills_root="app/skills", knowledge_service=service)
     task = SubAgentTask(
-        name="policy_query_agent",
+        name="troubleshooting_agent",
         query="query",
-        intent="policy_query",
+        intent="troubleshooting",
         session_key="s1",
         original_query="query",
         metadata={
             "agent_card": {
-                "agent_name": "policy_query_agent",
-                "display_name": "Policy",
-                "description": "Policy query",
-                "capabilities": ["policy"],
-                "supported_intents": ["policy_query"],
+                "agent_name": "troubleshooting_agent",
+                "display_name": "Troubleshooting",
+                "description": "Troubleshooting",
+                "capabilities": ["troubleshooting"],
+                "supported_intents": ["troubleshooting"],
                 "output_schema": "text",
-                "skills": ["policy_query_agent.default"],
-                "rag_namespaces": ["policy"],
+                "skills": ["troubleshooting_agent.signature_error"],
+                "rag_namespaces": ["troubleshooting"],
                 "version": "1",
             }
         },
@@ -64,10 +64,10 @@ async def test_context_builder_passes_agent_card_rag_namespaces_to_subagent_sear
     parent = OrchestratorContext(
         original_query="query",
         rewritten_query="query",
-        intent="policy_query",
+        intent="troubleshooting",
         session_key="s1",
     )
 
     await builder.build_for_subagent(task=task, parent_context=parent, allowed_tools=[])
 
-    assert service.last_namespaces == ["policy"]
+    assert service.last_namespaces == ["troubleshooting"]

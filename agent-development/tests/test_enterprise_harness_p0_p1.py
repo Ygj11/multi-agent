@@ -14,8 +14,8 @@ from app.verification.service import VerificationService
 from app.verification.verifiers.data_permission_verifier import DataPermissionVerifier
 
 
-async def _echo_tool(policy_no: str | None = None):
-    return {"policy_no": policy_no, "status": "active"}
+async def _echo_tool(request_id: str | None = None):
+    return {"request_id": request_id, "status": "active"}
 
 
 def test_chat_uses_header_principal_for_session_key(app_factory):
@@ -34,7 +34,7 @@ def test_chat_uses_header_principal_for_session_key(app_factory):
             "channel": "web",
             "user_id": "body_user",
             "session_id": "s001",
-            "messages": [{"role": "user", "content": "查询保单状态"}],
+            "messages": [{"role": "user", "content": "REQ_001 为什么返回 E102？"}],
         },
     )
 
@@ -61,34 +61,34 @@ def test_request_adapter_rejects_body_identity_override_when_fallback_disabled(m
 async def test_tool_executor_enforces_required_scope():
     registry = ToolRegistry()
     registry.register_private(
-        agent_name="policy_query_agent",
-        name="query_policy_info_secure",
+        agent_name="troubleshooting_agent",
+        name="query_internal_log_secure",
         tool=_echo_tool,
-        description="Query policy info.",
+        description="Query internal log.",
         parameters={
             "type": "object",
-            "properties": {"policy_no": {"type": "string"}},
-            "required": ["policy_no"],
+            "properties": {"request_id": {"type": "string"}},
+            "required": ["request_id"],
         },
-        required_scopes=["policy:read"],
-        resource_type="policy",
-        resource_id_arg="policy_no",
+        required_scopes=["troubleshooting:read"],
+        resource_type="request",
+        resource_id_arg="request_id",
     )
     executor = ToolExecutor(registry, authorization_service=AuthorizationService())
 
     denied = await executor.execute(
-        agent_name="policy_query_agent",
-        tool_name="query_policy_info_secure",
-        arguments={"policy_no": "P001"},
+        agent_name="troubleshooting_agent",
+        tool_name="query_internal_log_secure",
+        arguments={"request_id": "REQ_001"},
     )
     assert denied.success is False
     assert denied.error == "permission_denied:principal_required"
 
     allowed = await executor.execute(
-        agent_name="policy_query_agent",
-        tool_name="query_policy_info_secure",
-        arguments={"policy_no": "P001"},
-        principal=Principal(tenant_id="t1", subject="u1", user_id="u1", scopes=["policy:read"]),
+        agent_name="troubleshooting_agent",
+        tool_name="query_internal_log_secure",
+        arguments={"request_id": "REQ_001"},
+        principal=Principal(tenant_id="t1", subject="u1", user_id="u1", scopes=["troubleshooting:read"]),
     )
     assert allowed.success is True
 
@@ -96,33 +96,33 @@ async def test_tool_executor_enforces_required_scope():
 def test_tool_registry_filters_llm_tools_by_principal_scope():
     registry = ToolRegistry()
     registry.register_private(
-        agent_name="policy_query_agent",
-        name="query_policy_info_secure",
+        agent_name="troubleshooting_agent",
+        name="query_internal_log_secure",
         tool=_echo_tool,
-        description="Query policy info.",
+        description="Query internal log.",
         parameters={"type": "object", "properties": {}, "required": []},
-        required_scopes=["policy:read"],
+        required_scopes=["troubleshooting:read"],
     )
     from app.schemas.agent_card import AgentCard
 
     card = AgentCard(
-        agent_name="policy_query_agent",
-        display_name="Policy",
-        description="Policy query",
-        capabilities=["policy"],
-        supported_intents=["policy_query"],
+        agent_name="troubleshooting_agent",
+        display_name="Troubleshooting",
+        description="Troubleshooting",
+        capabilities=["troubleshooting"],
+        supported_intents=["troubleshooting"],
         output_schema="text",
-        private_tools=["query_policy_info_secure"],
+        private_tools=["query_internal_log_secure"],
         version="1",
     )
 
     assert registry.list_tools_for_agent(card, authorization_service=AuthorizationService()) == []
     schemas = registry.list_tools_for_agent(
         card,
-        principal=Principal(tenant_id="t1", subject="u1", scopes=["policy:read"]),
+        principal=Principal(tenant_id="t1", subject="u1", scopes=["troubleshooting:read"]),
         authorization_service=AuthorizationService(),
     )
-    assert [item["function"]["name"] for item in schemas] == ["query_policy_info_secure"]
+    assert [item["function"]["name"] for item in schemas] == ["query_internal_log_secure"]
 
 
 def test_agent_access_policy_schema_enforces_principal_boundaries():

@@ -7,6 +7,7 @@ from typing import Any
 from app.llm.base import LLMProvider
 from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.query.entity_extractor import EntityExtractor
+from app.query.intent_taxonomy_loader import IntentTaxonomyLoader
 from app.query.json_utils import parse_json_object
 from app.schemas.entities import ConversationWindow, EntityBag
 from app.schemas.intent import IntentResult
@@ -20,10 +21,12 @@ class IntentRecognitionNode:
         llm_provider: LLMProvider | None = None,
         entity_extractor: EntityExtractor | None = None,
         prompt_loader: PromptLoader | None = None,
+        intent_taxonomy_loader: IntentTaxonomyLoader | None = None,
     ) -> None:
         self.llm_provider = llm_provider
         self.entity_extractor = entity_extractor or EntityExtractor()
         self.prompt_loader = prompt_loader or default_prompt_loader
+        self.intent_taxonomy_loader = intent_taxonomy_loader or IntentTaxonomyLoader()
 
     async def recognize(
         self,
@@ -68,8 +71,9 @@ class IntentRecognitionNode:
     ) -> IntentResult | None:
         if not self._should_use_llm_json():
             return None
-        allowed_intents = self._allowed_intents(agent_card_summaries)
-        candidate_sub_intents = self._candidate_sub_intents(agent_card_summaries)
+        allowed_intents = self.intent_taxonomy_loader.list_allowed_intents()
+        candidate_sub_intents = self.intent_taxonomy_loader.list_candidate_sub_intents()
+        intent_taxonomy = self.intent_taxonomy_loader.summaries_for_prompt()
         response = await self.llm_provider.chat(
             messages=[
                 {
@@ -84,6 +88,7 @@ class IntentRecognitionNode:
                         rewritten_query=rewritten_query,
                         entities=entities,
                         conversation_window=window.model_dump(),
+                        intent_taxonomy=intent_taxonomy,
                         allowed_intents=allowed_intents,
                         candidate_sub_intents=candidate_sub_intents,
                         agent_card_summaries=agent_card_summaries,
@@ -134,26 +139,22 @@ class IntentRecognitionNode:
         confidence = 0.42
         reason = "entity_aware_rule_fallback"
 
-        if self._has_any(query_raw, "合规", "隐私", "敏感", "脱敏", "外发", "token", "secret", "身份证", "手机号"):
-            intent, sub_intent, confidence = "compliance_review", "privacy_review", 0.86
-        elif self._has_any(query_raw, "文档", "解析文档", "接口文档", "markdown", "json", "yaml", "提取字段"):
-            intent, sub_intent, confidence = "document_parse", "api_doc_parse", 0.84
-        elif self._has_any(query_raw, "变更影响", "影响分析", "字段变更", "接口变更", "签名规则变更", "change impact"):
-            intent, sub_intent, confidence = "change_impact_analysis", "signature_rule_change", 0.86
-        elif self._is_pos_query(query_raw, entities):
+        if self._is_pos_query(query_raw, entities):
             intent = "pos_query"
             sub_intent = self._pos_sub_intent(query_raw)
             confidence = 0.86
-        elif self._has_any(query_raw, "理赔", "赔案", "claim") or entities.get("claim_no"):
-            intent, sub_intent, confidence = "claim_query", "claim_progress", 0.84
         elif self._has_any(query_raw, "退保失败", "退保没有成功", "没有成功", "回调失败", "签名", "排查", "报错", "失败", "错误", "异常") or entities.get("request_id") or entities.get("error_code"):
             intent = "troubleshooting"
             sub_intent = self._troubleshooting_sub_intent(query_raw, entities)
             confidence = 0.9
-        elif self._has_any(query_raw, "保单", "保单状态", "policy") or entities.get("policy_no"):
-            intent, sub_intent, confidence = "policy_query", "policy_status", 0.84
-        elif self._has_any(query_raw, "等待期", "责任", "条款", "product rule"):
-            intent, sub_intent, confidence = "product_rule_qa", "product_rule_qa", 0.78
+
+        candidate_sub_intents = self.intent_taxonomy_loader.list_candidate_sub_intents()
+        if intent != "unknown" and not self.intent_taxonomy_loader.is_allowed_intent(intent):
+            intent = "unknown"
+            sub_intent = None
+            confidence = 0.42
+        else:
+            sub_intent = self._validated_sub_intent(sub_intent, intent, candidate_sub_intents)
 
         need_clarification = intent == "unknown" and confidence < 0.5
         return IntentResult(
@@ -162,7 +163,7 @@ class IntentRecognitionNode:
             confidence=confidence,
             entities=entities,
             need_clarification=need_clarification,
-            clarification_question="请补充你要办理的业务类型，例如排查、保单查询、理赔查询、文档解析或合规审查。" if need_clarification else None,
+            clarification_question="请补充你要办理的业务类型，例如排查或保全实时查询。" if need_clarification else None,
             is_follow_up=is_follow_up,
             reason=reason,
             target_subagent=None,
@@ -198,38 +199,6 @@ class IntentRecognitionNode:
         return True
 
     @staticmethod
-    def _allowed_intents(agent_card_summaries: list[dict[str, Any]]) -> list[str]:
-        intents: set[str] = set()
-        for card in agent_card_summaries:
-            for intent in card.get("supported_intents") or []:
-                if intent:
-                    intents.add(str(intent))
-        return sorted(intents)
-
-    @classmethod
-    def _candidate_sub_intents(cls, agent_card_summaries: list[dict[str, Any]]) -> dict[str, list[str]]:
-        by_intent: dict[str, set[str]] = {}
-        for card in agent_card_summaries:
-            supported = [str(item) for item in card.get("supported_intents") or [] if item]
-            capabilities = [str(item) for item in card.get("capabilities") or [] if item]
-            examples = cls._example_intents(card.get("examples") or [])
-            candidates = set(supported + capabilities + examples)
-            for intent in supported:
-                values = by_intent.setdefault(intent, set())
-                values.update(item for item in candidates if item != intent)
-        return {intent: sorted(values) for intent, values in sorted(by_intent.items())}
-
-    @staticmethod
-    def _example_intents(examples: Any) -> list[str]:
-        values: list[str] = []
-        if not isinstance(examples, list):
-            return values
-        for item in examples:
-            if isinstance(item, dict) and item.get("intent"):
-                values.append(str(item["intent"]))
-        return values
-
-    @staticmethod
     def _is_allowed_intent(intent: str, allowed_intents: list[str]) -> bool:
         if intent == "unknown":
             return True
@@ -245,8 +214,6 @@ class IntentRecognitionNode:
         if not candidate_sub_intents:
             return sub_intent
         allowed = set(candidate_sub_intents.get(intent) or [])
-        if not allowed:
-            return sub_intent
         return sub_intent if sub_intent in allowed else None
 
     @classmethod

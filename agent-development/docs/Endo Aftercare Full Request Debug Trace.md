@@ -318,8 +318,10 @@ await graph.ainvoke(
   "agent_card_summaries": [
     {
       "agent_name": "troubleshooting_agent",
-      "supported_intents": ["troubleshooting", "refund_failure", "callback_failure", "endo_completion_aftercare"],
-      "capabilities": ["endo_completion_aftercare"]
+      "supported_routes": {
+        "troubleshooting": ["refund_failure", "callback_failure", "signature_error", "missing_field", "endo_completion_aftercare"]
+      },
+      "capabilities": ["task_status_diagnosis", "internal_log_analysis", "workflow_mcp_diagnosis", "error_code_diagnosis"]
     }
   ]
 }
@@ -1069,7 +1071,7 @@ clarification 响应：
 | `QueryRewriteResult` | `app/query/query_rewrite_node.py` | `rewritten_query`, `entities`, `entity_bag`, `conversation_window`, `need_clarification` |
 | `IntentResult` | `app/query/intent_recognition_node.py` | `intent`, `sub_intent`, `confidence`, `entities`, `need_clarification` |
 | `OrchestratorContext` | `app/schemas/runtime.py` | query, intent, entities, history, available agents/tools, knowledge hints |
-| `AgentCard` | `app/schemas/agent_card.py` | `agent_name`, `supported_intents`, `private_tools`, `skills`, `rag_namespaces`, `memory_policy` |
+| `AgentCard` | `app/schemas/agent_card.py` | `agent_name`, `supported_routes`, `private_tools`, `skills`, `rag_namespaces`, `memory_policy` |
 | `AgentTaskEnvelope` | `app/schemas/agent_task.py` | `task_id`, `agent_name`, `query`, `entities`, `agent_card`, `recent_messages` |
 | `SubAgentTask` | `app/schemas/subagent.py` | `name`, `query`, `intent`, `session_key`, `entities`, `metadata` |
 | `SubAgentContext` | `app/schemas/runtime.py` | `allowed_tools`, `skill_content`, `selected_skill_id`, `need_clarification`, `knowledge_hint` |
@@ -1157,4 +1159,3 @@ clarification 响应：
 | 中文编码显示 | 部分历史源码注释和字符串在终端输出中显示为 mojibake |
 | 外部审批提交 | 是否 accepted 取决于 `ApprovalSystemClient` 配置或测试 mock |
 | Knowledge hints | 默认知识服务 disabled，开启真实 API 后 hints 需运行时验证 |
-

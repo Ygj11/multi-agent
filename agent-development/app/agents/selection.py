@@ -101,7 +101,7 @@ class AgentSelectionNode:
             fallback=fallback,
             selection_method=method,  # type: ignore[arg-type]
             need_clarification=need_clarification,
-            clarification_question="请补充你希望处理的业务场景，例如排查、保单查询、理赔查询、文档解析或合规审查。"
+            clarification_question="请补充你希望处理的业务场景，例如排查或保全实时查询。"
             if need_clarification
             else None,
         )

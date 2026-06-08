@@ -13,8 +13,8 @@ async def test_evidence_store_saves_and_lists_tool_evidence(tmp_path):
     evidence = EvidenceBuilder.from_tool_result(
         session_key="s1",
         request_id="req1",
-        tool_name="query_policy_info",
-        result={"policy_no": "P001", "status": "active"},
+        tool_name="query_internal_log",
+        result={"request_id": "REQ_001", "error_code": "E102"},
     )
 
     await store.save(evidence)
@@ -22,7 +22,7 @@ async def test_evidence_store_saves_and_lists_tool_evidence(tmp_path):
 
     assert len(items) == 1
     assert items[0].source_type == "tool"
-    assert items[0].content["policy_no"] == "P001"
+    assert items[0].content["request_id"] == "REQ_001"
 
 
 def test_evidence_builder_creates_knowledge_citation():
@@ -41,28 +41,28 @@ def test_evidence_builder_creates_knowledge_citation():
 
 
 async def test_tool_executor_writes_tool_result_evidence(tmp_path):
-    async def sample_tool(policy_no: str):
-        return {"policy_no": policy_no, "status": "active"}
+    async def sample_tool(request_id: str):
+        return {"request_id": request_id, "status": "failed"}
 
     db = SQLiteDatabase(tmp_path / "tool-evidence.sqlite3")
     evidence_store = EvidenceStore(db)
     registry = ToolRegistry()
     registry.register_private(
-        agent_name="policy_query_agent",
-        name="query_policy_status",
+        agent_name="troubleshooting_agent",
+        name="query_task_status",
         tool=sample_tool,
         parameters={
             "type": "object",
-            "properties": {"policy_no": {"type": "string"}},
-            "required": ["policy_no"],
+            "properties": {"request_id": {"type": "string"}},
+            "required": ["request_id"],
         },
     )
     executor = ToolExecutor(registry=registry, evidence_store=evidence_store)
 
     result = await executor.execute(
-        agent_name="policy_query_agent",
-        tool_name="query_policy_status",
-        arguments={"policy_no": "P001"},
+        agent_name="troubleshooting_agent",
+        tool_name="query_task_status",
+        arguments={"request_id": "REQ_001"},
         request_id="req1",
         trace_id="trace1",
         session_key="s1",
@@ -72,5 +72,5 @@ async def test_tool_executor_writes_tool_result_evidence(tmp_path):
     assert result.success is True
     assert len(items) == 1
     assert items[0].source_type == "tool"
-    assert items[0].content["name"] == "query_policy_status"
-    assert items[0].content["result"]["status"] == "active"
+    assert items[0].content["name"] == "query_task_status"
+    assert items[0].content["result"]["status"] == "failed"

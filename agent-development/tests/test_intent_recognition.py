@@ -28,7 +28,7 @@ async def test_follow_up_with_summary_is_troubleshooting():
     assert result.intent == "troubleshooting"
 
 
-async def test_product_rule_intent():
+async def test_removed_product_rule_intent_is_unknown():
     node = IntentRecognitionNode()
     result = await node.recognize(original_query="等待期责任条款是什么？", rewritten_query="等待期责任条款是什么？")
-    assert result.intent == "product_rule_qa"
+    assert result.intent == "unknown"

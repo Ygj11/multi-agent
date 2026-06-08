@@ -96,18 +96,12 @@ def test_private_tool_schemas_include_descriptions_and_required_parameters():
         "notice_period_update": ["apply_seq", "policyNo", "endorseType"],
         "policy_suspendOrRecovery": ["handleType", "premHandleFlag", "reqList"],
         "notice_finance": ["apply_seq", "policyNo", "endorseType"],
-        "query_policy_status": ["policy_no"],
-        "update_policy_status": ["policy_no", "status"],
-        "query_claim_progress": ["claim_no"],
     }
     for tool_name, required in expectations.items():
         schema = registry.get_tool_schema(tool_name)
         _assert_openai_schema(schema, tool_name)
         assert schema["function"]["parameters"]["required"] == required
 
-    update_schema = registry.get_tool_schema("update_policy_status")
-    assert "human approval" in update_schema["function"]["description"].lower()
-    assert registry.get_definition("update_policy_status").is_write is True
     for write_tool in (
         "notice_policy_update",
         "notice_customer_update",
@@ -160,16 +154,16 @@ def test_mcp_tools_are_exposed_as_openai_function_schema_without_internal_fields
 def test_agent_visible_tool_schemas_are_standard_and_authorized_only():
     registry = _registry()
     card = AgentCard(
-        agent_name="policy_query_agent",
-        display_name="Policy Query Agent",
-        description="Policy query.",
-        capabilities=["policy query"],
-        supported_intents=["policy_query"],
+        agent_name="troubleshooting_agent",
+        display_name="Troubleshooting Agent",
+        description="Troubleshooting.",
+        capabilities=["troubleshooting"],
+        supported_intents=["troubleshooting"],
         required_entities=[],
         output_schema="SubAgentResult",
-        private_tools=["query_policy_status"],
+        private_tools=["query_internal_log"],
         public_tools_allowed=True,
-        skills=["policy_query_agent.default"],
+        skills=["troubleshooting_agent.signature_error"],
         rag_namespaces=[],
         enabled=True,
         version="1",
@@ -179,8 +173,8 @@ def test_agent_visible_tool_schemas_are_standard_and_authorized_only():
     schemas = registry.list_tools_for_agent(card)
     names = {schema["function"]["name"] for schema in schemas}
 
-    assert {"query_policy_status", "rag_search_tool"}.issubset(names)
-    assert "query_policy_info" not in names
+    assert {"query_internal_log", "rag_search_tool"}.issubset(names)
+    assert "query_task_status" not in names
     assert "calculator_tool" not in names
     for schema in schemas:
         _assert_openai_schema(schema)
@@ -196,25 +190,25 @@ async def test_tool_executor_validates_missing_required_arguments_before_executi
         tool_name="rag_search_tool",
         arguments={},
     )
-    policy_result = await executor.execute(
-        agent_name="policy_query_agent",
-        agent_card=_card("policy_query_agent"),
-        tool_name="query_policy_status",
+    private_result = await executor.execute(
+        agent_name="troubleshooting_agent",
+        agent_card=_card("troubleshooting_agent"),
+        tool_name="query_task_status",
         arguments={},
     )
     write_result = await executor.execute(
-        agent_name="policy_query_agent",
-        agent_card=_card("policy_query_agent"),
-        tool_name="update_policy_status",
-        arguments={"policy_no": "9201344266"},
+        agent_name="troubleshooting_agent",
+        agent_card=_card("troubleshooting_agent"),
+        tool_name="notice_policy_update",
+        arguments={"apply_seq": "APPLY123", "policyNo": "9201344266"},
     )
 
     assert public_result.success is False
     assert public_result.error == "missing_required_argument:query"
-    assert policy_result.success is False
-    assert policy_result.error == "missing_required_argument:policy_no"
+    assert private_result.success is False
+    assert private_result.error == "missing_required_argument:request_id"
     assert write_result.success is False
-    assert write_result.error == "missing_required_argument:status"
+    assert write_result.error == "missing_required_argument:endorseType"
     assert write_result.needs_human_approval is False
 
 

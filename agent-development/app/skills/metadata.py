@@ -50,6 +50,8 @@ def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata:
         name=str(data["name"]),
         description=str(data["description"]),
         agent=str(data["agent"]),
+        intent=str(data["intent"]) if data.get("intent") else None,
+        sub_intents=[str(item) for item in data.get("sub_intents", [])],
         intent_tags=[str(item) for item in data["intent_tags"]],
         required_entities=[str(item) for item in data["required_entities"]],
         optional_entities=[str(item) for item in data["optional_entities"]],
@@ -76,6 +78,8 @@ def validate_skill_frontmatter(data: dict[str, Any], path: Path) -> None:
     for field in ("intent_tags", "required_entities", "optional_entities", "private_tools"):
         if not isinstance(data[field], list):
             raise ValueError(f"{path} field {field} must be a list")
+    if "sub_intents" in data and not isinstance(data["sub_intents"], list):
+        raise ValueError(f"{path} field sub_intents must be a list")
     if not data["intent_tags"]:
         raise ValueError(f"{path} field intent_tags must contain at least one item")
     skill_id = str(data["skill_id"])

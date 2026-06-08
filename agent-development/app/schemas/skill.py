@@ -14,6 +14,8 @@ class SkillMetadata(BaseModel):
     name: str
     description: str
     agent: str
+    intent: str | None = None
+    sub_intents: list[str] = Field(default_factory=list)
     intent_tags: list[str]
     required_entities: list[str]
     optional_entities: list[str] = Field(default_factory=list)

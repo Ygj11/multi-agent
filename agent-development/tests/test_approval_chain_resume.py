@@ -25,8 +25,10 @@ class ChainedWriteLLM:
                         "id": "call_write_a",
                         "type": "function",
                         "function": {
-                            "name": "update_policy_status",
-                            "arguments": json.dumps({"policy_no": "P123456", "status": "cancelled"}),
+                            "name": "notice_policy_update",
+                            "arguments": json.dumps(
+                                {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                            ),
                         },
                     }
                 ],
@@ -34,7 +36,7 @@ class ChainedWriteLLM:
                 finish_reason="tool_calls",
             )
         if self.subagent_calls == 2:
-            assert any(message.get("role") == "tool" and message.get("name") == "update_policy_status" for message in messages)
+            assert any(message.get("role") == "tool" and message.get("name") == "notice_policy_update" for message in messages)
             return LLMResponse(
                 content=None,
                 tool_calls=[
@@ -42,15 +44,17 @@ class ChainedWriteLLM:
                         "id": "call_write_b",
                         "type": "function",
                         "function": {
-                            "name": "update_policy_status",
-                            "arguments": json.dumps({"policy_no": "P123456", "status": "suspended"}),
+                            "name": "notice_policy_update",
+                            "arguments": json.dumps(
+                                {"apply_seq": "APPLY124", "policyNo": "P123456", "endorseType": "001028"}
+                            ),
                         },
                     }
                 ],
                 has_tool_calls=True,
                 finish_reason="tool_calls",
             )
-        assert any("suspended" in str(message.get("content")) for message in messages if message.get("role") == "tool")
+        assert any("APPLY124" in str(message.get("content")) for message in messages if message.get("role") == "tool")
         return LLMResponse(content="Both approved writes completed.", has_tool_calls=False)
 
 
@@ -73,8 +77,10 @@ class ManyWritesLLM:
                     "id": f"call_write_{status}",
                     "type": "function",
                     "function": {
-                        "name": "update_policy_status",
-                        "arguments": json.dumps({"policy_no": "P123456", "status": status}),
+                        "name": "notice_policy_update",
+                        "arguments": json.dumps(
+                            {"apply_seq": f"APPLY{self.subagent_calls}", "policyNo": "P123456", "endorseType": status}
+                        ),
                     },
                 }
             ],
@@ -91,15 +97,15 @@ class AcceptingApprovalClient:
 def test_approval_resume_creates_second_approval_in_graph(app_factory):
     calls = []
 
-    async def counted_update_policy_status(policy_no=None, status=None, **kwargs):
-        calls.append({"policy_no": policy_no, "status": status})
-        return {"success": True, "policy_no": policy_no, "status": status}
+    async def counted_notice_policy_update(apply_seq=None, policyNo=None, endorseType=None, **kwargs):
+        calls.append({"apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType})
+        return {"success": True, "apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType}
 
     app = app_factory("approval_chain.sqlite3")
     app.state.tool_registry.register_private(
-        agent_name="policy_query_agent",
-        name="update_policy_status",
-        tool=counted_update_policy_status,
+        agent_name="troubleshooting_agent",
+        name="notice_policy_update",
+        tool=counted_notice_policy_update,
         is_write=True,
     )
     app.state.llm_provider.chat = ChainedWriteLLM().chat
@@ -113,7 +119,7 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "policy_no: P123456 update status twice"}],
+            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请连续通知保单更新"}],
         },
     ).json()
     approval_1_id = pending_1["approval_id"]
@@ -131,7 +137,7 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
     assert callback_1.status_code == 200
     data_1 = callback_1.json()
     assert data_1["status"] == "completed"
-    assert calls == [{"policy_no": "P123456", "status": "cancelled"}]
+    assert calls == [{"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}]
 
     async def _get(approval_id):
         return await app.state.approval_store.get(approval_id)
@@ -146,8 +152,8 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
     assert approval_2.parent_approval_id == approval_1_id
     assert approval_2.root_approval_id == approval_1.root_approval_id
     assert approval_2.approval_depth == approval_1.approval_depth + 1
-    assert approval_2.pending_tool_call["name"] == "update_policy_status"
-    assert approval_2.arguments == {"policy_no": "P123456", "status": "suspended"}
+    assert approval_2.pending_tool_call["name"] == "notice_policy_update"
+    assert approval_2.arguments == {"apply_seq": "APPLY124", "policyNo": "P123456", "endorseType": "001028"}
     assert "resume_approved_tool" in (approval_1.result or {}).get("graph_path", [])
 
     callback_2 = client.post(
@@ -164,23 +170,23 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
     assert data_2["status"] == "completed"
     assert data_2["final_answer"] == "Both approved writes completed."
     assert calls == [
-        {"policy_no": "P123456", "status": "cancelled"},
-        {"policy_no": "P123456", "status": "suspended"},
+        {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"},
+        {"apply_seq": "APPLY124", "policyNo": "P123456", "endorseType": "001028"},
     ]
 
 
 def test_approval_chain_depth_limit_requires_manual_intervention(app_factory):
     calls = []
 
-    async def counted_update_policy_status(policy_no=None, status=None, **kwargs):
-        calls.append({"policy_no": policy_no, "status": status})
-        return {"success": True, "policy_no": policy_no, "status": status}
+    async def counted_notice_policy_update(apply_seq=None, policyNo=None, endorseType=None, **kwargs):
+        calls.append({"apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType})
+        return {"success": True, "apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType}
 
     app = app_factory("approval_chain_limit.sqlite3")
     app.state.tool_registry.register_private(
-        agent_name="policy_query_agent",
-        name="update_policy_status",
-        tool=counted_update_policy_status,
+        agent_name="troubleshooting_agent",
+        name="notice_policy_update",
+        tool=counted_notice_policy_update,
         is_write=True,
     )
     app.state.llm_provider.chat = ManyWritesLLM().chat
@@ -194,7 +200,7 @@ def test_approval_chain_depth_limit_requires_manual_intervention(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s2",
-            "messages": [{"role": "user", "content": "policy_no: P123456 run many writes"}],
+            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请多次通知保单更新"}],
         },
     ).json()
 
@@ -225,4 +231,4 @@ def test_approval_chain_depth_limit_requires_manual_intervention(app_factory):
 
     assert final_status == "manual_intervention_required"
     assert len(calls) == 3
-    assert calls[-1]["status"] == "status_2"
+    assert calls[-1]["endorseType"] == "status_2"

@@ -19,6 +19,7 @@ def test_get_settings_uses_defaults_without_env_file(tmp_path):
     assert settings.internal_llm_max_tokens == 8192
     assert settings.enable_real_llm is False
     assert settings.checkpoint_backend == "memory"
+    assert settings.strict_taxonomy_route_coverage is True
 
 
 def test_get_settings_reads_dotenv_values(tmp_path):
@@ -29,6 +30,7 @@ def test_get_settings_reads_dotenv_values(tmp_path):
                 "INTERNAL_LLM_MAX_TOKENS=4096",
                 "ENABLE_REAL_LLM=true",
                 "CHECKPOINT_BACKEND=sqlite",
+                "STRICT_TAXONOMY_ROUTE_COVERAGE=false",
             ]
         ),
         encoding="utf-8",
@@ -40,6 +42,7 @@ def test_get_settings_reads_dotenv_values(tmp_path):
     assert settings.internal_llm_max_tokens == 4096
     assert settings.enable_real_llm is True
     assert settings.checkpoint_backend == "sqlite"
+    assert settings.strict_taxonomy_route_coverage is False
 
 
 def test_os_environment_wins_over_dotenv(tmp_path):
