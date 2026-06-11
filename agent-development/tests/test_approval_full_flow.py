@@ -19,7 +19,7 @@ class ApprovalLLM:
                     "function": {
                         "name": "notice_policy_update",
                         "arguments": json.dumps(
-                            {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                            {"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}
                         ),
                     },
                 }
@@ -34,7 +34,7 @@ class AcceptingApprovalClient:
         return ApprovalSubmitResult(accepted=True, external_approval_id=f"ext_{request.approval_id}", status="pending")
 
 
-def test_chat_returns_pending_when_write_tool_needs_approval(app_factory):
+def test_chat_returns_pending_when_write_tool_needs_approval(app_factory, real_troubleshooting_env):
     app = app_factory("approval_full.sqlite3")
     app.state.llm_provider.chat = ApprovalLLM().chat
     app.state.approval_service.client = AcceptingApprovalClient()
@@ -47,7 +47,7 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请通知保单更新"}],
+            "messages": [{"role": "user", "content": "930010412672222 保单号 9200100000458846 endorseType 001028 保单更新失败，请通知保单更新"}],
         },
     )
 
@@ -71,6 +71,11 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory):
     assert item.approval_depth == 0
     assert item.tool_name == "notice_policy_update"
     assert item.pending_tool_call["name"] == "notice_policy_update"
+    assert item.resume_state["schema_version"] == 1
+    assert item.resume_state["pending_tool_name"] == "notice_policy_update"
+    assert "conversation_window" not in item.resume_state
+    assert "recent_messages" not in item.resume_state
+    assert "subagent_result" not in item.resume_state
 
     async def _logs():
         return await app.state.tool_execution_log_store.list_by_session("tenant:web:u1:s1")

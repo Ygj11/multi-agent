@@ -44,5 +44,16 @@
 - [x] SkillCatalog scans only `skills/{agent_name}/{skill_name}/SKILL.md`.
 - [x] AgentCard skills are validated against SkillCatalog.
 - [x] Skill private tools must be a subset of AgentCard private tools.
-- [x] Every active agent has an enabled default skill.
+- [x] Skill selection may return no skill when no candidate matches confidently.
 - [x] Full architecture acceptance test covers the refund failure flow.
+
+## Stage 8: Runtime State Governance
+
+- [x] `AgentGraphState` is not persisted directly as checkpoint payload.
+- [x] `CheckpointSnapshot` is the explicit durable checkpoint contract.
+- [x] `AgentResumeState` is the explicit approval resume contract.
+- [x] SQLite `graph_checkpoints` stores `schema_version` and `snapshot_json`, not full `state_json`.
+- [x] Approval resume storage uses `resume_state_json`, not full `pending_state_json`.
+- [x] Runtime-only fields such as `conversation_window`, `recent_messages`, `entity_bag`, full `subagent_result`, and full tool schemas are excluded from checkpoint snapshots.
+- [x] `GRAPH_STATE_FIELD_AUTHORITY` declares `owner`, `source`, `kind`, and `persistence` for every graph state field.
+- [x] State size inspection is available through `scripts/audit_graph_state_size.py`.

@@ -34,6 +34,9 @@ def test_intent_recognition_prompt_contract():
     assert "intent must be one of allowed_intents" in system_prompt
     assert "AgentCard supported_routes describe which agents can handle taxonomy routes" in system_prompt
     assert "Do not use agent_name, skill_id, or capability as intent/sub_intent" in system_prompt
+    assert "rewritten_query is the authoritative standalone business request" in system_prompt
+    assert "do not redo context inheritance" in system_prompt
+    assert "older conversation_window messages mention another intent" in system_prompt
     assert "Never output" in system_prompt
     assert "required_tools" in system_prompt
     assert "Confidence scoring guide" in system_prompt
@@ -46,6 +49,10 @@ def test_agent_and_skill_router_prompt_contracts_are_candidate_bounded():
     skill_prompt = loader.load("skill_selection/system.md")
 
     assert "selected_agent must be one of the candidate agent_name values" in agent_prompt
+    assert "Query is the rewritten standalone business request" in agent_prompt
+    assert "Use the provided intent and sub_intent as primary routing signals" in agent_prompt
+    assert "Do not select an agent because of a tool name" in agent_prompt
+    assert "Do not reject a candidate only because required_entities are missing" in agent_prompt
     assert "Do not use full skill bodies" in agent_prompt
     assert "Do not use full tool schemas" in agent_prompt
     assert "selected_skill_id must be one of the candidate skill_id values" in skill_prompt

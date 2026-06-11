@@ -27,6 +27,7 @@ class SkillRuleScorer:
     def score(self, context: SkillSelectionContext, skill: SkillMetadata) -> ScoredSkill:
         score = 0.0
         reasons: list[str] = []
+        has_strong_signal = False
         query_text = self._query_text(context)
         skill_text = self._skill_text(skill)
 
@@ -40,9 +41,11 @@ class SkillRuleScorer:
         if context.sub_intent and any(context.sub_intent.lower() == item.lower() for item in skill.sub_intents):
             score += self.policy.weight("sub_intent_tag_match")
             reasons.append(f"sub_intent matched: {context.sub_intent}")
+            has_strong_signal = True
         elif context.sub_intent and any(context.sub_intent.lower() == tag.lower() for tag in skill.intent_tags):
             score += self.policy.weight("sub_intent_tag_match")
             reasons.append(f"sub_intent tag matched: {context.sub_intent}")
+            has_strong_signal = True
 
         for tag in skill.intent_tags:
             tag_text = tag.lower()
@@ -59,6 +62,7 @@ class SkillRuleScorer:
             if context.entities.get(entity_type):
                 score += self.policy.weight("required_entity_present")
                 reasons.append(f"required entity present: {entity_type}")
+                has_strong_signal = True
 
         for entity_type in skill.optional_entities:
             if context.entities.get(entity_type):
@@ -69,6 +73,7 @@ class SkillRuleScorer:
             if self._has_required_context(context, required):
                 score += self.policy.weight("required_context_present")
                 reasons.append(f"required context present: {required}")
+                has_strong_signal = True
 
         if set(context.business_domain).intersection(skill.business_domain):
             score += self.policy.weight("business_domain_match")
@@ -77,20 +82,27 @@ class SkillRuleScorer:
         if context.extracted_interface_name and context.extracted_interface_name.lower() in skill_text:
             score += self.policy.weight("interface_match")
             reasons.append(f"interface matched: {context.extracted_interface_name}")
+            has_strong_signal = True
 
         if context.extracted_error_code and context.extracted_error_code.lower() in skill_text:
             score += self.policy.weight("error_code_match")
             reasons.append(f"error code matched: {context.extracted_error_code}")
+            has_strong_signal = True
 
         for keyword in skill.routing_keywords:
             if keyword and keyword.lower() in query_text:
                 score += self.policy.weight("routing_keyword_match")
                 reasons.append(f"routing keyword matched: {keyword}")
+                has_strong_signal = True
 
         for keyword in skill.routing_negative_keywords:
             if keyword and keyword.lower() in query_text:
                 score += self.policy.weight("routing_negative_keyword_match")
                 reasons.append(f"routing negative keyword matched: {keyword}")
+
+        if skill.required_entities and not has_strong_signal and score >= 7.0:
+            score = 6.0
+            reasons.append("capped below confidence threshold: no strong skill signal")
 
         return ScoredSkill(skill=skill, score=score, reason="; ".join(reasons) or "no metadata keyword matched")
 
@@ -98,7 +110,6 @@ class SkillRuleScorer:
     def _query_text(context: SkillSelectionContext) -> str:
         return " ".join(
             [
-                context.intent,
                 context.original_query,
                 context.rewritten_query,
                 context.short_summary or "",
@@ -107,7 +118,6 @@ class SkillRuleScorer:
                 " ".join(str(value) for value in context.entities.values()),
                 context.extracted_error_code or "",
                 context.extracted_interface_name or "",
-                context.sub_intent or "",
             ]
         ).lower()
 

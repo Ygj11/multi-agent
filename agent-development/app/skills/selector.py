@@ -61,7 +61,23 @@ class SkillSelector:
             data={"agent_name": agent_name, "candidate_count": len(candidates)},
         )
         if not candidates:
-            raise ValueError(f"no enabled skills for agent: {agent_name}")
+            log_event(
+                "skill_not_selected",
+                request_id=context.request_id,
+                trace_id=context.trace_id,
+                session_key=context.session_key,
+                node="skill_selector",
+                message="No enabled skill candidates",
+                data={"agent_name": agent_name},
+            )
+            return SkillSelectionResult(
+                selected_skill_id=None,
+                selected_skill_metadata=None,
+                score=0.0,
+                reason=f"no enabled skills for agent: {agent_name}",
+                fallback=True,
+                selection_source="none",
+            )
 
         scored = [self.scorer.score(context, candidate) for candidate in candidates]
         scored.sort(key=lambda item: item.score, reverse=True)
@@ -84,15 +100,15 @@ class SkillSelector:
 
         if decision.fallback:
             log_event(
-                "skill_selection_fallback",
+                "skill_not_selected",
                 request_id=context.request_id,
                 trace_id=context.trace_id,
                 session_key=context.session_key,
                 node="skill_selector",
-                message="Skill selection fallback",
+                message="No confident skill match",
                 data={
                     "agent_name": agent_name,
-                    "selected_skill_id": decision.selected.skill_id,
+                    "selected_skill_id": decision.selected.skill_id if decision.selected else None,
                     "score": decision.score,
                     "reason": decision.reason,
                 },
@@ -107,7 +123,7 @@ class SkillSelector:
             message="Skill selected",
             data={
                 "agent_name": agent_name,
-                "selected_skill_id": decision.selected.skill_id,
+                "selected_skill_id": decision.selected.skill_id if decision.selected else None,
                 "score": decision.score,
                 "reason": decision.reason,
                 "selection_source": decision.selection_source,
@@ -117,7 +133,7 @@ class SkillSelector:
             },
         )
         return SkillSelectionResult(
-            selected_skill_id=decision.selected.skill_id,
+            selected_skill_id=decision.selected.skill_id if decision.selected else None,
             selected_skill_metadata=decision.selected,
             score=decision.score,
             reason=decision.reason,

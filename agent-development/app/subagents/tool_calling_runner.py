@@ -57,6 +57,15 @@ class ToolCallingRunner:
         self.max_same_tool_failures = max_same_tool_failures
         self.max_duplicate_tool_calls = max_duplicate_tool_calls
 
+    """
+        1. 调 LLM
+        2. 如果 LLM 返回 tool_calls
+        3. normalize tool call
+        4. 调 ToolExecutor.execute(...)
+        5. 把工具结果作为 tool message 塞回 messages
+        6. 再调 LLM
+        7. 直到 LLM 给 final answer，或触发审批/失败/循环保护
+    """
     async def run(
         self,
         *,

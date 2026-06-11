@@ -31,21 +31,10 @@ session_key=state["session_key"],
 recent_messages=state.get("recent_messages", []),
 short_summary=state.get("short_summary"),
 available_subagents=self.subagent_manager.list_agents(),
-available_tools=self.tool_registry.list_tools(),
 auth_context=state.get("auth_context"),
 ```
 
 - 在 main.py 中，初始化了subagent_manager = build_subagent_manager(*) ，所以可以使用 self.subagent_manager.list_agents()
-
-- 在 main.py 中，初始化了：
-```python
-tool_registry = ToolRegistry()
-
-register_public_tools(tool_registry, knowledge_service)
-register_agent_private_tools(tool_registry)
-register_admin_restricted_tools(tool_registry, settings)
-```
-所以可以使用 self.tool_registry.list_tools()
 
 ## 使用知识服务
 - hints = await self.knowledge_hint_builder.build_lightweight_hints(*)

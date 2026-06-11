@@ -20,7 +20,8 @@ def test_intent_taxonomy_loader_candidate_sub_intents_are_grouped():
 
     candidates = loader.list_candidate_sub_intents()
 
-    assert "signature_error" in candidates["troubleshooting"]
+    assert "refund_failure" in candidates["troubleshooting"]
+    assert "endo_completion_aftercare" in candidates["troubleshooting"]
     assert "pos_available_items" in candidates["pos_query"]
     assert "internal_log_analysis" not in candidates["troubleshooting"]
 

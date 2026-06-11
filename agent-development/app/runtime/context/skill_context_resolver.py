@@ -53,6 +53,7 @@ class SkillContextResolver:
         parent_context: OrchestratorContext,
     ) -> SkillResolution:
         selection_context = self.build_selection_context(task=task, parent_context=parent_context)
+        """获得候选的 skills"""
         candidates = self.build_candidates(task=task)
 
         """Select the best skill from candidates using metadata only, without loading skill bodies."""
@@ -65,8 +66,8 @@ class SkillContextResolver:
         self.write_selection_metadata(task, selection)
 
 
-        """not select skills, use generic_skill_content"""
-        if selection.fallback:
+        """When no skill matches, continue with generic sub-agent context."""
+        if selection.selected_skill_id is None or selection.selected_skill_metadata is None:
             task.metadata["selected_skill_id"] = None
             task.metadata["selected_skill_metadata"] = None
             task.metadata["missing_required_entities"] = []
@@ -79,7 +80,7 @@ class SkillContextResolver:
                 session_key=task.session_key,
                 node="context_builder",
                 message="No confident skill match; continue with generic subagent execution",
-                data={"agent_name": task.name, "fallback_skill_id": selection.selected_skill_id, "reason": selection.reason},
+                data={"agent_name": task.name, "reason": selection.reason},
             )
             return SkillResolution(selection=selection, skill_content=self.generic_skill_content, entity_check=None)
 
@@ -136,8 +137,6 @@ class SkillContextResolver:
                 "skill_ids": [item.skill_id for item in candidates],
             },
         )
-        if not candidates:
-            raise ValueError(f"no enabled skills configured for agent: {task.name}")
         return candidates
 
     def build_selection_context(

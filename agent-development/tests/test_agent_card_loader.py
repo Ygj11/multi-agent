@@ -37,7 +37,7 @@ def _write_minimal_card(
     *,
     filename: str = "agent.yaml",
     agent_name: str = "test_agent",
-    supported_routes: str = "troubleshooting:\n    - signature_error",
+    supported_routes: str = "troubleshooting:\n    - refund_failure",
     enabled: bool = True,
 ) -> None:
     cards_root.mkdir(exist_ok=True)
@@ -78,13 +78,10 @@ def test_agent_card_yaml_loads_required_fields():
     assert card.supported_intents == ["troubleshooting"]
     assert "endo_completion_aftercare" in card.supported_sub_intents
     assert card.normalized_supported_routes()["troubleshooting"] == [
-        "callback_failure",
         "endo_completion_aftercare",
-        "missing_field",
         "refund_failure",
-        "signature_error",
     ]
-    assert "troubleshooting_agent.signature_error" in card.skills
+    assert "troubleshooting_agent.refund_failure" in card.skills
     assert "troubleshooting" in card.rag_namespaces
 
 
@@ -159,7 +156,7 @@ version: "1.0.0"
 @pytest.mark.parametrize(
     ("intent", "entities", "query", "expected"),
     [
-        ("troubleshooting", {"request_id": "REQ_001"}, "REQ_001 E102 refund failed", "troubleshooting_agent"),
+        ("troubleshooting", {"policy_no": "9200100000458846"}, "退保失败", "troubleshooting_agent"),
         ("pos_query", {"policy_no": "9201344266"}, "保全实时查询", "pos_query_agent"),
     ],
 )
@@ -187,7 +184,7 @@ def test_strict_intent_taxonomy_coverage_rejects_uncovered_intent(tmp_path):
     loader = AgentCardLoader(cards_root)
     taxonomy = _taxonomy_with_routes(
         {
-            "troubleshooting": ["signature_error"],
+            "troubleshooting": ["refund_failure"],
             "future_intent": ["future_sub_intent"],
         }
     )
@@ -200,11 +197,11 @@ def test_strict_intent_taxonomy_coverage_rejects_uncovered_sub_intent(tmp_path):
     cards_root = tmp_path / "cards"
     _write_minimal_card(cards_root)
     loader = AgentCardLoader(cards_root)
-    taxonomy = _taxonomy_with_routes({"troubleshooting": ["signature_error", "refund_failure"]})
+    taxonomy = _taxonomy_with_routes({"troubleshooting": ["refund_failure", "endo_completion_aftercare"]})
 
     with pytest.raises(
         ValueError,
-        match="taxonomy sub_intent has no enabled AgentCard coverage: troubleshooting.refund_failure",
+        match="taxonomy sub_intent has no enabled AgentCard coverage: troubleshooting.endo_completion_aftercare",
     ):
         loader.validate_with_intent_taxonomy(taxonomy, require_full_coverage=True)
 
@@ -215,7 +212,7 @@ def test_non_strict_intent_taxonomy_coverage_allows_uncovered_routes(tmp_path):
     loader = AgentCardLoader(cards_root)
     taxonomy = _taxonomy_with_routes(
         {
-            "troubleshooting": ["signature_error", "refund_failure"],
+            "troubleshooting": ["refund_failure", "endo_completion_aftercare"],
             "future_intent": ["future_sub_intent"],
         }
     )
@@ -236,7 +233,7 @@ def test_disabled_agent_card_does_not_count_as_taxonomy_coverage(tmp_path):
     loader = AgentCardLoader(cards_root)
     taxonomy = _taxonomy_with_routes(
         {
-            "troubleshooting": ["signature_error"],
+            "troubleshooting": ["refund_failure"],
             "future_intent": ["future_sub_intent"],
         }
     )

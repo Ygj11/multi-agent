@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-"""Private tools bound to specific sub agents.
+"""Private tool registration bound to specific sub agents."""
 
-The functions in this module are MVP local handlers. They are registered into
-ToolRegistry to exercise the enterprise harness path locally; external
-production integrations should replace these handlers behind the same
-ToolDefinition contract instead of changing AgentGraph or LLMProvider.
-"""
-
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.integrations.pos_api_client import PosAPIClient
+from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.tools.handlers.mvp_agent_tool_handlers import (
-    MVP_LOCAL_TOOL_HANDLERS,
     notice_customer_update,
     notice_finance,
     notice_period_update,
@@ -21,12 +16,24 @@ from app.tools.handlers.mvp_agent_tool_handlers import (
     query_node_status,
     query_task_status,
 )
+from app.tools.handlers.pos_query_mock_client import MockPosAPIClient
 from app.tools.handlers.pos_query_tool_handlers import (
     build_pos_calc_surrender_premium_tool,
     build_pos_query_approval_text_tool,
     build_pos_query_available_items_tool,
     build_pos_query_policy_standard_tool,
     build_pos_submit_verify_tool,
+)
+from app.tools.handlers.troubleshooting_real_tool_handlers import (
+    build_notice_customer_update_tool,
+    build_notice_finance_tool,
+    build_notice_period_update_tool,
+    build_notice_policy_update_tool,
+    build_policy_suspend_or_recovery_tool,
+    build_query_endo_task_record_tool,
+    build_query_internal_log_tool,
+    build_query_node_status_tool,
+    build_query_task_status_tool,
 )
 
 
@@ -203,81 +210,93 @@ POS_SUBMIT_VERIFY_PARAMETERS = {
     "required": ["policyNo", "acceptDate"],
 }
 
-def register_agent_private_tools(registry, pos_api_client: PosAPIClient | None = None) -> None:
-    """Register MVP private tools."""
-    pos_api_client = pos_api_client or PosAPIClient(base_url=None, enabled=False)
+def register_agent_private_tools(
+    registry,
+    pos_api_client: PosAPIClient | None = None,
+    *,
+    pos_tool_mode: str = "mock",
+    troubleshooting_tool_mode: str = "mock",
+    troubleshooting_api_client: TroubleshootingAPIClient | None = None,
+) -> None:
+    """Register private tools while keeping tool names stable across mock/real modes."""
+    pos_tool_mode = _normalize_tool_mode("POS_TOOL_MODE", pos_tool_mode)
+    troubleshooting_tool_mode = _normalize_tool_mode("TROUBLESHOOTING_TOOL_MODE", troubleshooting_tool_mode)
+    pos_client = _pos_client_for_mode(pos_tool_mode, pos_api_client)
+    troubleshooting_tools = _troubleshooting_tools_for_mode(troubleshooting_tool_mode, troubleshooting_api_client)
+    troubleshooting_write_is_write = troubleshooting_tool_mode == "real"
+
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="query_task_status",
-        tool=query_task_status,
+        tool=troubleshooting_tools["query_task_status"],
         description="根据 request_id 查询任务当前状态和当前节点，用于排查接口、保全、退保、回调等流程失败。",
         parameters=REQUEST_ID_PARAMETERS,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="query_node_status",
-        tool=query_node_status,
+        tool=troubleshooting_tools["query_node_status"],
         description="根据 request_id 和 node_name 查询指定流程节点状态。",
         parameters=QUERY_NODE_STATUS_PARAMETERS,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="query_internal_log",
-        tool=query_internal_log,
+        tool=troubleshooting_tools["query_internal_log"],
         description="根据 request_id 或关键词查询内部日志，用于排查错误码、签名失败、回调失败、字段缺失等问题。",
         parameters=QUERY_INTERNAL_LOG_PARAMETERS,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="query_endo_task_record",
-        tool=query_endo_task_record,
+        tool=troubleshooting_tools["query_endo_task_record"],
         description="查询保全任务记录表，获取任务详情和 9/10/11 节点状态。",
         parameters=APPLY_SEQ_PARAMETERS,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_policy_update",
-        tool=notice_policy_update,
+        tool=troubleshooting_tools["notice_policy_update"],
         description="通知保全任务完成，保单更新失败，需要触发保单更新数据。",
         parameters=ENDO_NOTICE_PARAMETERS,
-        is_write=True,
+        is_write=troubleshooting_write_is_write,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_customer_update",
-        tool=notice_customer_update,
+        tool=troubleshooting_tools["notice_customer_update"],
         description="通知保全任务完成，客户更新失败，需要触发客户更新数据。",
         parameters=ENDO_NOTICE_PARAMETERS,
-        is_write=True,
+        is_write=troubleshooting_write_is_write,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_period_update",
-        tool=notice_period_update,
+        tool=troubleshooting_tools["notice_period_update"],
         description="通知保全任务完成，账单/账期更新失败，需要触发账单更新数据。",
         parameters=ENDO_NOTICE_PARAMETERS,
-        is_write=True,
+        is_write=troubleshooting_write_is_write,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="policy_suspendOrRecovery",
-        tool=policy_suspendOrRecovery,
+        tool=troubleshooting_tools["policy_suspendOrRecovery"],
         description="保单恢复 / 保单解锁。用于 11 节点失败或未发短信场景，触发保单恢复和 E08 相关处理。",
         parameters=POLICY_RECOVERY_PARAMETERS,
-        is_write=True,
+        is_write=troubleshooting_write_is_write,
     )
     registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_finance",
-        tool=notice_finance,
+        tool=troubleshooting_tools["notice_finance"],
         description="通知保全任务完成，财务创单失败，需要触发财务创单并进行收退费。",
         parameters=ENDO_NOTICE_PARAMETERS,
-        is_write=True,
+        is_write=troubleshooting_write_is_write,
     )
     registry.register_private(
         agent_name="pos_query_agent",
         name="pos_query_available_items",
-        tool=build_pos_query_available_items_tool(pos_api_client),
+        tool=build_pos_query_available_items_tool(pos_client),
         description="查询保单线上可做保全项。",
         parameters=POS_QUERY_AVAILABLE_ITEMS_PARAMETERS,
         operation="read",
@@ -285,7 +304,7 @@ def register_agent_private_tools(registry, pos_api_client: PosAPIClient | None =
     registry.register_private(
         agent_name="pos_query_agent",
         name="pos_calc_surrender_premium",
-        tool=build_pos_calc_surrender_premium_tool(pos_api_client),
+        tool=build_pos_calc_surrender_premium_tool(pos_client),
         description="查询退保试算详情，包括退保金额和试算相关结果。",
         parameters=POS_CALC_SURRENDER_PREMIUM_PARAMETERS,
         operation="read",
@@ -293,7 +312,7 @@ def register_agent_private_tools(registry, pos_api_client: PosAPIClient | None =
     registry.register_private(
         agent_name="pos_query_agent",
         name="pos_query_policy_standard",
-        tool=build_pos_query_policy_standard_tool(pos_api_client),
+        tool=build_pos_query_policy_standard_tool(pos_client),
         description="查询保全保单标准信息，包含保单、被保人和锁定扩展信息。",
         parameters=POS_QUERY_POLICY_STANDARD_PARAMETERS,
         operation="read",
@@ -301,7 +320,7 @@ def register_agent_private_tools(registry, pos_api_client: PosAPIClient | None =
     registry.register_private(
         agent_name="pos_query_agent",
         name="pos_query_approval_text",
-        tool=build_pos_query_approval_text_tool(pos_api_client),
+        tool=build_pos_query_approval_text_tool(pos_client),
         description="通过受理号查询保全批文和变更详情。",
         parameters=POS_QUERY_APPROVAL_TEXT_PARAMETERS,
         operation="read",
@@ -309,8 +328,52 @@ def register_agent_private_tools(registry, pos_api_client: PosAPIClient | None =
     registry.register_private(
         agent_name="pos_query_agent",
         name="pos_submit_verify",
-        tool=build_pos_submit_verify_tool(pos_api_client),
+        tool=build_pos_submit_verify_tool(pos_client),
         description="执行保全任务提交前校验，例如退保提交校验和支付方式校验。",
         parameters=POS_SUBMIT_VERIFY_PARAMETERS,
         operation="read",
     )
+
+
+def _normalize_tool_mode(name: str, value: str) -> str:
+    mode = (value or "").strip().lower()
+    if mode not in {"mock", "real"}:
+        raise ValueError(f"{name} must be one of: mock, real")
+    return mode
+
+
+def _pos_client_for_mode(pos_tool_mode: str, pos_api_client):
+    if pos_tool_mode == "mock":
+        return MockPosAPIClient()
+    return pos_api_client or PosAPIClient(base_url=None, enabled=True)
+
+
+def _troubleshooting_tools_for_mode(
+    troubleshooting_tool_mode: str,
+    troubleshooting_api_client: TroubleshootingAPIClient | None,
+):
+    if troubleshooting_tool_mode == "mock":
+        return {
+            "query_task_status": query_task_status,
+            "query_node_status": query_node_status,
+            "query_internal_log": query_internal_log,
+            "query_endo_task_record": query_endo_task_record,
+            "notice_policy_update": notice_policy_update,
+            "notice_customer_update": notice_customer_update,
+            "notice_period_update": notice_period_update,
+            "policy_suspendOrRecovery": policy_suspendOrRecovery,
+            "notice_finance": notice_finance,
+        }
+
+    client = troubleshooting_api_client or TroubleshootingAPIClient(BaseIntegrationHTTPClient(base_url=None))
+    return {
+        "query_task_status": build_query_task_status_tool(client),
+        "query_node_status": build_query_node_status_tool(client),
+        "query_internal_log": build_query_internal_log_tool(client),
+        "query_endo_task_record": build_query_endo_task_record_tool(client),
+        "notice_policy_update": build_notice_policy_update_tool(client),
+        "notice_customer_update": build_notice_customer_update_tool(client),
+        "notice_period_update": build_notice_period_update_tool(client),
+        "policy_suspendOrRecovery": build_policy_suspend_or_recovery_tool(client),
+        "notice_finance": build_notice_finance_tool(client),
+    }

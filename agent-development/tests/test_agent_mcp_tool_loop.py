@@ -96,7 +96,6 @@ async def test_subagent_loop_can_call_authorized_mcp_tool():
         recent_messages=[],
         short_summary=None,
         available_subagents=["troubleshooting_agent"],
-        available_tools=[],
         lightweight_knowledge_hints=[],
     )
 

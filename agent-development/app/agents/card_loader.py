@@ -157,10 +157,6 @@ class AgentCardLoader:
         errors: list[str] = []
 
         for card in cards.values():
-            enabled_agent_skills = skill_catalog.list_skills(card.agent_name)
-            if not any(skill.is_default for skill in enabled_agent_skills):
-                errors.append(f"{card.agent_name} must have at least one enabled default skill")
-
             for skill_id in card.skills:
                 skill = skills_by_id.get(skill_id)
                 if skill is None:

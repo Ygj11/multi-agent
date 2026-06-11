@@ -102,6 +102,20 @@ def test_private_tool_schemas_include_descriptions_and_required_parameters():
         _assert_openai_schema(schema, tool_name)
         assert schema["function"]["parameters"]["required"] == required
 
+    for mock_tool in (
+        "notice_policy_update",
+        "notice_customer_update",
+        "notice_period_update",
+        "policy_suspendOrRecovery",
+        "notice_finance",
+    ):
+        assert registry.get_definition(mock_tool).is_write is False
+
+
+def test_troubleshooting_real_mode_registers_write_tools_as_write():
+    registry = ToolRegistry()
+    register_agent_private_tools(registry, troubleshooting_tool_mode="real")
+
     for write_tool in (
         "notice_policy_update",
         "notice_customer_update",
@@ -163,7 +177,7 @@ def test_agent_visible_tool_schemas_are_standard_and_authorized_only():
         output_schema="SubAgentResult",
         private_tools=["query_internal_log"],
         public_tools_allowed=True,
-        skills=["troubleshooting_agent.signature_error"],
+        skills=["troubleshooting_agent.refund_failure"],
         rag_namespaces=[],
         enabled=True,
         version="1",

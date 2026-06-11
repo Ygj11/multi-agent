@@ -43,7 +43,7 @@ private_tools:
   - pos_query_approval_text
   - pos_submit_verify
 enabled: true
-is_default: true
+is_default: false
 business_domain:
   - health_insurance_pos
 required_context: []

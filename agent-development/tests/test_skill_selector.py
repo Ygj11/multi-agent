@@ -25,30 +25,16 @@ async def _select_for_troubleshooting(query: str, error_code: str | None = None)
     )
 
 
-async def test_skill_selector_selects_signature_error_for_e102():
-    """E102 请求应选择签名失败 skill。"""
+async def test_skill_selector_does_not_select_removed_signature_skill():
+    """已删除签名失败 skill 后，E102 请求不应选择 skill。"""
     result = await _select_for_troubleshooting("REQ_001 为什么返回 E102？", error_code="E102")
 
-    assert result.selected_skill_id == "troubleshooting_agent.signature_error"
-    assert result.score > 0
+    assert result.selected_skill_id is None
+    assert result.fallback is True
 
 
-async def test_skill_selector_selects_missing_field():
-    """字段缺失问题应选择 missing_field skill。"""
-    result = await _select_for_troubleshooting("submitProposal 报文字段缺失，提示 appId 不能为空")
-
-    assert result.selected_skill_id == "troubleshooting_agent.missing_field"
-
-
-async def test_skill_selector_selects_callback_failure():
-    """回调失败问题应选择 callback_failure skill。"""
-    result = await _select_for_troubleshooting("REQ_001 回调失败，渠道未收到回调，帮我排查")
-
-    assert result.selected_skill_id == "troubleshooting_agent.callback_failure"
-
-
-async def test_skill_selector_falls_back_to_default_for_unclear_query():
-    """无明显匹配时回退到 default skill。"""
+async def test_skill_selector_returns_no_skill_for_unclear_query():
+    """无明显匹配时不选择 skill。"""
     catalog = SkillCatalog(Path("app/skills"))
     selector = SkillSelector()
     context = SkillSelectionContext(
@@ -65,5 +51,6 @@ async def test_skill_selector_falls_back_to_default_for_unclear_query():
         candidates=catalog.list_skills("troubleshooting_agent"),
     )
 
-    assert result.selected_skill_id == "troubleshooting_agent.signature_error"
+    assert result.selected_skill_id is None
+    assert result.selected_skill_metadata is None
     assert result.fallback is True

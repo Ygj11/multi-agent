@@ -19,7 +19,6 @@ class EntityPattern:
     description: str
     regex: tuple[Pattern[str], ...]
     normalized_type: str = "string"
-    keyword_allowlist: tuple[str, ...] = ()
     sensitive: bool = False
     confidence: float = 1.0
 
@@ -61,7 +60,6 @@ class EntityPatternLoader:
                     description=str(item["description"]),
                     regex=regex,
                     normalized_type=str(item.get("normalized_type") or "string"),
-                    keyword_allowlist=tuple(str(value) for value in item.get("keyword_allowlist", [])),
                     sensitive=self._as_bool(item.get("sensitive", False)),
                     confidence=float(item.get("confidence", 1.0)),
                 )
@@ -132,7 +130,7 @@ class EntityExtractor:
             for regex in pattern.regex:
                 for match in regex.finditer(text):
                     value = self._match_value(match)
-                    if not value or not self._allow_value(pattern, value):
+                    if not value:
                         continue
                     normalized = self._normalize(pattern, value)
                     bag.add(
@@ -171,18 +169,10 @@ class EntityExtractor:
         return match.group(0).strip()
 
     @staticmethod
-    def _allow_value(pattern: EntityPattern, value: str) -> bool:
-        """Apply entity-specific allowlist rules, e.g. for policy_no we require a specific numeric format to reduce false positives."""
-        if pattern.entity_type == "policy_no":
-            if re.fullmatch(r"1[3-9]\d{9}", value) or re.fullmatch(r"\d{17}[0-9Xx]", value):
-                return False
-        if not pattern.keyword_allowlist:
-            return True
-        return value in pattern.keyword_allowlist
-
-    @staticmethod
     def _normalize(pattern: EntityPattern, value: str) -> str:
         """Apply entity-specific normalization rules, e.g. for error_code we convert to uppercase to unify different casings."""
+        if pattern.entity_type in {"request_id", "error_code", "product_code", "plan_code", "id_card"}:
+            return value.strip().upper()
         if pattern.normalized_type == "string":
             return value.strip()
         return value.strip()

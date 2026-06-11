@@ -79,8 +79,8 @@ class SkillSelectionContext(BaseModel):
 class SkillSelectionResult(BaseModel):
     """SkillSelector 的选择结果。"""
 
-    selected_skill_id: str
-    selected_skill_metadata: SkillMetadata
+    selected_skill_id: str | None = None
+    selected_skill_metadata: SkillMetadata | None = None
     score: float
     reason: str
     fallback: bool = False

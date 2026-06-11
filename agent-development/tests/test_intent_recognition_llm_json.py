@@ -26,18 +26,18 @@ async def test_intent_llm_json_primary_path():
                 "intent": "troubleshooting",
                 "sub_intent": "refund_failure",
                 "confidence": 0.91,
-                "entities": {"policy_no": "9201344266"},
+                "entities": {"policy_no": "9200100000458846"},
                 "need_clarification": False,
                 "reason": "json",
             }
         )
     )
 
-    result = await node.recognize("退保失败，保单号9201344266", "退保失败，保单号9201344266")
+    result = await node.recognize("退保失败，保单号9200100000458846", "退保失败，保单号9200100000458846")
 
     assert result.intent == "troubleshooting"
     assert result.sub_intent == "refund_failure"
-    assert result.entities["policy_no"] == "9201344266"
+    assert result.entities["policy_no"] == "9200100000458846"
     assert "required_tools" not in result.model_dump()
 
 
@@ -45,9 +45,9 @@ async def test_intent_invalid_json_fallback_business_cases():
     node = IntentRecognitionNode(llm_provider=InvalidJsonLLM())
 
     cases = [
-        ("REQ_001 为什么返回 E102？", "troubleshooting", "signature_error"),
-        ("退保失败，保单 P2021344266", "troubleshooting", "refund_failure"),
-        ("查询保单 P2021344266 可做保全项", "pos_query", "pos_available_items"),
+        ("REQ_001 为什么返回 E102？", "troubleshooting", None),
+        ("退保失败，保单 9200100000458846", "troubleshooting", "refund_failure"),
+        ("查询保单 9200100000458846 可做保全项", "pos_query", "pos_available_items"),
     ]
     for query, intent, sub_intent in cases:
         result = await node.recognize(query, query)
@@ -62,7 +62,7 @@ async def test_intent_llm_prompt_contains_dynamic_candidate_space():
             "intent": "troubleshooting",
             "sub_intent": "refund_failure",
             "confidence": 0.91,
-            "entities": {"policy_no": "9201344266"},
+            "entities": {"policy_no": "9200100000458846"},
             "need_clarification": False,
             "reason": "json",
         }
@@ -70,8 +70,8 @@ async def test_intent_llm_prompt_contains_dynamic_candidate_space():
     node = IntentRecognitionNode(llm_provider=llm)
 
     result = await node.recognize(
-        "refund failed for policy 9201344266",
-        "refund failed for policy 9201344266",
+        "refund failed for policy 9200100000458846",
+        "refund failed for policy 9200100000458846",
         agent_card_summaries=[
                 {
                     "agent_name": "troubleshooting_agent",
@@ -108,23 +108,23 @@ async def test_intent_llm_invalid_intent_falls_back_to_rules():
     )
 
     result = await node.recognize(
-        "REQ_001 returned E102",
-        "REQ_001 returned E102",
+        "退保失败，保单 9200100000458846",
+        "退保失败，保单 9200100000458846",
         agent_card_summaries=[
                 {
                     "agent_name": "troubleshooting_agent",
                     "description": "Troubleshooting.",
-                    "supported_routes": {"troubleshooting": ["signature_error"]},
-                    "capabilities": ["signature_error"],
+                    "supported_routes": {"troubleshooting": ["refund_failure"]},
+                    "capabilities": ["refund_failure"],
                     "required_entities": [],
-                    "optional_entities": ["request_id", "error_code"],
-                    "examples": [{"query": "E102", "intent": "troubleshooting", "sub_intent": "signature_error"}],
+                    "optional_entities": ["policy_no"],
+                    "examples": [{"query": "退保失败", "intent": "troubleshooting", "sub_intent": "refund_failure"}],
                 }
             ],
         )
 
     assert result.intent == "troubleshooting"
-    assert result.sub_intent == "signature_error"
+    assert result.sub_intent == "refund_failure"
     assert result.reason == "entity_aware_rule_fallback"
 
 
@@ -148,8 +148,8 @@ async def test_intent_llm_invalid_sub_intent_is_not_accepted():
                 {
                     "agent_name": "troubleshooting_agent",
                     "description": "Troubleshooting.",
-                    "supported_routes": {"troubleshooting": ["signature_error"]},
-                    "capabilities": ["signature_error"],
+                    "supported_routes": {"troubleshooting": ["refund_failure"]},
+                    "capabilities": ["refund_failure"],
                     "required_entities": [],
                     "optional_entities": [],
                 "examples": [],
@@ -181,7 +181,7 @@ async def test_intent_llm_capability_is_not_accepted_as_sub_intent():
             {
                 "agent_name": "troubleshooting_agent",
                 "description": "Troubleshooting.",
-                "supported_routes": {"troubleshooting": ["signature_error"]},
+                "supported_routes": {"troubleshooting": ["refund_failure"]},
                 "capabilities": ["internal_log_analysis"],
                 "required_entities": [],
                 "optional_entities": [],

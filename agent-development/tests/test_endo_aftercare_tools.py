@@ -21,6 +21,17 @@ async def test_query_endo_task_record_policy_update_fail():
 
 
 @pytest.mark.asyncio
+async def test_query_endo_task_record_realistic_apply_seq_defaults_to_policy_update_fail():
+    result = await query_endo_task_record(apply_seq="930123456789012")
+
+    assert result["mock"] is True
+    assert result["mock_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
+    assert result["mock_case"] == "policy_update_fail"
+    assert _record(result, "9")["task_status"] == "E"
+    assert "保单更新错误" in _record(result, "9")["response_body"]
+
+
+@pytest.mark.asyncio
 async def test_query_endo_task_record_customer_update_fail():
     result = await query_endo_task_record(apply_seq="APPLY_CUSTOMER_UPDATE_FAIL")
 

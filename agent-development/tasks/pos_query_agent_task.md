@@ -639,7 +639,7 @@ private_tools:
   - pos_query_approval_text
   - pos_submit_verify
 enabled: true
-is_default: true
+is_default: false
 business_domain:
   - health_insurance_pos
 required_context: []
@@ -899,4 +899,3 @@ tests/test_pos_query_agent_routing.py
 7. 单元测试
 8. 主流程集成测试
 9. 全量 compileall / pytest
-

@@ -27,7 +27,7 @@ class ChainedWriteLLM:
                         "function": {
                             "name": "notice_policy_update",
                             "arguments": json.dumps(
-                                {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                                {"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}
                             ),
                         },
                     }
@@ -46,7 +46,7 @@ class ChainedWriteLLM:
                         "function": {
                             "name": "notice_policy_update",
                             "arguments": json.dumps(
-                                {"apply_seq": "APPLY124", "policyNo": "P123456", "endorseType": "001028"}
+                                {"apply_seq": "930010412672223", "policyNo": "9200100000458846", "endorseType": "001028"}
                             ),
                         },
                     }
@@ -54,7 +54,7 @@ class ChainedWriteLLM:
                 has_tool_calls=True,
                 finish_reason="tool_calls",
             )
-        assert any("APPLY124" in str(message.get("content")) for message in messages if message.get("role") == "tool")
+        assert any("930010412672223" in str(message.get("content")) for message in messages if message.get("role") == "tool")
         return LLMResponse(content="Both approved writes completed.", has_tool_calls=False)
 
 
@@ -79,7 +79,7 @@ class ManyWritesLLM:
                     "function": {
                         "name": "notice_policy_update",
                         "arguments": json.dumps(
-                            {"apply_seq": f"APPLY{self.subagent_calls}", "policyNo": "P123456", "endorseType": status}
+                            {"apply_seq": f"APPLY{self.subagent_calls}", "policyNo": "9200100000458846", "endorseType": status}
                         ),
                     },
                 }
@@ -94,7 +94,7 @@ class AcceptingApprovalClient:
         return ApprovalSubmitResult(accepted=True, external_approval_id=f"ext_{request.approval_id}", status="pending")
 
 
-def test_approval_resume_creates_second_approval_in_graph(app_factory):
+def test_approval_resume_creates_second_approval_in_graph(app_factory, real_troubleshooting_env):
     calls = []
 
     async def counted_notice_policy_update(apply_seq=None, policyNo=None, endorseType=None, **kwargs):
@@ -119,7 +119,7 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请连续通知保单更新"}],
+            "messages": [{"role": "user", "content": "930010412672222 保单号 9200100000458846 endorseType 001028 保单更新失败，请连续通知保单更新"}],
         },
     ).json()
     approval_1_id = pending_1["approval_id"]
@@ -137,7 +137,7 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
     assert callback_1.status_code == 200
     data_1 = callback_1.json()
     assert data_1["status"] == "completed"
-    assert calls == [{"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}]
+    assert calls == [{"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}]
 
     async def _get(approval_id):
         return await app.state.approval_store.get(approval_id)
@@ -153,7 +153,7 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
     assert approval_2.root_approval_id == approval_1.root_approval_id
     assert approval_2.approval_depth == approval_1.approval_depth + 1
     assert approval_2.pending_tool_call["name"] == "notice_policy_update"
-    assert approval_2.arguments == {"apply_seq": "APPLY124", "policyNo": "P123456", "endorseType": "001028"}
+    assert approval_2.arguments == {"apply_seq": "930010412672223", "policyNo": "9200100000458846", "endorseType": "001028"}
     assert "resume_approved_tool" in (approval_1.result or {}).get("graph_path", [])
 
     callback_2 = client.post(
@@ -170,12 +170,12 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory):
     assert data_2["status"] == "completed"
     assert data_2["final_answer"] == "Both approved writes completed."
     assert calls == [
-        {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"},
-        {"apply_seq": "APPLY124", "policyNo": "P123456", "endorseType": "001028"},
+        {"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"},
+        {"apply_seq": "930010412672223", "policyNo": "9200100000458846", "endorseType": "001028"},
     ]
 
 
-def test_approval_chain_depth_limit_requires_manual_intervention(app_factory):
+def test_approval_chain_depth_limit_requires_manual_intervention(app_factory, real_troubleshooting_env):
     calls = []
 
     async def counted_notice_policy_update(apply_seq=None, policyNo=None, endorseType=None, **kwargs):
@@ -200,7 +200,7 @@ def test_approval_chain_depth_limit_requires_manual_intervention(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s2",
-            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请多次通知保单更新"}],
+            "messages": [{"role": "user", "content": "930010412672222 保单号 9200100000458846 endorseType 001028 保单更新失败，请多次通知保单更新"}],
         },
     ).json()
 

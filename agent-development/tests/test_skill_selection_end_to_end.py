@@ -2,8 +2,8 @@ from app.adapters.request_adapter import RequestAdapter
 from app.schemas.message import ChatMessage, ChatRequest
 
 
-async def test_troubleshooting_req_001_selects_signature_error_skill(app_factory):
-    """REQ_001 端到端应选择 troubleshooting_agent.signature_error。"""
+async def test_troubleshooting_req_001_runs_without_selected_skill(app_factory):
+    """删除专用排查 skill 后，REQ_001 端到端不应选择 skill。"""
     app = app_factory("skill-e2e.sqlite3")
     inbound = RequestAdapter().adapt(
         ChatRequest(
@@ -18,7 +18,7 @@ async def test_troubleshooting_req_001_selects_signature_error_skill(app_factory
     state = await app.state.orchestrator.run(inbound)
 
     assert state["intent"] == "troubleshooting"
-    assert state["subagent_result"]["selected_skill_id"] == "troubleshooting_agent.signature_error"
+    assert state["subagent_result"]["selected_skill_id"] is None
     assert "E102" in state["answer"]
 
 

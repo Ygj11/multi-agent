@@ -28,24 +28,24 @@ def test_skill_catalog_scans_metadata_without_body():
     catalog = SkillCatalog(SKILLS_ROOT)
 
     skills = catalog.scan()
-    signature = catalog.get_skill_metadata("troubleshooting_agent.signature_error")
+    refund = catalog.get_skill_metadata("troubleshooting_agent.refund_failure")
 
-    assert len(skills) >= 6
-    assert signature is not None
-    assert signature.agent == "troubleshooting_agent"
-    assert signature.intent == "troubleshooting"
-    assert signature.sub_intents == ["signature_error"]
-    assert "执行步骤" not in signature.model_dump_json()
+    assert len(skills) >= 3
+    assert refund is not None
+    assert refund.agent == "troubleshooting_agent"
+    assert refund.intent == "troubleshooting"
+    assert refund.sub_intents == ["refund_failure"]
+    assert "执行步骤" not in refund.model_dump_json()
 
 
 def test_skill_catalog_loads_full_skill_content_by_id():
     """Selected skills can be loaded by skill_id."""
     catalog = SkillCatalog(SKILLS_ROOT)
 
-    content = catalog.load_skill_content("troubleshooting_agent.signature_error")
+    content = catalog.load_skill_content("troubleshooting_agent.refund_failure")
 
-    assert content.metadata.skill_id == "troubleshooting_agent.signature_error"
-    assert "签名失败排查 Skill" in content.content
+    assert content.metadata.skill_id == "troubleshooting_agent.refund_failure"
+    assert "退保失败排查 Skill" in content.content
     assert "query_internal_log" in content.content
 
 
@@ -80,7 +80,6 @@ def test_agent_cards_and_skill_metadata_match():
 
     for card in cards.values():
         card_skills = [skills[skill_id] for skill_id in card.skills]
-        assert any(skill.is_default for skill in card_skills)
         for skill_id in card.skills:
             assert skill_id in skills
             skill = skills[skill_id]

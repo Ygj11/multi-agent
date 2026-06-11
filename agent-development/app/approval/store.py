@@ -35,11 +35,11 @@ class SQLiteApprovalStore:
                     principal_snapshot_json, auth_context_snapshot_json,
                     resource_type, resource_id, tool_required_scopes_json,
                     agent_name, tool_name, operation_type, risk_level, arguments_json,
-                    reason, status, callback_url, pending_state_json, resume_state_json, pending_messages_json,
+                    reason, status, callback_url, resume_state_json, pending_messages_json,
                     pending_tools_json, pending_tool_call_json, result_json, final_answer,
                     error, approver, comment, created_at, updated_at, decided_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 self._request_values(request),
             )
@@ -73,7 +73,7 @@ class SQLiteApprovalStore:
                     resource_type = ?, resource_id = ?, tool_required_scopes_json = ?,
                     agent_name = ?, tool_name = ?, operation_type = ?, risk_level = ?,
                     arguments_json = ?, reason = ?, status = ?, callback_url = ?,
-                    pending_state_json = ?, resume_state_json = ?, pending_messages_json = ?, pending_tools_json = ?,
+                    resume_state_json = ?, pending_messages_json = ?, pending_tools_json = ?,
                     pending_tool_call_json = ?, result_json = ?, final_answer = ?, error = ?,
                     approver = ?, comment = ?, updated_at = ?, decided_at = ?
                 WHERE approval_id = ?
@@ -109,7 +109,6 @@ class SQLiteApprovalStore:
                     request.reason,
                     request.status,
                     request.callback_url,
-                    self._to_json(request.pending_state),
                     self._to_json(request.resume_state),
                     self._to_json(request.pending_messages),
                     self._to_json(request.pending_tools),
@@ -209,7 +208,6 @@ class SQLiteApprovalStore:
             request.reason,
             request.status,
             request.callback_url,
-            cls._to_json(request.pending_state),
             cls._to_json(request.resume_state),
             cls._to_json(request.pending_messages),
             cls._to_json(request.pending_tools),
@@ -258,7 +256,7 @@ class SQLiteApprovalStore:
             reason=row["reason"],
             status=row["status"],
             callback_url=row["callback_url"],
-            pending_state=json.loads(row["pending_state_json"]),
+            pending_state=json.loads(row["resume_state_json"]) if row["resume_state_json"] else {},
             resume_state=json.loads(row["resume_state_json"]) if row["resume_state_json"] else {},
             pending_messages=json.loads(row["pending_messages_json"]),
             pending_tools=json.loads(row["pending_tools_json"]),

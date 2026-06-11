@@ -1,5 +1,7 @@
 """SQLite 持久化验收测试。"""
 
+import json
+
 from fastapi.testclient import TestClient
 
 
@@ -59,10 +61,15 @@ async def test_checkpoint_store_persists_by_thread_id(app_factory):
     state = await app.state.checkpoint_store.load(thread_id)
 
     assert state is not None
+    assert state["schema_version"] == 1
     assert state["intent"] == "troubleshooting"
     assert state["session_key"] == "pingan_health:web:u001:s001"
     assert state["thread_id"] == thread_id
     assert "finalize_response" in state["graph_path"]
+    assert "conversation_window" not in state
+    assert "recent_messages" not in state
+    assert "entity_bag" not in state
+    assert "subagent_result" not in state
 
 
 def test_sqlite_persistence_keeps_users_isolated(app_factory):
@@ -97,3 +104,43 @@ def test_sqlite_persistence_keeps_users_isolated(app_factory):
     assert data["session_key"] == "pingan_health:web:u002:s001"
     assert data["intent"] == "unknown"
     assert "继续排查上一轮" not in data["rewritten_query"]
+
+
+def test_sqlite_checkpoint_schema_uses_snapshot_json(app_factory):
+    app = app_factory("checkpoint-schema.sqlite3")
+
+    with app.state.sqlite_db.connect() as conn:
+        checkpoint_columns = [row["name"] for row in conn.execute("PRAGMA table_info(graph_checkpoints)").fetchall()]
+        approval_columns = [row["name"] for row in conn.execute("PRAGMA table_info(approval_requests)").fetchall()]
+
+    assert checkpoint_columns == ["thread_id", "schema_version", "snapshot_json", "created_at", "updated_at"]
+    assert "state_json" not in checkpoint_columns
+    assert "pending_state_json" not in approval_columns
+    assert "resume_state_json" in approval_columns
+
+
+def test_checkpoint_table_persists_compact_snapshot_payload(app_factory):
+    app = app_factory("checkpoint-payload.sqlite3")
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "tenant_id": "pingan_health",
+            "channel": "web",
+            "user_id": "u001",
+            "session_id": "s001",
+            "messages": [{"role": "user", "content": "REQ_001 为什么返回 E102？"}],
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    thread_id = f"{data['session_key']}:{data['request_id']}"
+
+    with app.state.sqlite_db.connect() as conn:
+        row = conn.execute("SELECT schema_version, snapshot_json FROM graph_checkpoints WHERE thread_id = ?", (thread_id,)).fetchone()
+
+    assert row["schema_version"] == 1
+    snapshot = json.loads(row["snapshot_json"])
+    assert snapshot["request_id"] == data["request_id"]
+    for key in ("conversation_window", "recent_messages", "entity_bag", "subagent_result", "available_agents"):
+        assert key not in snapshot

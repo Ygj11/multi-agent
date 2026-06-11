@@ -7,7 +7,7 @@ from app.skills.catalog import SkillCatalog
 from app.skills.selector import SkillSelector
 
 
-async def test_context_builder_injects_only_selected_skill_content():
+async def test_context_builder_injects_only_selected_endo_skill_content():
     """SubAgentContext 只注入选中 skill 的完整正文，不注入其他 skill 正文。"""
     catalog = SkillCatalog(Path("app/skills"))
     builder = ContextBuilder(
@@ -16,17 +16,18 @@ async def test_context_builder_injects_only_selected_skill_content():
         skill_selector=SkillSelector(),
     )
     parent_context = OrchestratorContext(
-        original_query="REQ_001 为什么返回 E102？",
-        rewritten_query="REQ_001 为什么返回 E102？",
+        original_query="保全任务完成了，但是保单信息没有更新",
+        rewritten_query="保全任务完成了，但是保单信息没有更新",
         intent="troubleshooting",
+        sub_intent="endo_completion_aftercare",
         session_key="s",
     )
     task = SubAgentTask(
         name="troubleshooting_agent",
-        query="REQ_001 为什么返回 E102？",
+        query="保全任务完成了，但是保单信息没有更新",
         intent="troubleshooting",
         session_key="s",
-        original_query="REQ_001 为什么返回 E102？",
+        original_query="保全任务完成了，但是保单信息没有更新",
         metadata={"request_id": "req-test", "trace_id": "trace-test"},
     )
 
@@ -36,15 +37,14 @@ async def test_context_builder_injects_only_selected_skill_content():
         allowed_tools=["query_internal_log", "rag_search_tool"],
     )
 
-    assert context.selected_skill_id == "troubleshooting_agent.signature_error"
-    assert "签名失败排查 Skill" in context.skill_content
-    assert "字段缺失排查 Skill" not in context.skill_content
-    assert "回调失败排查 Skill" not in context.skill_content
-    assert task.metadata["selected_skill_id"] == "troubleshooting_agent.signature_error"
+    assert context.selected_skill_id == "troubleshooting_agent.endo_completion_aftercare"
+    assert "保全任务完成后异常处理 Skill" in context.skill_content
+    assert "退保失败排查 Skill" not in context.skill_content
+    assert task.metadata["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
 
 
 async def test_context_builder_generic_execution_when_no_confident_skill_match():
-    """没有置信匹配的 Skill 时，不应用 default skill 的必需实体阻塞通用 tool loop。"""
+    """没有置信匹配的 Skill 时，不选择 skill，也不阻塞通用 tool loop。"""
     catalog = SkillCatalog(Path("app/skills"))
     builder = ContextBuilder(
         skills_root=Path("app/skills"),

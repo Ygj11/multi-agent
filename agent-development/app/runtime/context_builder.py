@@ -7,7 +7,6 @@ from typing import Any
 
 from app.knowledge.service import KnowledgeService
 from app.schemas.runtime import OrchestratorContext, SubAgentContext
-from app.schemas.skill import SkillSelectionContext
 from app.schemas.subagent import SubAgentTask
 from app.runtime.context.knowledge_hint_builder import KnowledgeHintBuilder
 from app.runtime.context.skill_context_resolver import SkillContextResolver
@@ -52,7 +51,6 @@ class ContextBuilder:
         recent_messages: list[dict[str, Any]],
         short_summary: str | None,
         available_subagents: list[str],
-        available_tools: list[str],
         agent_candidate_summaries: list[dict[str, Any]] | None = None,
         auth_context: dict[str, Any] | None = None,
     ) -> OrchestratorContext:
@@ -72,7 +70,6 @@ class ContextBuilder:
             recent_messages=recent_messages[-10:],
             short_summary=short_summary,
             available_subagents=available_subagents,
-            available_tools=available_tools,
             agent_candidate_summaries=agent_candidate_summaries or [],
             lightweight_knowledge_hints=hints,
             auth_context=auth_context,
@@ -101,8 +98,8 @@ class ContextBuilder:
             intent=parent_context.intent,
             allowed_tools=allowed_tools,
             skill_content=resolution.skill_content,
-            selected_skill_id=selection.selected_skill_id if not selection.fallback else None,
-            selected_skill_metadata=selection.selected_skill_metadata.model_dump() if not selection.fallback else None,
+            selected_skill_id=selection.selected_skill_id,
+            selected_skill_metadata=selection.selected_skill_metadata.model_dump() if selection.selected_skill_metadata else None,
             skill_selection_score=selection.score,
             skill_selection_reason=selection.reason,
             missing_required_entities=entity_check.missing_required_entities if entity_check else [],
@@ -111,33 +108,3 @@ class ContextBuilder:
             knowledge_hint=knowledge_hint,
             auth_context=parent_context.auth_context,
         )
-
-    def build_skill_selection_context(
-        self,
-        *,
-        task: SubAgentTask,
-        parent_context: OrchestratorContext,
-    ) -> SkillSelectionContext:
-        return self.skill_context_resolver.build_selection_context(task=task, parent_context=parent_context)
-
-    @staticmethod
-    def _write_selection_metadata(task: SubAgentTask, selection) -> None:
-        SkillContextResolver.write_selection_metadata(task, selection)
-
-    @staticmethod
-    def _extract_error_code(text: str) -> str | None:
-        return SkillContextResolver.extract_error_code(text)
-
-    @staticmethod
-    def _extract_request_id(text: str) -> str | None:
-        return SkillContextResolver.extract_request_id(text)
-
-    @staticmethod
-    def _extract_interface_name(text: str) -> str | None:
-        return SkillContextResolver.extract_interface_name(text)
-
-    async def _build_lightweight_hints(self, query: str, intent: str) -> list[str]:
-        return await self.knowledge_hint_builder.build_lightweight_hints(query=query, intent=intent)
-
-    async def _build_subagent_knowledge_hint(self, query: str, namespaces: list[str] | None = None) -> str | None:
-        return await self.knowledge_hint_builder.build_subagent_knowledge_hint(query=query, namespaces=namespaces)

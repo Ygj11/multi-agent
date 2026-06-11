@@ -11,7 +11,7 @@ from app.skills.scorer import ScoredSkill
 
 @dataclass(frozen=True)
 class SkillDecision:
-    selected: SkillMetadata
+    selected: SkillMetadata | None
     score: float
     reason: str
     fallback: bool
@@ -34,6 +34,15 @@ class SkillSelectionPolicy:
         rerank_result: SkillRerankResult | None,
         rerank_attempted: bool,
     ) -> SkillDecision:
+        if not scored:
+            return SkillDecision(
+                selected=None,
+                score=0.0,
+                reason="no enabled skill candidates",
+                fallback=True,
+                selection_source="none",
+            )
+
         top = scored[0]
         selected = top.skill
         score = top.score
@@ -55,13 +64,12 @@ class SkillSelectionPolicy:
                 reason = f"llm rerank unavailable; fallback to rule top1: {reason}"
 
         if score < self.min_confident_score:
-            default = self.default_skill(candidates)
             return SkillDecision(
-                selected=default,
+                selected=None,
                 score=0.0,
-                reason=f"no confident match; fallback to default skill {default.skill_id}",
+                reason="no confident skill match",
                 fallback=True,
-                selection_source="fallback",
+                selection_source="none",
                 llm_confidence=llm_confidence,
                 llm_reason=llm_reason,
             )
@@ -75,10 +83,3 @@ class SkillSelectionPolicy:
             llm_confidence=llm_confidence,
             llm_reason=llm_reason,
         )
-
-    @staticmethod
-    def default_skill(candidates: list[SkillMetadata]) -> SkillMetadata:
-        for candidate in candidates:
-            if candidate.is_default:
-                return candidate
-        return candidates[0]

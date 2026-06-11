@@ -26,7 +26,7 @@ class SequencedApprovalLLM:
                         "function": {
                             "name": "notice_policy_update",
                             "arguments": json.dumps(
-                                {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                                {"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}
                             ),
                         },
                     }
@@ -42,7 +42,7 @@ class AcceptingApprovalClient:
         return ApprovalSubmitResult(accepted=True, external_approval_id=f"ext_{request.approval_id}", status="pending")
 
 
-def test_approval_callback_is_idempotent(app_factory):
+def test_approval_callback_is_idempotent(app_factory, real_troubleshooting_env):
     calls = []
 
     async def counted_notice_policy_update(apply_seq=None, policyNo=None, endorseType=None, **kwargs):
@@ -67,7 +67,7 @@ def test_approval_callback_is_idempotent(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请通知保单更新"}],
+            "messages": [{"role": "user", "content": "930010412672222 保单号 9200100000458846 endorseType 001028 保单更新失败，请通知保单更新"}],
         },
     ).json()
 
@@ -81,6 +81,6 @@ def test_approval_callback_is_idempotent(app_factory):
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert calls == [{"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}]
+    assert calls == [{"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}]
     assert second.json()["status"] == "completed"
     assert second.json()["final_answer"] == "done once"

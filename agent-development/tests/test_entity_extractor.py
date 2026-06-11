@@ -3,25 +3,40 @@ from app.query.entity_extractor import EntityExtractor, EntityPatternLoader
 
 def test_entity_extractor_extracts_common_business_entities():
     bag = EntityExtractor().extract(
-        "REQ_001 在 submitProposal 返回 E102，保单号 P2021344266，理赔 CLM_001，产品 PROD_ABC。"
+        "req_001 在 submitProposal 返回 E102，保单号 9200100000458846，理赔 CLM_001，产品 pmABC01，险种 h100。"
     )
     compact = bag.to_compact_dict()
 
     assert compact["request_id"] == "REQ_001"
     assert compact["error_code"] == "E102"
-    assert compact["interface_name"] == "submitProposal"
-    assert compact["policy_no"] == "P2021344266"
+    assert "interface_name" not in compact
+    assert compact["policy_no"] == "9200100000458846"
     assert compact["claim_no"] == "CLM_001"
-    assert compact["product_code"] == "PROD_ABC"
+    assert compact["product_code"] == "PMABC01"
+    assert compact["plan_code"] == "H100"
 
 
 def test_entity_extractor_extracts_endo_aftercare_entities():
-    bag = EntityExtractor().extract("保全任务完成了，受理号 APPLY_POLICY_UPDATE_FAIL，保单号 P001，保全项退保")
+    bag = EntityExtractor().extract("保全任务完成了，受理号 930010412672222，保单号 9200100000458846，保全项001028")
     compact = bag.to_compact_dict()
 
-    assert compact["apply_seq"] == "APPLY_POLICY_UPDATE_FAIL"
-    assert compact["policy_no"] == "P001"
-    assert compact["endorseType"] == "退保"
+    assert compact["apply_seq"] == "930010412672222"
+    assert compact["policy_no"] == "9200100000458846"
+    assert compact["endorseType"] == "001028"
+
+
+def test_apply_seq_is_not_misclassified_as_policy_no():
+    compact = EntityExtractor().extract("受理号930010412672222查询批文").to_compact_dict()
+
+    assert compact["apply_seq"] == "930010412672222"
+    assert "policy_no" not in compact
+
+
+def test_policy_no_requires_920_prefix_and_16_digits():
+    compact = EntityExtractor().extract("930010412672222 9200100000458846 920010000045884").to_compact_dict()
+
+    assert compact["policy_no"] == "9200100000458846"
+    assert "apply_seq" in compact
 
 
 def test_entity_extractor_marks_sensitive_entities():

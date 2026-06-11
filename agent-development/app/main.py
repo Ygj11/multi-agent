@@ -24,7 +24,9 @@ from app.bootstrap.tools import register_admin_restricted_tools
 from app.bootstrap.verification import build_verification_service
 from app.config.settings import get_settings
 from app.knowledge.factory import build_knowledge_service
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.integrations.pos_api_client import PosAPIClient
+from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.llm.factory import build_llm_provider
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
 from app.mcp.capability_registry import MCPCapabilityRegistry
@@ -52,6 +54,7 @@ from app.tools.registry import ToolRegistry
 def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     """创建应用"""
     settings = get_settings()
+    _validate_real_tool_configuration(settings)
     storage = build_storage(settings, sqlite_db_path)
     db = storage.db
     message_store = storage.message_store
@@ -66,7 +69,17 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     pos_api_client = PosAPIClient(
         base_url=settings.pos_api_base_url,
         timeout=settings.pos_api_timeout,
-        enabled=settings.enable_pos_api,
+        enabled=settings.pos_tool_mode == "real",
+    )
+    troubleshooting_api_client = (
+        TroubleshootingAPIClient(
+            BaseIntegrationHTTPClient(
+                base_url=settings.troubleshooting_api_base_url,
+                timeout=settings.troubleshooting_api_timeout,
+            )
+        )
+        if settings.troubleshooting_tool_mode == "real"
+        else None
     )
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
@@ -78,7 +91,13 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     authorization_service = AuthorizationService()
     resource_access_service = ResourceAccessService()
     register_public_tools(tool_registry, knowledge_service)
-    register_agent_private_tools(tool_registry, pos_api_client=pos_api_client)
+    register_agent_private_tools(
+        tool_registry,
+        pos_api_client=pos_api_client,
+        pos_tool_mode=settings.pos_tool_mode,
+        troubleshooting_tool_mode=settings.troubleshooting_tool_mode,
+        troubleshooting_api_client=troubleshooting_api_client,
+    )
     register_admin_restricted_tools(tool_registry, settings)
     verification_service = build_verification_service(llm_provider)
     tool_executor = ToolExecutor(
@@ -278,6 +297,13 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         }
 
     return app
+
+
+def _validate_real_tool_configuration(settings) -> None:
+    if settings.pos_tool_mode == "real" and not settings.pos_api_base_url:
+        raise ValueError("POS_TOOL_MODE=real requires POS_API_BASE_URL.")
+    if settings.troubleshooting_tool_mode == "real" and not settings.troubleshooting_api_base_url:
+        raise ValueError("TROUBLESHOOTING_TOOL_MODE=real requires TROUBLESHOOTING_API_BASE_URL.")
 
 
 app = create_app()

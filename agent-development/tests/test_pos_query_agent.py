@@ -48,7 +48,11 @@ class SequencedLLM:
 
 def _pos_registry(fake_client: FakePosAPIClient | None = None) -> ToolRegistry:
     registry = ToolRegistry()
-    register_agent_private_tools(registry, pos_api_client=fake_client or FakePosAPIClient())
+    register_agent_private_tools(
+        registry,
+        pos_tool_mode="real",
+        pos_api_client=fake_client or FakePosAPIClient(),
+    )
     return registry
 
 
@@ -133,7 +137,7 @@ async def test_pos_query_approval_text_maps_operator_from_auth_context():
     result = await executor.execute(
         agent_name="pos_query_agent",
         tool_name="pos_query_approval_text",
-        arguments={"applySeq": "APPLY_001", "operatorId": "LLM_USER"},
+        arguments={"applySeq": "930010412672222", "operatorId": "LLM_USER"},
         agent_card=card,
         request_id="REQ_POS_001",
         session_key="session-pos",
@@ -143,7 +147,7 @@ async def test_pos_query_approval_text_maps_operator_from_auth_context():
 
     assert result.success is True
     assert fake_client.calls[0]["path"] == "/epos/task/report/queryPreserveChangeDetail"
-    assert fake_client.calls[0]["payload"]["applySeq"] == "APPLY_001"
+    assert fake_client.calls[0]["payload"]["applySeq"] == "930010412672222"
     assert fake_client.calls[0]["payload"]["operatorId"] == "HEADER_USER"
 
 
@@ -176,14 +180,14 @@ async def test_pos_intent_rule_fallback_for_approval_text():
     node = IntentRecognitionNode(llm_provider=None)
 
     result = await node.recognize(
-        original_query="帮我做保全批文查询，受理号 APPLY_001",
-        rewritten_query="帮我做保全批文查询，受理号 APPLY_001",
+        original_query="帮我做保全批文查询，受理号 930010412672222",
+        rewritten_query="帮我做保全批文查询，受理号 930010412672222",
         agent_card_summaries=[card.model_dump() for card in AgentCardLoader(CARDS_ROOT).list_available_agents()],
     )
 
     assert result.intent == "pos_query"
     assert result.sub_intent == "pos_approval_text_query"
-    assert result.entities["apply_seq"] == "APPLY_001"
+    assert result.entities["apply_seq"] == "930010412672222"
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from app.runtime.checkpoint import SQLiteCheckpointStore
 from app.runtime.graph_state import AgentGraphState
+from app.runtime.state_contracts import AgentResumeState
+from app.runtime.state_projector import project_checkpoint_snapshot
 from app.schemas.approval import ApprovalRequest
 from app.schemas.message import InboundMessage
 
@@ -36,7 +38,7 @@ class AgentOrchestrator:
         config = {"configurable": {"thread_id": thread_id}}
         state = await self.graph.ainvoke(initial_state, config=config)
         if self.checkpoint_store is not None:
-            await self.checkpoint_store.save(thread_id, state)
+            await self.checkpoint_store.save_snapshot(thread_id, project_checkpoint_snapshot(state))
         return state
 
     async def resume_after_approval(self, approval_request: ApprovalRequest) -> AgentGraphState:
@@ -46,18 +48,21 @@ class AgentOrchestrator:
             approval_request.request_id or approval_request.approval_id,
         )
         base_state = approval_request.resume_state or approval_request.pending_state
+        resume_contract = AgentResumeState.model_validate(base_state)
         resume_state: AgentGraphState = {
-            **base_state,
+            **resume_contract.to_graph_state(),
             "approval_resume": True,
             "approval_id": approval_request.approval_id,
             "approval_status": approval_request.status,
             "current_approval_id": approval_request.approval_id,
             "root_approval_id": approval_request.root_approval_id or approval_request.approval_id,
+            "parent_approval_id": approval_request.parent_approval_id,
             "approval_depth": approval_request.approval_depth,
             "thread_id": thread_id,
-            "session_key": approval_request.session_key or base_state.get("session_key", ""),
-            "request_id": approval_request.request_id or base_state.get("request_id", approval_request.approval_id),
-            "trace_id": approval_request.trace_id or base_state.get("trace_id"),
+            "session_key": approval_request.session_key or resume_contract.session_key,
+            "request_id": approval_request.request_id or resume_contract.request_id,
+            "trace_id": approval_request.trace_id or resume_contract.trace_id,
+            "auth_context": approval_request.auth_context_snapshot or None,
             "pending_messages": approval_request.pending_messages,
             "pending_tools": approval_request.pending_tools,
             "pending_tool_call": approval_request.pending_tool_call,
@@ -65,7 +70,7 @@ class AgentOrchestrator:
         config = {"configurable": {"thread_id": thread_id}}
         state = await self.graph.ainvoke(resume_state, config=config)
         if self.checkpoint_store is not None:
-            await self.checkpoint_store.save(thread_id, state)
+            await self.checkpoint_store.save_snapshot(thread_id, project_checkpoint_snapshot(state))
         return state
 
     @staticmethod

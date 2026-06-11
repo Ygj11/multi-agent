@@ -13,7 +13,7 @@ async def test_e102_is_troubleshooting_with_entities():
     assert result.intent == "troubleshooting"
     assert result.entities["request_id"] == "REQ_001"
     assert result.entities["error_code"] == "E102"
-    assert result.sub_intent == "signature_error"
+    assert result.sub_intent is None
     assert result.target_subagent is None
     assert "required_tools" not in result.model_dump()
 
@@ -26,6 +26,19 @@ async def test_follow_up_with_summary_is_troubleshooting():
         short_summary="上一轮讨论 requestId=REQ_001 的 submitProposal E102 问题。",
     )
     assert result.intent == "troubleshooting"
+
+
+async def test_endo_completion_aftercare_is_troubleshooting():
+    node = IntentRecognitionNode()
+    result = await node.recognize(
+        original_query="保全任务完成，受理号930010412672222，保单9200100000458846没有更新？",
+        rewritten_query="保全任务完成，受理号930010412672222，保单9200100000458846没有更新？",
+    )
+
+    assert result.intent == "troubleshooting"
+    assert result.sub_intent == "endo_completion_aftercare"
+    assert result.entities["apply_seq"] == "930010412672222"
+    assert result.entities["policy_no"] == "9200100000458846"
 
 
 async def test_removed_product_rule_intent_is_unknown():

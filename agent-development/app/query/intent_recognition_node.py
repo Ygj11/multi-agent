@@ -143,7 +143,30 @@ class IntentRecognitionNode:
             intent = "pos_query"
             sub_intent = self._pos_sub_intent(query_raw)
             confidence = 0.86
-        elif self._has_any(query_raw, "退保失败", "退保没有成功", "没有成功", "回调失败", "签名", "排查", "报错", "失败", "错误", "异常") or entities.get("request_id") or entities.get("error_code"):
+        elif (
+            self._has_any(
+                query_raw,
+                "退保失败",
+                "退保没有成功",
+                "没有成功",
+                "回调失败",
+                "签名",
+                "排查",
+                "报错",
+                "失败",
+                "错误",
+                "异常",
+                "保全任务完成",
+                "保全完成",
+                "没有更新",
+                "未更新",
+                "未解锁",
+                "未退费",
+                "未发短信",
+            )
+            or entities.get("request_id")
+            or entities.get("error_code")
+        ):
             intent = "troubleshooting"
             sub_intent = self._troubleshooting_sub_intent(query_raw, entities)
             confidence = 0.9
@@ -217,16 +240,12 @@ class IntentRecognitionNode:
         return sub_intent if sub_intent in allowed else None
 
     @classmethod
-    def _troubleshooting_sub_intent(cls, text: str, entities: dict[str, Any]) -> str:
+    def _troubleshooting_sub_intent(cls, text: str, entities: dict[str, Any]) -> str | None:
         if cls._has_any(text, "退保失败", "退保没有成功", "没有成功"):
             return "refund_failure"
-        if cls._has_any(text, "回调失败", "回调超时", "未收到回调"):
-            return "callback_failure"
-        if cls._has_any(text, "字段缺失", "不能为空", "必填"):
-            return "missing_field"
-        if entities.get("error_code") or cls._has_any(text, "E102", "签名"):
-            return "signature_error"
-        return "general_troubleshooting"
+        if cls._has_any(text, "保全任务完成", "保全完成", "没有更新", "未更新", "未解锁", "未退费", "未发短信"):
+            return "endo_completion_aftercare"
+        return None
 
     @classmethod
     def _is_pos_query(cls, text: str, entities: dict[str, Any]) -> bool:
@@ -247,7 +266,7 @@ class IntentRecognitionNode:
 
     @classmethod
     def _pos_sub_intent(cls, text: str) -> str:
-        if cls._has_any(text, "可做保全项", "可办理保全"):
+        if cls._has_any(text, "可做保全项", "可以做哪些保全项", "可办理保全"):
             return "pos_available_items"
         if cls._has_any(text, "批文查询", "保全批文"):
             return "pos_approval_text_query"

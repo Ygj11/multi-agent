@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Entity-aware query rewrite node."""
 
+from dataclasses import dataclass
 from typing import Any
 
 from app.llm.base import LLMProvider
@@ -12,7 +13,31 @@ from app.schemas.entities import ConversationWindow, EntityBag, EntityMention
 from app.schemas.query_rewrite import QueryRewriteResult
 
 
-WEAK_FOLLOW_UP_SIGNALS = ("这个", "那个", "继续", "刚才", "上一轮", "前面", "它", "谁的问题")
+EXPLICIT_REFERENCE_SIGNALS = ("这个", "那个", "刚才", "上一轮", "前面", "继续", "接着", "它", "还是这个", "刚才那个")
+WEAK_FOLLOW_UP_SIGNALS = ("为什么", "谁的问题", "怎么办", "怎么处理", "状态呢", "有没有更新", "查一下")
+STRONG_ANCHOR_ENTITY_TYPES = {"policy_no", "apply_seq", "request_id", "task_id", "claim_no"}
+ENTITY_TYPE_ALIASES = {"policyNo": "policy_no", "applySeq": "apply_seq"}
+ORDINAL_TARGETS = {
+    "第一个": 0,
+    "第一": 0,
+    "1个": 0,
+    "第1个": 0,
+    "第二个": 1,
+    "第二": 1,
+    "2个": 1,
+    "第2个": 1,
+}
+
+
+@dataclass(frozen=True)
+class ContextReferenceResult:
+    """Rule result for deciding whether the current turn references history."""
+
+    is_reference: bool
+    reason: str
+    turn_type: str
+    target_index: int | None = None
+    target_hint: str | None = None
 
 
 class QueryRewriteNode:
@@ -83,15 +108,14 @@ class QueryRewriteNode:
         data = parse_json_object(response.content)
         if data is None:
             return None
-        resolved_query = str(data.get("resolved_query") or original_query)
+        rewritten_query = str(data.get("rewritten_query") or original_query)
         entities = self._merge_llm_entities(current_bag, data.get("entities"))
         inherited = self._compact_dict(data.get("inherited_entities"))
-        merged_bag = EntityBag().merge(window.entity_bag).merge(EntityBag.from_compact_dict(entities, source="llm", confidence=0.85))
+        request_bag = EntityBag.from_compact_dict(entities, source="llm", confidence=0.85)
         return QueryRewriteResult(
             original_query=original_query,
-            rewritten_query=resolved_query,
+            rewritten_query=rewritten_query,
             is_follow_up=bool(data.get("is_follow_up", False)),
-            resolved_query=resolved_query,
             rewrite_type=str(data.get("rewrite_type") or "direct"),
             entities=entities,
             inherited_entities=inherited,
@@ -100,7 +124,7 @@ class QueryRewriteNode:
             clarification_question=data.get("clarification_question"),
             confidence=float(data.get("confidence", 0.0) or 0.0),
             reason=str(data.get("reason") or "llm_json_rewrite"),
-            entity_bag=merged_bag.model_dump(),
+            entity_bag=request_bag.model_dump(),
             conversation_window=window.model_dump(),
         )
 
@@ -111,79 +135,351 @@ class QueryRewriteNode:
         history_bag: EntityBag,
         window: ConversationWindow,
     ) -> QueryRewriteResult:
-        is_follow_up = self._is_follow_up(original_query, current_bag)
+        pending_clarification = self._detect_pending_clarification(window.recent_turns)
+        reference = self._detect_context_reference(original_query, current_bag, pending_clarification)
+        is_follow_up = reference.turn_type in {"clarification_reply", "follow_up_question"}
         inherited_bag = EntityBag()
         need_clarification = False
         clarification_question: str | None = None
+        missing_required_entities: list[str] = []
 
-        if is_follow_up and not current_bag.to_compact_dict():
-            for entity_type, mentions in sorted(history_bag.entities.items()):
-                values = history_bag.get_values(entity_type)
-                if len(values) == 1 and history_bag.has_unique_high_confidence(entity_type):
-                    best = history_bag.get_best(entity_type)
-                    if best:
-                        inherited_bag.add(
-                            EntityMention(
-                                type=entity_type,
-                                value=best.value,
-                                normalized_value=best.normalized_value,
-                                confidence=best.confidence,
-                                source=best.source,
-                                turn_id=best.turn_id,
-                                sensitive=best.sensitive,
-                                metadata={**best.metadata, "inherited": True},
-                            )
-                        )
-                elif len(values) > 1:
-                    need_clarification = True
-                    clarification_question = f"上下文里有多个 {entity_type}，请明确你要继续处理哪一个。"
-                    break
-            if not inherited_bag.to_compact_dict() and not need_clarification:
+        if pending_clarification is not None:
+            inherited_bag = self._inherit_pending_clarification_entities(
+                current_bag=current_bag,
+                pending_metadata=pending_clarification,
+            )
+            effective_bag = EntityBag().merge(inherited_bag).merge(current_bag)
+            missing_required_entities = self._remaining_required_entities(
+                pending_clarification.get("missing_required_entities"),
+                effective_bag,
+            )
+            if missing_required_entities:
                 need_clarification = True
-                clarification_question = "请补充要处理的保单号、理赔号、请求流水号或错误码。"
+                clarification_question = self._missing_required_question(missing_required_entities)
+        else:
+            inherited_bag, clarification_question = self._inherit_context_entities(
+                current_bag=current_bag,
+                history_bag=history_bag,
+                reference=reference,
+            )
+            need_clarification = clarification_question is not None
+            effective_bag = EntityBag().merge(current_bag).merge(inherited_bag)
 
-        effective_bag = EntityBag().merge(current_bag).merge(inherited_bag)
         entities = effective_bag.to_compact_dict()
-        rewritten_query = self._build_resolved_query(original_query, entities, is_follow_up)
-        rewrite_type = "clarification_required" if need_clarification else "contextual_follow_up" if is_follow_up else "direct"
+        rewrite_type = self._rewrite_type(reference, need_clarification)
+        if reference.turn_type == "clarification_reply":
+            rewritten_query = self._build_clarification_reply_query(
+                original_query=original_query,
+                current_entities=current_bag.to_compact_dict(),
+                entities=entities,
+                pending_metadata=pending_clarification or {},
+            )
+        else:
+            rewritten_query = self._build_rewritten_query(original_query, entities, is_follow_up, window)
 
         return QueryRewriteResult(
             original_query=original_query,
             rewritten_query=rewritten_query,
             is_follow_up=is_follow_up,
-            resolved_query=rewritten_query,
             rewrite_type=rewrite_type,
             entities=entities,
             inherited_entities=inherited_bag.to_compact_dict(),
-            missing_required_entities=[],
+            missing_required_entities=missing_required_entities,
             need_clarification=need_clarification,
             clarification_question=clarification_question,
             confidence=0.82 if not need_clarification else 0.4,
             reason="entity_bag_rule_rewrite",
-            entity_bag=EntityBag().merge(window.entity_bag).merge(effective_bag).model_dump(),
+            entity_bag=effective_bag.model_dump(),
             conversation_window=window.model_dump(),
         )
 
-    @staticmethod
-    def _is_follow_up(query: str, current_bag: EntityBag) -> bool:
-        if current_bag.to_compact_dict():
-            return False
-        return any(signal in query for signal in WEAK_FOLLOW_UP_SIGNALS) or len(query.strip()) <= 16
+    def _detect_context_reference(
+        self,
+        query: str,
+        current_bag: EntityBag,
+        pending_clarification: dict[str, Any] | None = None,
+    ) -> ContextReferenceResult:
+        if pending_clarification is not None:
+            return ContextReferenceResult(
+                is_reference=True,
+                reason="pending_clarification",
+                turn_type="clarification_reply",
+            )
+        target_index, target_hint = self._ordinal_target(query)
+        if target_index is not None:
+            return ContextReferenceResult(
+                is_reference=True,
+                reason="ordinal_reference",
+                turn_type="follow_up_question",
+                target_index=target_index,
+                target_hint=target_hint,
+            )
+        if self._has_any(query, *EXPLICIT_REFERENCE_SIGNALS):
+            return ContextReferenceResult(is_reference=True, reason="explicit_reference", turn_type="follow_up_question")
+        has_strong_anchor = bool(STRONG_ANCHOR_ENTITY_TYPES.intersection(current_bag.entities))
+        if self._has_any(query, *WEAK_FOLLOW_UP_SIGNALS) and not has_strong_anchor:
+            return ContextReferenceResult(is_reference=True, reason="weak_follow_up", turn_type="follow_up_question")
+        if not has_strong_anchor and not current_bag.to_compact_dict() and len(query.strip()) <= 16:
+            return ContextReferenceResult(is_reference=True, reason="short_query_without_anchor", turn_type="follow_up_question")
+        if has_strong_anchor:
+            return ContextReferenceResult(is_reference=False, reason="new_anchor_present", turn_type="new_request")
+        return ContextReferenceResult(is_reference=False, reason="standalone_or_unknown", turn_type="direct_standalone")
 
     @staticmethod
-    def _build_resolved_query(query: str, entities: dict[str, Any], is_follow_up: bool) -> str:
+    def _detect_pending_clarification(recent_messages: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+        for turn in reversed(recent_messages or []):
+            if turn.get("role") != "assistant":
+                continue
+            metadata = turn.get("metadata") if isinstance(turn.get("metadata"), dict) else {}
+            return metadata if metadata.get("need_clarification") else None
+        return None
+
+    def _inherit_pending_clarification_entities(
+        self,
+        *,
+        current_bag: EntityBag,
+        pending_metadata: dict[str, Any],
+    ) -> EntityBag:
+        previous_bag = EntityBag.from_compact_dict(
+            self._compact_dict(pending_metadata.get("entities")),
+            source="recent_turn",
+            confidence=0.9,
+        )
+        inherited = EntityBag()
+        current_types = set(current_bag.entities)
+        for entity_type in sorted(previous_bag.entities):
+            if entity_type in current_types:
+                continue
+            best = previous_bag.get_best(entity_type)
+            if best:
+                inherited.add(self._as_inherited(best))
+        return inherited
+
+    def _inherit_context_entities(
+        self,
+        *,
+        current_bag: EntityBag,
+        history_bag: EntityBag,
+        reference: ContextReferenceResult,
+    ) -> tuple[EntityBag, str | None]:
+        inherited = EntityBag()
+        if not reference.is_reference:
+            return inherited, None
+        if not history_bag.to_compact_dict():
+            return inherited, "请补充要处理的保单号、理赔号、请求流水号或错误码。"
+
+        current_types = set(current_bag.entities)
+        for entity_type in sorted(history_bag.entities):
+            if entity_type in current_types:
+                continue
+            values = history_bag.get_values(entity_type)
+            if len(values) == 1 and history_bag.has_unique_high_confidence(entity_type):
+                best = history_bag.get_best(entity_type)
+                if best:
+                    inherited.add(self._as_inherited(best))
+                continue
+            if len(values) > 1:
+                selected = self._select_ordinal_mention(history_bag, entity_type, reference.target_index)
+                if selected is not None:
+                    inherited.add(self._as_inherited(selected))
+                    continue
+                return inherited, f"上下文里有多个 {entity_type}，请明确你要继续处理哪一个。"
+
+        if not inherited.to_compact_dict() and not current_bag.to_compact_dict():
+            return inherited, "请补充要处理的保单号、理赔号、请求流水号或错误码。"
+        return inherited, None
+
+    @staticmethod
+    def _as_inherited(entity: EntityMention) -> EntityMention:
+        return EntityMention(
+            type=entity.type,
+            value=entity.value,
+            normalized_value=entity.normalized_value,
+            confidence=entity.confidence,
+            source=entity.source,
+            turn_id=entity.turn_id,
+            sensitive=entity.sensitive,
+            metadata={**entity.metadata, "inherited": True},
+        )
+
+    @staticmethod
+    def _select_ordinal_mention(history_bag: EntityBag, entity_type: str, target_index: int | None) -> EntityMention | None:
+        if target_index is None:
+            return None
+        values = history_bag.get_values(entity_type)
+        if target_index < 0 or target_index >= len(values):
+            return None
+        target_value = values[target_index]
+        for mention in history_bag.entities.get(entity_type) or []:
+            if mention.effective_value == target_value:
+                return mention
+        return None
+
+    @staticmethod
+    def _ordinal_target(query: str) -> tuple[int | None, str | None]:
+        for hint, index in ORDINAL_TARGETS.items():
+            if hint in query:
+                return index, hint
+        return None, None
+
+    @staticmethod
+    def _remaining_required_entities(raw_required: Any, bag: EntityBag) -> list[str]:
+        required = [str(item) for item in raw_required or [] if item]
+        compact = bag.to_compact_dict()
+        present = set(compact)
+        present.update(alias for alias, canonical in ENTITY_TYPE_ALIASES.items() if canonical in present)
+        return [item for item in required if item not in present and ENTITY_TYPE_ALIASES.get(item, item) not in present]
+
+    @staticmethod
+    def _missing_required_question(missing: list[str]) -> str:
+        display = "、".join(missing)
+        return f"还缺少 {display}，请补充后我再继续处理。"
+
+    @staticmethod
+    def _rewrite_type(reference: ContextReferenceResult, need_clarification: bool) -> str:
+        if need_clarification:
+            return "clarification_required"
+        if reference.turn_type == "clarification_reply":
+            """表示上一轮 assistant 明确在等用户补实体，本轮用户是在回答这个澄清问题。"""
+            return "clarification_reply"
+        if reference.turn_type == "follow_up_question":
+            """表示普通追问，需要沿用上一轮上下文，但不是补缺失实体。"""
+            return "contextual_follow_up"
+        if reference.turn_type == "new_request":
+            """表示当前轮出现了新的强锚点，默认开启一个新请求帧，不继承历史实体。"""
+            return "new_request"
+        return "direct"
+
+    @staticmethod
+    def _has_any(text: str, *keywords: str) -> bool:
+        lower = text.lower()
+        return any(keyword.lower() in lower for keyword in keywords)
+
+    @staticmethod
+    def _build_rewritten_query(
+        query: str,
+        entities: dict[str, Any],
+        is_follow_up: bool,
+        window: ConversationWindow,
+    ) -> str:
         request_id = entities.get("request_id")
         error_code = entities.get("error_code")
         if is_follow_up and request_id and error_code:
-            return f"继续排查上一轮 requestId={request_id} 的 {error_code} 签名校验失败问题，并判断问题归属"
+            return QueryRewriteNode._build_follow_up_query(
+                current_query=query,
+                business_context=f"继续排查上一轮 requestId={request_id} 的 {error_code} 签名校验失败问题",
+                entities=entities,
+                window=window,
+            )
         if request_id and error_code:
             return f"排查 requestId={request_id} 的健康险个险接口 {error_code} 错误原因"
         if is_follow_up and error_code:
-            return f"继续排查上一轮 requestId 的 {error_code} 签名校验失败问题，并判断问题归属"
+            return QueryRewriteNode._build_follow_up_query(
+                current_query=query,
+                business_context=f"继续排查上一轮 {error_code} 签名校验失败问题",
+                entities=entities,
+                window=window,
+            )
         if is_follow_up and entities:
-            inherited = "，".join(f"{key}={value}" for key, value in entities.items())
-            return f"{query}（沿用上下文：{inherited}）"
+            return QueryRewriteNode._build_follow_up_query(
+                current_query=query,
+                business_context=QueryRewriteNode._latest_user_context(window),
+                entities=entities,
+                window=window,
+            )
         return query
+
+    @staticmethod
+    def _build_follow_up_query(
+        *,
+        current_query: str,
+        business_context: str | None,
+        entities: dict[str, Any],
+        window: ConversationWindow,
+    ) -> str:
+        parts = ["基于上一轮业务上下文继续追问。"]
+        if business_context:
+            parts.append(f"上一轮问题背景：{business_context}。")
+        answer_summary = QueryRewriteNode._latest_assistant_summary(window)
+        if answer_summary:
+            parts.append(f"上一轮回答摘要：{answer_summary}。")
+        parts.append(f"当前追问：{current_query}。")
+        entity_text = QueryRewriteNode._format_entities(entities)
+        if entity_text:
+            parts.append(f"已知实体：{entity_text}。")
+        return "".join(parts)
+
+    @staticmethod
+    def _build_clarification_reply_query(
+        *,
+        original_query: str,
+        current_entities: dict[str, Any],
+        entities: dict[str, Any],
+        pending_metadata: dict[str, Any],
+    ) -> str:
+        previous_query = str(
+            pending_metadata.get("pending_task_query")
+            or pending_metadata.get("rewritten_query")
+            or pending_metadata.get("original_query")
+            or ""
+        ).strip()
+        supplement = current_entities or {"user_reply": original_query}
+        supplement_text = QueryRewriteNode._format_entities(supplement)
+        entity_text = QueryRewriteNode._format_entities(entities)
+        if not previous_query:
+            if entity_text:
+                return f"根据上下文继续处理当前澄清补参。已知实体：{entity_text}。当前用户补充：{supplement_text}。"
+            return original_query
+        parts = [f"继续处理上一轮业务问题：{previous_query}。"]
+        if entity_text:
+            parts.append(f"已知实体：{entity_text}。")
+        if supplement_text:
+            parts.append(f"当前用户补充：{supplement_text}。")
+        return "".join(parts)
+
+    @staticmethod
+    def _latest_user_context(window: ConversationWindow) -> str | None:
+        for turn in reversed(window.recent_turns or []):
+            if turn.get("role") != "user":
+                continue
+            content = str(turn.get("content") or "").strip()
+            if content:
+                return QueryRewriteNode._compact_text(content)
+        return QueryRewriteNode._compact_text(window.summary or "") or None
+
+    @staticmethod
+    def _latest_assistant_summary(window: ConversationWindow) -> str | None:
+        for turn in reversed(window.recent_turns or []):
+            if turn.get("role") != "assistant":
+                continue
+            metadata = turn.get("metadata") if isinstance(turn.get("metadata"), dict) else {}
+            if metadata.get("need_clarification"):
+                continue
+            content = str(turn.get("content") or "").strip()
+            if content:
+                return QueryRewriteNode._compact_text(QueryRewriteNode._first_sentence(content), limit=140)
+        return None
+
+    @staticmethod
+    def _format_entities(entities: dict[str, Any]) -> str:
+        return "，".join(f"{key}={value}" for key, value in sorted(entities.items()) if value not in (None, "", []))
+
+    @staticmethod
+    def _compact_text(text: str, limit: int = 160) -> str:
+        normalized = " ".join(str(text).replace("\r", " ").replace("\n", " ").split())
+        if len(normalized) <= limit:
+            return normalized
+        return f"{normalized[:limit]}..."
+
+    @staticmethod
+    def _first_sentence(text: str) -> str:
+        normalized = " ".join(str(text).replace("\r", " ").replace("\n", " ").split())
+        for delimiter in ("。", "！", "？", ". ", "! ", "? "):
+            index = normalized.find(delimiter)
+            if index >= 0:
+                end = index + len(delimiter.rstrip())
+                return normalized[:end]
+        return normalized
 
     @staticmethod
     def _compact_dict(value: Any) -> dict[str, Any]:

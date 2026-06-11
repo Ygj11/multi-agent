@@ -12,10 +12,9 @@ def test_entity_patterns_loader_reads_project_yaml():
     assert "request_id" in by_type
     assert "apply_seq" in by_type
     assert "endorseType" in by_type
-    assert "interface_name" in by_type
+    assert "plan_code" in by_type
     assert by_type["phone_number"].sensitive is True
     assert by_type["error_code"].confidence == 0.9
-    assert by_type["interface_name"].keyword_allowlist
 
 
 def test_entity_patterns_loader_missing_required_field_fails(tmp_path):

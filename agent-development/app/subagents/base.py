@@ -56,7 +56,13 @@ class BaseSubAgent(ABC):
                 answer=sub_context.clarification_question or "请补充必要信息后我再继续处理。",
                 confidence=0.4,
                 risk_level="low",
-                metadata={"clarification": True},
+                metadata={
+                    "clarification": True,
+                    "clarification_source": "skill_required_entities",
+                    "clarification_question": sub_context.clarification_question,
+                    "missing_required_entities": sub_context.missing_required_entities,
+                    "entities": task.entities,
+                },
                 selected_skill_id=sub_context.selected_skill_id,
                 selected_skill_metadata=sub_context.selected_skill_metadata,
                 skill_selection_score=sub_context.skill_selection_score,
@@ -74,6 +80,7 @@ class BaseSubAgent(ABC):
             )
             principal = principal_dict_from_auth_context(task.metadata.get("auth_context"))
             tool_schemas = self.get_available_tool_schemas(agent_card, principal=principal)
+            """LLM 工具循环"""
             run_result = await self.tool_calling_runner.run(
                 agent_name=self.name,
                 messages=messages,

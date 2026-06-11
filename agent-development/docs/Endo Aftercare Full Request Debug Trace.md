@@ -319,7 +319,7 @@ await graph.ainvoke(
     {
       "agent_name": "troubleshooting_agent",
       "supported_routes": {
-        "troubleshooting": ["refund_failure", "callback_failure", "signature_error", "missing_field", "endo_completion_aftercare"]
+        "troubleshooting": ["refund_failure", "endo_completion_aftercare"]
       },
       "capabilities": ["task_status_diagnosis", "internal_log_analysis", "workflow_mcp_diagnosis", "error_code_diagnosis"]
     }
@@ -371,7 +371,6 @@ await graph.ainvoke(
   "recent_messages": [],
   "short_summary": null,
   "available_subagents": ["troubleshooting_agent", "policy_query_agent", "claim_agent"],
-  "available_tools": ["query_endo_task_record", "notice_policy_update", "..."],
   "lightweight_knowledge_hints": []
 }
 ```

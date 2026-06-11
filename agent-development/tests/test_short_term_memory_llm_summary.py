@@ -42,17 +42,17 @@ async def _table_columns(db: SQLiteDatabase) -> list[str]:
 
 async def test_llm_summary_saved_when_valid(tmp_path):
     db = SQLiteDatabase(tmp_path / "memory.sqlite3")
-    llm_summary = "用户正在排查 REQ_001 在 submitProposal 接口返回 E102 的签名校验失败问题，已知需要重点检查 timestamp 是否参与签名、密钥版本和字段排序。下一轮如果用户说继续或谁的问题，应指代这个请求的签名失败排查。"
+    llm_summary = "用户正在排查保单 9200100000458846 的退保失败问题，已知需要重点检查任务状态、节点状态和内部日志。下一轮如果用户说继续或谁的问题，应指代这个退保失败排查。"
     llm = CapturingLLM(llm_summary)
     manager = ShortTermMemoryManager(db=db, llm_provider=llm)
 
     summary = await manager.compress_after_turn(
         session_key="s1",
-        original_query="REQ_001 为什么 E102？",
-        rewritten_query="排查 requestId=REQ_001 的 E102 错误原因",
+        original_query="保单 9200100000458846 退保失败，帮我排查",
+        rewritten_query="排查保单 9200100000458846 的退保失败原因",
         intent="troubleshooting",
-        answer="初步是签名校验失败。",
-        subagent_result={"agent_name": "troubleshooting_agent", "selected_skill_id": "troubleshooting_agent.signature_error"},
+        answer="初步需要查看退保任务状态。",
+        subagent_result={"agent_name": "troubleshooting_agent", "selected_skill_id": "troubleshooting_agent.refund_failure"},
     )
 
     assert summary == llm_summary
@@ -63,8 +63,8 @@ async def test_llm_summary_saved_when_valid(tmp_path):
 
 async def test_previous_summary_and_current_turn_are_sent_to_llm(tmp_path):
     db = SQLiteDatabase(tmp_path / "memory.sqlite3")
-    await _set_previous_summary(db, "s1", "上一轮在看保单 P2021344266 的退保失败。")
-    llm = CapturingLLM("承接上一轮，用户继续排查保单 P2021344266 的退保失败，本轮补充了 REQ_001 和 E102，当前结论是签名校验失败，尚需确认密钥版本。")
+    await _set_previous_summary(db, "s1", "上一轮在看保单 9200100000458846 的退保失败。")
+    llm = CapturingLLM("承接上一轮，用户继续排查保单 9200100000458846 的退保失败，本轮补充了 REQ_001 和 E102，当前结论是签名校验失败，尚需确认密钥版本。")
     manager = ShortTermMemoryManager(db=db, llm_provider=llm)
 
     await manager.compress_after_turn(
@@ -78,7 +78,7 @@ async def test_previous_summary_and_current_turn_are_sent_to_llm(tmp_path):
 
     prompt = llm.calls[0]["messages"][1]["content"]
     assert "previous_summary:" in prompt
-    assert "上一轮在看保单 P2021344266 的退保失败。" in prompt
+    assert "上一轮在看保单 9200100000458846 的退保失败。" in prompt
     assert "current_turn:" in prompt
     assert "- original_query: 继续看 REQ_001" in prompt
     assert "- rewritten_query: 继续排查 REQ_001" in prompt

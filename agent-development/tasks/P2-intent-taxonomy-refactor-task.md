@@ -91,25 +91,14 @@ app/config/intent_taxonomy.yaml
 intents:
   troubleshooting:
     display_name: 问题排查
-    description: 诊断接口、任务、回调、保全完成后异常等生产问题。
+    description: 诊断退保失败、保全完成后异常等生产问题。
     examples:
-      - REQ_001 为什么返回 E102？
+      - 退保失败，帮我排查
       - 保全任务完成了，但是保单信息没有更新
     sub_intents:
-      signature_error:
-        display_name: 签名错误
-        description: 签名校验失败、错误码 E102、接口验签问题。
-        examples:
-          - REQ_001 为什么返回 E102？
       refund_failure:
         display_name: 退保失败
         description: 退保未成功、退保任务失败、退保链路异常。
-      callback_failure:
-        display_name: 回调失败
-        description: 回调失败、回调超时、未收到回调。
-      missing_field:
-        display_name: 字段缺失
-        description: 必填字段缺失、不能为空、字段校验失败。
       endo_completion_aftercare:
         display_name: 保全完成后异常
         description: 保全任务完成后保单未更新、未解锁、未退费、未发短信。
@@ -143,7 +132,7 @@ intents:
 supported_intents:
   - troubleshooting
 supported_sub_intents:
-  - signature_error
+  - refund_failure
   - endo_completion_aftercare
 ```
 
@@ -152,10 +141,7 @@ supported_sub_intents:
 ```yaml
 supported_routes:
   troubleshooting:
-    - signature_error
     - refund_failure
-    - callback_failure
-    - missing_field
     - endo_completion_aftercare
 ```
 
@@ -509,10 +495,7 @@ app/skills/pos_query_agent/*/SKILL.md
 agent_name: troubleshooting_agent
 supported_routes:
   troubleshooting:
-    - signature_error
     - refund_failure
-    - callback_failure
-    - missing_field
     - endo_completion_aftercare
 ```
 
@@ -545,9 +528,9 @@ sub_intents:
 
 ### 链路测试
 
-- `REQ_001 为什么返回 E102？`
+- `退保失败，帮我排查`
   - intent = `troubleshooting`
-  - sub_intent = `signature_error`
+  - sub_intent = `refund_failure`
   - selected_agent = `troubleshooting_agent`
 
 - `保全任务完成，保单9200100000458846更新失败？`

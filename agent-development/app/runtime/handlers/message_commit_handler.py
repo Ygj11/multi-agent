@@ -28,6 +28,8 @@ class MessageCommitHandler:
         return {}
 
     async def save_assistant_message(self, state: dict[str, Any]) -> dict[str, Any]:
+        subagent_result = state.get("subagent_result") if isinstance(state.get("subagent_result"), dict) else {}
+        subagent_metadata = subagent_result.get("metadata") if isinstance(subagent_result.get("metadata"), dict) else {}
         await self.message_store.append(
             session_key=state["session_key"],
             role="assistant",
@@ -42,7 +44,11 @@ class MessageCommitHandler:
                 "entities": state.get("entities", {}),
                 "need_clarification": state.get("need_clarification", False),
                 "clarification_source": state.get("clarification_source"),
+                "clarification_question": state.get("clarification_question") or subagent_metadata.get("clarification_question"),
+                "missing_required_entities": state.get("missing_required_entities") or subagent_metadata.get("missing_required_entities") or [],
                 "selected_agent": state.get("selected_agent"),
+                "selected_skill_id": subagent_result.get("selected_skill_id"),
+                "selected_skill_metadata": subagent_result.get("selected_skill_metadata"),
                 "session_key": state["session_key"],
             },
         )

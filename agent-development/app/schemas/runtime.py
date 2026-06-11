@@ -21,7 +21,6 @@ class OrchestratorContext(BaseModel):
     recent_messages: list[dict[str, Any]] = Field(default_factory=list)
     short_summary: str | None = None
     available_subagents: list[str] = Field(default_factory=list)
-    available_tools: list[str] = Field(default_factory=list)
     agent_candidate_summaries: list[dict[str, Any]] = Field(default_factory=list)
     lightweight_knowledge_hints: list[str] = Field(default_factory=list)
     auth_context: dict[str, Any] | None = None

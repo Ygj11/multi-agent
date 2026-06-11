@@ -7,6 +7,7 @@ from typing import Any
 
 from app.auth.principal import principal_dict_from_auth_context
 from app.approval.service import ApprovalService
+from app.runtime.state_projector import project_approval_resume_state
 from app.schemas.agent_card import AgentCard
 from app.schemas.approval import ApprovalRequest
 from app.subagents.tool_calling_runner import ToolCallingRunner
@@ -45,13 +46,14 @@ class ApprovalGraphHandler:
         if approval_request is None:
             raise RuntimeError("approval_request_not_found")
 
-        pending_messages = list(state.get("pending_messages") or approval_request.pending_messages or [])
-        pending_tools = list(state.get("pending_tools") or approval_request.pending_tools or [])
-        pending_tool_call = dict(state.get("pending_tool_call") or approval_request.pending_tool_call or {})
-        agent_card = self._agent_card_from_state(state) or self._agent_card_from_state(approval_request.pending_state)
+        resume_state = approval_request.resume_state or approval_request.pending_state
+        pending_messages = list(state.get("pending_messages") or approval_request.pending_messages or resume_state.get("pending_messages") or [])
+        pending_tools = list(state.get("pending_tools") or approval_request.pending_tools or resume_state.get("pending_tools") or [])
+        pending_tool_call = dict(state.get("pending_tool_call") or approval_request.pending_tool_call or resume_state.get("pending_tool_call") or {})
+        agent_card = self._agent_card_from_state(state)
         tool_call_id = pending_tool_call.get("tool_call_id") or pending_tool_call.get("id") or f"approved_{approval_id}"
 
-        auth_context = state.get("auth_context") or approval_request.pending_state.get("auth_context")
+        auth_context = state.get("auth_context") or approval_request.auth_context_snapshot
         principal = principal_dict_from_auth_context(auth_context)
         tool_result = await self.tool_executor.execute_approved_tool(
             approval_id=approval_id,
@@ -168,6 +170,17 @@ class ApprovalGraphHandler:
         root_approval_id = state.get("root_approval_id") or current_approval_id
         auth_context_snapshot = state.get("auth_context") or {}
         principal_snapshot = principal_dict_from_auth_context(auth_context_snapshot) or {}
+        pending_messages = runner_meta.get("pending_messages") or []
+        pending_tools = runner_meta.get("pending_tools") or []
+        resume_state = project_approval_resume_state(
+            state,
+            pending_tool_call=pending_tool_call,
+            pending_messages=pending_messages,
+            pending_tools=pending_tools,
+            parent_approval_id=current_approval_id,
+            root_approval_id=root_approval_id,
+            approval_depth=next_depth,
+        )
         approval_request = await self.approval_service.create_approval_request(
             session_key=state["session_key"],
             request_id=state["request_id"],
@@ -192,10 +205,9 @@ class ApprovalGraphHandler:
             risk_level=payload.get("risk_level") or "high",
             arguments=payload.get("arguments") or pending_tool_call.get("arguments") or {},
             reason=payload.get("reason") or "Write-side tool call requires human approval.",
-            pending_state=dict(state),
-            resume_state=dict(state),
-            pending_messages=runner_meta.get("pending_messages") or [],
-            pending_tools=runner_meta.get("pending_tools") or [],
+            resume_state=resume_state.model_dump(mode="json"),
+            pending_messages=pending_messages,
+            pending_tools=pending_tools,
             pending_tool_call=pending_tool_call,
         )
         if current_approval_id:

@@ -16,6 +16,12 @@ TOP_LEVEL_CACHE_FIELDS = {
     "skill_selection_reason",
     "approval_request",
 }
+CHECKPOINT_FORBIDDEN_CACHE_FIELDS = {
+    "selected_skill_metadata",
+    "skill_selection_score",
+    "skill_selection_reason",
+    "approval_request",
+}
 
 
 class WriteApprovalLLM:
@@ -31,7 +37,7 @@ class WriteApprovalLLM:
                     "function": {
                         "name": "notice_policy_update",
                         "arguments": json.dumps(
-                            {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                            {"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}
                         ),
                     },
                 }
@@ -62,10 +68,10 @@ async def test_normal_graph_state_has_no_top_level_selected_skill_cache(app_fact
 
     for field in TOP_LEVEL_CACHE_FIELDS:
         assert field not in state
-    assert state["subagent_result"]["selected_skill_id"] == "troubleshooting_agent.signature_error"
+    assert state["subagent_result"]["selected_skill_id"] is None
 
 
-def test_pending_approval_checkpoint_has_no_top_level_approval_request(app_factory):
+def test_pending_approval_checkpoint_has_no_top_level_approval_request(app_factory, real_troubleshooting_env):
     app = app_factory("no-approval-request-cache.sqlite3")
     app.state.llm_provider.chat = WriteApprovalLLM().chat
     app.state.approval_service.client = AcceptingApprovalClient()
@@ -78,7 +84,7 @@ def test_pending_approval_checkpoint_has_no_top_level_approval_request(app_facto
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请通知保单更新"}],
+            "messages": [{"role": "user", "content": "930010412672222 保单号 9200100000458846 endorseType 001028 保单更新失败，请通知保单更新"}],
         },
     )
 
@@ -88,7 +94,8 @@ def test_pending_approval_checkpoint_has_no_top_level_approval_request(app_facto
     state = anyio.run(app.state.checkpoint_store.load, thread_id)
 
     assert state is not None
-    for field in TOP_LEVEL_CACHE_FIELDS:
+    for field in CHECKPOINT_FORBIDDEN_CACHE_FIELDS:
         assert field not in state
+    assert state["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
     assert state["approval_id"] == payload["approval_id"]
     assert state["approval_status"] == "pending"

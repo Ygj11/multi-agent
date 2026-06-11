@@ -1,6 +1,18 @@
 from app.runtime.graph_state import AgentGraphState, GRAPH_STATE_FIELD_AUTHORITY
 
 
+ALLOWED_KINDS = {"runtime", "checkpoint", "resume", "memory", "audit", "debug_temporary", "reference", "deprecated"}
+ALLOWED_PERSISTENCE = {
+    "none",
+    "checkpoint_snapshot",
+    "resume_state",
+    "message_store",
+    "tool_log_store",
+    "evidence_store",
+    "approval_store",
+}
+
+
 def test_graph_state_authority_table_covers_every_agent_graph_state_field():
     state_fields = set(AgentGraphState.__annotations__)
 
@@ -9,7 +21,8 @@ def test_graph_state_authority_table_covers_every_agent_graph_state_field():
         metadata = GRAPH_STATE_FIELD_AUTHORITY[field]
         assert metadata["owner"]
         assert metadata["source"]
-        assert metadata["kind"] in {"authoritative", "cache", "debug", "snapshot", "deprecated"}
+        assert metadata["kind"] in ALLOWED_KINDS
+        assert metadata["persistence"] in ALLOWED_PERSISTENCE
 
 
 def test_subagent_result_is_authoritative_for_skill_selection_cache():
@@ -23,13 +36,15 @@ def test_subagent_result_is_authoritative_for_skill_selection_cache():
     assert "skill_selection_score" not in GRAPH_STATE_FIELD_AUTHORITY
     assert "skill_selection_reason" not in GRAPH_STATE_FIELD_AUTHORITY
     assert GRAPH_STATE_FIELD_AUTHORITY["pre_answer_verification_result"]["owner"] == "verification_route"
-    assert GRAPH_STATE_FIELD_AUTHORITY["pre_answer_verification_result"]["kind"] == "authoritative"
-    assert GRAPH_STATE_FIELD_AUTHORITY["verification_results"]["kind"] == "debug"
+    assert GRAPH_STATE_FIELD_AUTHORITY["pre_answer_verification_result"]["kind"] == "runtime"
+    assert GRAPH_STATE_FIELD_AUTHORITY["pre_answer_verification_result"]["persistence"] == "none"
+    assert GRAPH_STATE_FIELD_AUTHORITY["verification_results"]["kind"] == "debug_temporary"
     assert "approval_request" not in AgentGraphState.__annotations__
     assert "approval_request" not in GRAPH_STATE_FIELD_AUTHORITY
     assert "target_subagent" not in AgentGraphState.__annotations__
     assert "target_subagent" not in GRAPH_STATE_FIELD_AUTHORITY
-    assert GRAPH_STATE_FIELD_AUTHORITY["available_agents"]["kind"] == "debug"
+    assert GRAPH_STATE_FIELD_AUTHORITY["available_agents"]["kind"] == "debug_temporary"
     assert "principal" not in AgentGraphState.__annotations__
     assert "principal" not in GRAPH_STATE_FIELD_AUTHORITY
-    assert GRAPH_STATE_FIELD_AUTHORITY["auth_context"]["kind"] == "authoritative"
+    assert GRAPH_STATE_FIELD_AUTHORITY["auth_context"]["kind"] == "resume"
+    assert GRAPH_STATE_FIELD_AUTHORITY["auth_context"]["persistence"] == "approval_store"

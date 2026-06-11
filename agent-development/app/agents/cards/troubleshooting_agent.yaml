@@ -1,6 +1,6 @@
 agent_name: troubleshooting_agent
 display_name: Troubleshooting Agent
-description: Diagnose policy onboarding, refund, callback, interface, and production integration failures.
+description: Diagnose policy refund and endorsement aftercare production issues.
 capabilities:
   - task_status_diagnosis
   - internal_log_analysis
@@ -10,16 +10,12 @@ capabilities:
 supported_routes:
   troubleshooting:
     - refund_failure
-    - callback_failure
-    - signature_error
-    - missing_field
     - endo_completion_aftercare
 required_entities: []
 optional_entities:
   - policy_no
   - request_id
   - error_code
-  - interface_name
   - apply_seq
   - endorseType
   - task_id
@@ -42,15 +38,12 @@ mcp_tools:
 mcp_tool_scopes:
   - mcp.workflow
 skills:
-  - troubleshooting_agent.signature_error
   - troubleshooting_agent.refund_failure
-  - troubleshooting_agent.missing_field
-  - troubleshooting_agent.callback_failure
   - troubleshooting_agent.endo_completion_aftercare
 rag_namespaces:
   - troubleshooting
   - integration_errors
 memory_policy: {"use_short_summary": true, "recent_turns": 5}
-examples: [{"query": "REQ_001 returned E102 during submitProposal", "intent": "troubleshooting", "sub_intent": "signature_error"}, {"query": "保全任务完成了，但是保单信息没有更新", "intent": "troubleshooting", "sub_intent": "endo_completion_aftercare"}]
+examples: [{"query": "退保失败，帮我排查", "intent": "troubleshooting", "sub_intent": "refund_failure"}, {"query": "保全任务完成了，但是保单信息没有更新", "intent": "troubleshooting", "sub_intent": "endo_completion_aftercare"}]
 enabled: true
 version: "1.0.0"

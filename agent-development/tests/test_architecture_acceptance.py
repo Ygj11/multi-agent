@@ -10,7 +10,7 @@ async def test_full_architecture_acceptance_refund_failure_flow(app_factory):
             channel="web",
             user_id="u-accept",
             session_id="s-accept",
-            messages=[ChatMessage(role="user", content="保单9201344266为什么退保没有成功？")],
+            messages=[ChatMessage(role="user", content="保单9200100000458846为什么退保没有成功？")],
         )
     )
 
@@ -18,15 +18,17 @@ async def test_full_architecture_acceptance_refund_failure_flow(app_factory):
 
     assert state["intent"] == "troubleshooting"
     assert state["confidence"] > 0
-    assert state["entities"]["policy_no"] == "9201344266"
+    assert state["entities"]["policy_no"] == "9200100000458846"
     assert state["available_agents"]
     assert state["selected_agent"] == "troubleshooting_agent"
     assert state["assembled_task"]["agent_name"] == "troubleshooting_agent"
     assert state["subagent_result"]["agent_name"] == "troubleshooting_agent"
     assert state["subagent_result"]["tool_calls"]
     assert state["subagent_result"]["metadata"]["tool_calling_runner"]["stopped_reason"] == "final"
-    assert "pos_query_available_items" not in state["subagent_result"]["metadata"]["tool_calling_runner"]["visible_tools"]
-    assert "query_internal_log" not in state["orchestrator_context"]["available_tools"] or "query_internal_log" in state["selected_agent_card"]["private_tools"]
+    visible_tools = state["subagent_result"]["metadata"]["tool_calling_runner"]["visible_tools"]
+    assert "pos_query_available_items" not in visible_tools
+    assert "query_internal_log" in visible_tools
+    assert "available_tools" not in state["orchestrator_context"]
     assert "pre_answer_verify" in state["graph_path"]
     assert state["pre_answer_verification_result"]["passed"] is True
     assert state["pre_answer_verification_result"]["stage"] == "pre_answer"

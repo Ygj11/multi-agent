@@ -27,7 +27,7 @@ class SequencedApprovalLLM:
                         "function": {
                             "name": "notice_policy_update",
                             "arguments": json.dumps(
-                                {"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}
+                                {"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}
                             ),
                         },
                     }
@@ -44,7 +44,7 @@ class AcceptingApprovalClient:
         return ApprovalSubmitResult(accepted=True, external_approval_id=f"ext_{request.approval_id}", status="pending")
 
 
-def test_approval_callback_approved_executes_tool_and_saves_result(app_factory):
+def test_approval_callback_approved_executes_tool_and_saves_result(app_factory, real_troubleshooting_env):
     calls = []
 
     async def counted_notice_policy_update(apply_seq=None, policyNo=None, endorseType=None, **kwargs):
@@ -69,7 +69,7 @@ def test_approval_callback_approved_executes_tool_and_saves_result(app_factory):
             "channel": "web",
             "user_id": "u1",
             "session_id": "s1",
-            "messages": [{"role": "user", "content": "APPLY123 保单号 P123456 endorseType 001028 保单更新失败，请通知保单更新"}],
+            "messages": [{"role": "user", "content": "930010412672222 保单号 9200100000458846 endorseType 001028 保单更新失败，请通知保单更新"}],
         },
     ).json()
     approval_id = pending["approval_id"]
@@ -91,7 +91,7 @@ def test_approval_callback_approved_executes_tool_and_saves_result(app_factory):
     assert data["resumed"] is True
     assert data["status"] == "completed"
     assert data["final_answer"] == "Policy status update completed after approval."
-    assert calls == [{"apply_seq": "APPLY123", "policyNo": "P123456", "endorseType": "001028"}]
+    assert calls == [{"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}]
 
     query = client.get(f"/api/approval/{approval_id}")
     assert query.status_code == 200

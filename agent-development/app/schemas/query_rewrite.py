@@ -13,7 +13,6 @@ class QueryRewriteResult(BaseModel):
     original_query: str
     rewritten_query: str
     is_follow_up: bool = False
-    resolved_query: str | None = None
     rewrite_type: str = "direct"
     entities: dict[str, Any] = Field(default_factory=dict)
     inherited_entities: dict[str, Any] = Field(default_factory=dict)

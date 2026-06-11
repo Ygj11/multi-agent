@@ -269,7 +269,6 @@ class AgentGraphFactory:
             recent_messages=state.get("recent_messages", []),
             short_summary=state.get("short_summary"),
             available_subagents=self.subagent_manager.list_agents(),
-            available_tools=self.tool_registry.list_tools(),
             auth_context=state.get("auth_context"),
         )
         self._log_node_exit(state, "build_orchestrator_context")
@@ -278,6 +277,11 @@ class AgentGraphFactory:
             "graph_path": self._append_path(state, "build_orchestrator_context"),
         }
 
+    """
+        1. 从 AgentCardLoader 里拿 enabled 的 AgentCard 对象
+        2. 转成 dict/json 可序列化结构
+        3. 写入 graph state 的 available_agents
+    """
     async def discover_agents(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "discover_agents")
         cards = self.agent_card_loader.list_available_agents()
@@ -327,6 +331,7 @@ class AgentGraphFactory:
             "graph_path": self._append_path(state, "select_agent"),
         }
 
+    """参数组装层，只是组装时会做一点 memory 裁剪"""
     async def assemble_task(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "assemble_task")
         context = OrchestratorContext(**state["orchestrator_context"])
@@ -350,11 +355,23 @@ class AgentGraphFactory:
         task = AgentTaskEnvelope(**state["assembled_task"])
         result = await self.dispatch_agent_node.dispatch(task, context)
         self._log_node_exit(state, "dispatch_agent")
-        return {
+        updates: dict[str, Any] = {
             "subagent_result": result.model_dump(),
             "answer": result.answer,
             "graph_path": self._append_path(state, "dispatch_agent"),
         }
+        result_metadata = result.metadata or {}
+        if result_metadata.get("clarification"):
+            updates.update(
+                {
+                    "need_clarification": True,
+                    "clarification_question": result_metadata.get("clarification_question") or result.answer,
+                    "clarification_source": result_metadata.get("clarification_source") or "subagent",
+                    "missing_required_entities": result_metadata.get("missing_required_entities") or [],
+                    "entities": result_metadata.get("entities") or state.get("entities", {}),
+                }
+            )
+        return updates
 
     async def resume_approved_tool(self, state: AgentGraphState) -> dict[str, Any]:
         """Resume a paused tool loop after one pending write tool was approved."""

@@ -9,8 +9,8 @@ def _skill(skill_id: str):
 
 def test_skill_required_entities_satisfied():
     result = RequiredEntityChecker().check(
-        skill=_skill("troubleshooting_agent.signature_error"),
-        entities={"error_code": "E102"},
+        skill=_skill("troubleshooting_agent.refund_failure"),
+        entities={"policy_no": "9200100000458846"},
         entity_bag=EntityBag(),
     )
 
@@ -19,19 +19,19 @@ def test_skill_required_entities_satisfied():
 
 def test_skill_required_entities_missing_clarifies():
     result = RequiredEntityChecker().check(
-        skill=_skill("troubleshooting_agent.signature_error"),
+        skill=_skill("troubleshooting_agent.refund_failure"),
         entities={},
         entity_bag=EntityBag(),
     )
 
     assert result.need_clarification is True
-    assert result.missing_required_entities == ["error_code"]
+    assert result.missing_required_entities == ["policy_no"]
 
 
 def test_optional_entities_do_not_block():
     result = RequiredEntityChecker().check(
         skill=_skill("pos_query_agent.realtime_query"),
-        entities={"policy_no": "P2021344266"},
+        entities={"policy_no": "9200100000458846"},
         entity_bag=EntityBag(),
     )
 
@@ -40,21 +40,21 @@ def test_optional_entities_do_not_block():
 
 def test_required_entity_inherited_from_bag():
     bag = EntityBag()
-    bag.add(EntityMention(type="error_code", value="E102", confidence=0.95, source="summary"))
-    result = RequiredEntityChecker().check(skill=_skill("troubleshooting_agent.signature_error"), entities={}, entity_bag=bag)
+    bag.add(EntityMention(type="policy_no", value="9200100000458846", confidence=0.95, source="summary"))
+    result = RequiredEntityChecker().check(skill=_skill("troubleshooting_agent.refund_failure"), entities={}, entity_bag=bag)
 
-    assert result.entities["error_code"] == "E102"
+    assert result.entities["policy_no"] == "9200100000458846"
     assert result.need_clarification is False
 
 
 def test_multiple_candidates_clarify():
     bag = EntityBag()
-    bag.add(EntityMention(type="error_code", value="E102", confidence=0.95, source="summary"))
-    bag.add(EntityMention(type="error_code", value="E103", confidence=0.95, source="summary"))
-    result = RequiredEntityChecker().check(skill=_skill("troubleshooting_agent.signature_error"), entities={}, entity_bag=bag)
+    bag.add(EntityMention(type="policy_no", value="9200100000458846", confidence=0.95, source="summary"))
+    bag.add(EntityMention(type="policy_no", value="9200100000458847", confidence=0.95, source="summary"))
+    result = RequiredEntityChecker().check(skill=_skill("troubleshooting_agent.refund_failure"), entities={}, entity_bag=bag)
 
     assert result.need_clarification is True
-    assert result.missing_required_entities == ["error_code"]
+    assert result.missing_required_entities == ["policy_no"]
 
 
 def test_endo_completion_aftercare_requires_apply_seq_policy_no_and_endorse_type():

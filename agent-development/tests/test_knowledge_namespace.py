@@ -55,7 +55,7 @@ async def test_context_builder_passes_agent_card_rag_namespaces_to_subagent_sear
                 "capabilities": ["troubleshooting"],
                 "supported_intents": ["troubleshooting"],
                 "output_schema": "text",
-                "skills": ["troubleshooting_agent.signature_error"],
+                "skills": ["troubleshooting_agent.refund_failure"],
                 "rag_namespaces": ["troubleshooting"],
                 "version": "1",
             }

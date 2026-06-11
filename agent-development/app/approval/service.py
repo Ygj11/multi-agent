@@ -73,13 +73,21 @@ class ApprovalService:
         risk_level: str,
         arguments: dict[str, Any],
         reason: str,
-        pending_state: dict[str, Any],
-        resume_state: dict[str, Any] | None = None,
+        resume_state: dict[str, Any],
         pending_messages: list[dict[str, Any]],
         pending_tools: list[dict[str, Any]],
         pending_tool_call: dict[str, Any],
     ) -> ApprovalRequest:
         approval_id = f"approval_{uuid4().hex}"
+        root_id = root_approval_id or approval_id
+        resume_state_payload = {
+            **resume_state,
+            "approval_id": approval_id,
+            "approval_status": "created",
+            "parent_approval_id": parent_approval_id,
+            "root_approval_id": root_id,
+            "approval_depth": approval_depth,
+        }
         request = ApprovalRequest(
             approval_id=approval_id,
             session_key=session_key,
@@ -88,7 +96,7 @@ class ApprovalService:
             thread_id=thread_id,
             checkpoint_id=checkpoint_id,
             parent_approval_id=parent_approval_id,
-            root_approval_id=root_approval_id or approval_id,
+            root_approval_id=root_id,
             approval_depth=approval_depth,
             approval_scope=approval_scope,
             idempotency_key=idempotency_key,
@@ -109,8 +117,8 @@ class ApprovalService:
             arguments=arguments,
             reason=reason,
             callback_url=self.callback_url,
-            pending_state=pending_state,
-            resume_state=resume_state or pending_state,
+            pending_state=resume_state_payload,
+            resume_state=resume_state_payload,
             pending_messages=pending_messages,
             pending_tools=pending_tools,
             pending_tool_call=pending_tool_call,

@@ -2,9 +2,10 @@ version: "1.0.0"
 
 patterns:
   - entity_type: request_id
-    description: 请求流水号，例如 REQ_001、REQ-20240501-0001
+    description: 请求流水号，以 req 开头，例如 REQ_001、req-20240501-0001
     regex:
-      - "\\bREQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+)\\b"
+      - "(?<![A-Za-z0-9])REQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+)(?![A-Za-z0-9])"
+      - "(?:请求流水号|请求号|request[_-]?id|requestId)[:：=]?\\s*(REQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+))(?![A-Za-z0-9])"
     normalized_type: string
     sensitive: false
     confidence: 0.95
@@ -20,31 +21,31 @@ patterns:
     confidence: 0.9
 
   - entity_type: apply_seq
-    description: 保全受理号 / 申请流水号，例如 APPLY_POLICY_UPDATE_FAIL
+    description: 保全受理号 / 申请流水号，930 开头的 15 位数字
     regex:
-      - "\\bAPPLY[_-]?[A-Za-z0-9_-]+\\b"
-      - "(?:受理号|申请号|apply[_-]?seq|applySeq)[:：=]?\\s*([A-Za-z0-9_-]+)"
+      - "(?:受理号|申请号|apply[_-]?seq|applySeq)[:：=]?\\s*(930\\d{12})(?!\\d)"
+      - "(?<!\\d)930\\d{12}(?!\\d)"
     normalized_type: string
     sensitive: false
     confidence: 0.95
 
   - entity_type: policy_no
-    description: 保单号
+    description: 保单号，920 开头的 16 位数字
     regex:
-      - "(?:保单号|policy[_-]?no|policyNo)[:：=]?\\s*([A-Za-z0-9]{3,20})(?![A-Za-z0-9])"
-      - "(?<![A-Za-z0-9])P\\d{3,}(?![A-Za-z0-9])"
-      - "(?<![A-Za-z0-9])\\d{10,20}(?![A-Za-z0-9])"
+      - "(?:保单号|保单|policy[_-]?no|policyNo)[:：=]?\\s*(920\\d{13})(?!\\d)"
+      - "(?<!\\d)920\\d{13}(?!\\d)"
     normalized_type: string
     sensitive: false
-    confidence: 0.85
+    confidence: 0.95
 
   - entity_type: endorseType
-    description: 保全项 / 保全类型，例如 退保、地址变更、客户资料变更
+    description: 保全项 / 保全类型，00 开头的 6 位数字
     regex:
-      - "(?:保全项|保全类型|endorseType)[:：=]?\\s*([\\u4e00-\\u9fa5A-Za-z0-9_-]+)"
+      - "(?:保全项|保全类型|endorseType)[:：=]?\\s*(00\\d{4})(?!\\d)"
+      - "(?<!\\d)00\\d{4}(?!\\d)"
     normalized_type: string
     sensitive: false
-    confidence: 0.85
+    confidence: 0.9
 
   - entity_type: customer_no
     description: 客户号，例如 customerNo、customer_no
@@ -103,30 +104,26 @@ patterns:
     sensitive: false
     confidence: 0.9
 
-  - entity_type: interface_name
-    description: 接口名，例如 submitProposal、callbackNotify
+  - entity_type: product_code
+    description: 产品编码，以 pm 开头
     regex:
-      - "\\b[a-z][A-Za-z0-9_]*(?:Api|API|Service|Callback|Notify|Proposal|Policy|Claim)?\\b"
-    keyword_allowlist:
-      - submitProposal
-      - callbackNotify
-      - refundCallback
-      - policyQuery
-      - claimQuery
+      - "(?:产品编码|产品代码|product[_-]?code|productCode)[:：=]?\\s*(PM[A-Za-z0-9_-]{1,30})(?![A-Za-z0-9])"
+      - "(?<![A-Za-z0-9])PM[A-Za-z0-9_-]{1,30}(?![A-Za-z0-9])"
     normalized_type: string
     sensitive: false
-    confidence: 0.75
+    confidence: 0.85
 
-  - entity_type: product_code
-    description: 产品编码
+  - entity_type: plan_code
+    description: 险种编码，以 h 开头
     regex:
-      - "\\bPROD[_-]?[A-Za-z0-9_-]+\\b"
+      - "(?:险种编码|险种代码|plan[_-]?code|planCode)[:：=]?\\s*(H[A-Za-z0-9_-]{1,30})(?![A-Za-z0-9])"
+      - "(?<![A-Za-z0-9])H[A-Za-z0-9_-]{1,30}(?![A-Za-z0-9])"
     normalized_type: string
     sensitive: false
     confidence: 0.85
 
   - entity_type: phone_number
-    description: 手机号
+    description: 中国大陆手机号
     regex:
       - "(?<!\\d)1[3-9]\\d{9}(?!\\d)"
     normalized_type: string
@@ -134,9 +131,9 @@ patterns:
     confidence: 0.95
 
   - entity_type: id_card
-    description: 身份证号
+    description: 中国大陆居民身份证号
     regex:
-      - "(?<!\\d)\\d{17}[0-9Xx](?!\\d)"
+      - "(?<![A-Za-z0-9])[1-9]\\d{5}(?:18|19|20)\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\d{3}[0-9Xx](?![A-Za-z0-9])"
     normalized_type: string
     sensitive: true
     confidence: 0.95

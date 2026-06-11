@@ -20,6 +20,8 @@ def test_get_settings_uses_defaults_without_env_file(tmp_path):
     assert settings.enable_real_llm is False
     assert settings.checkpoint_backend == "memory"
     assert settings.strict_taxonomy_route_coverage is True
+    assert settings.pos_tool_mode == "mock"
+    assert settings.troubleshooting_tool_mode == "mock"
 
 
 def test_get_settings_reads_dotenv_values(tmp_path):
@@ -31,6 +33,9 @@ def test_get_settings_reads_dotenv_values(tmp_path):
                 "ENABLE_REAL_LLM=true",
                 "CHECKPOINT_BACKEND=sqlite",
                 "STRICT_TAXONOMY_ROUTE_COVERAGE=false",
+                "POS_TOOL_MODE=real",
+                "TROUBLESHOOTING_TOOL_MODE=real",
+                "TROUBLESHOOTING_API_BASE_URL=https://troubleshooting.example.test",
             ]
         ),
         encoding="utf-8",
@@ -43,6 +48,9 @@ def test_get_settings_reads_dotenv_values(tmp_path):
     assert settings.enable_real_llm is True
     assert settings.checkpoint_backend == "sqlite"
     assert settings.strict_taxonomy_route_coverage is False
+    assert settings.pos_tool_mode == "real"
+    assert settings.troubleshooting_tool_mode == "real"
+    assert settings.troubleshooting_api_base_url == "https://troubleshooting.example.test"
 
 
 def test_os_environment_wins_over_dotenv(tmp_path):

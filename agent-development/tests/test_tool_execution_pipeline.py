@@ -12,7 +12,7 @@ from app.tools.registry import ToolRegistry
 
 def _registry() -> ToolRegistry:
     registry = ToolRegistry()
-    register_agent_private_tools(registry)
+    register_agent_private_tools(registry, troubleshooting_tool_mode="real")
     return registry
 
 

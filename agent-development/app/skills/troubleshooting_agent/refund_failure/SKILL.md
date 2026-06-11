@@ -35,6 +35,8 @@ routing_keywords:
   - 退费
   - 退保失败
 routing_negative_keywords:
+  - E102
+  - 签名
   - 回调失败
   - 字段缺失
   - 保全任务完成

@@ -1,4 +1,4 @@
-Query:
+Rewritten standalone query:
 {query}
 
 Intent:

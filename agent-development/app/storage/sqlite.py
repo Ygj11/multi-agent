@@ -50,7 +50,9 @@ class SQLiteDatabase:
 
                 CREATE TABLE IF NOT EXISTS graph_checkpoints (
                     thread_id TEXT PRIMARY KEY,
-                    state_json TEXT NOT NULL,
+                    schema_version INTEGER NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
 
@@ -115,8 +117,7 @@ class SQLiteDatabase:
                     reason TEXT NOT NULL,
                     status TEXT NOT NULL,
                     callback_url TEXT,
-                    pending_state_json TEXT NOT NULL,
-                    resume_state_json TEXT,
+                    resume_state_json TEXT NOT NULL,
                     pending_messages_json TEXT NOT NULL,
                     pending_tools_json TEXT NOT NULL,
                     pending_tool_call_json TEXT NOT NULL,
@@ -148,41 +149,12 @@ class SQLiteDatabase:
                 ON approval_events(approval_id, event_id);
                 """
             )
-            self._ensure_column(conn, "tool_execution_logs", "source", "TEXT")
-            self._ensure_column(conn, "tool_execution_logs", "server_name", "TEXT")
-            self._ensure_column(conn, "tool_execution_logs", "original_tool_name", "TEXT")
-            self._ensure_column(conn, "tool_execution_logs", "approval_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "thread_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "checkpoint_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "parent_approval_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "root_approval_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "approval_depth", "INTEGER NOT NULL DEFAULT 0")
-            self._ensure_column(conn, "approval_requests", "next_approval_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "approval_scope", "TEXT NOT NULL DEFAULT 'single_tool_call'")
-            self._ensure_column(conn, "approval_requests", "idempotency_key", "TEXT")
-            self._ensure_column(conn, "approval_requests", "tenant_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "subject", "TEXT")
-            self._ensure_column(conn, "approval_requests", "user_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "org_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "org_path_json", "TEXT")
-            self._ensure_column(conn, "approval_requests", "principal_snapshot_json", "TEXT")
-            self._ensure_column(conn, "approval_requests", "auth_context_snapshot_json", "TEXT")
-            self._ensure_column(conn, "approval_requests", "resource_type", "TEXT")
-            self._ensure_column(conn, "approval_requests", "resource_id", "TEXT")
-            self._ensure_column(conn, "approval_requests", "tool_required_scopes_json", "TEXT")
-            self._ensure_column(conn, "approval_requests", "resume_state_json", "TEXT")
 
     def connect(self) -> sqlite3.Connection:
         """创建 SQLite 连接，并返回 dict-like row。"""
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
         return conn
-
-    @staticmethod
-    def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
-        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-        if column not in columns:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     async def run(self, func: Callable[[sqlite3.Connection], T]) -> T:
         """在线程池中执行同步 sqlite3 操作。"""
