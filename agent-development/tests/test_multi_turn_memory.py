@@ -15,7 +15,7 @@ def _chat_request(content: str, *, session_id: str = "s001") -> ChatRequest:
 
 
 def test_second_turn_uses_first_turn_context(client):
-    """第二轮追问应能复用第一轮 E102 上下文。"""
+    """第二轮追问应能复用第一轮 E102 上下文，但无 skill 时仍不执行泛化诊断。"""
     payload = {
         "tenant_id": "pingan_health",
         "channel": "web",
@@ -40,9 +40,10 @@ def test_second_turn_uses_first_turn_context(client):
     assert second.status_code == 200
     data = second.json()
     assert data["intent"] == "troubleshooting"
-    assert "继续排查上一轮" in data["rewritten_query"]
-    assert "E102" in data["answer"]
-    assert "渠道" in data["answer"] or "timestamp" in data["answer"]
+    assert "上一轮" in data["rewritten_query"]
+    assert "REQ_001" in data["rewritten_query"]
+    assert "E102" in data["rewritten_query"]
+    assert "没有匹配到可执行的业务技能" in data["answer"]
 
 
 async def test_clarification_reply_inherits_pending_task_entities(app_factory):

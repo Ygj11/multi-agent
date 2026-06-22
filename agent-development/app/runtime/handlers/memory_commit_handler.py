@@ -21,5 +21,7 @@ class MemoryCommitHandler:
             intent=state.get("intent", "unknown"),
             answer=state.get("answer", ""),
             subagent_result=state.get("subagent_result"),
+            request_id=state.get("request_id"),
+            trace_id=state.get("trace_id"),
         )
         return {"short_summary": summary}

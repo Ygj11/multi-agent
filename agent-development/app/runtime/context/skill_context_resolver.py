@@ -3,9 +3,9 @@ from __future__ import annotations
 """Skill context resolution for sub-agent execution."""
 
 from dataclasses import dataclass
-import re
 
 from app.observability.logger import log_event
+from app.runtime.failure_codes import NO_CONFIDENT_SKILL, NO_ENABLED_SKILLS, NO_SKILL_POLICY_BLOCKED
 from app.schemas.entities import EntityBag
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.skill import SkillSelectionContext, SkillSelectionResult
@@ -40,11 +40,17 @@ class SkillContextResolver:
         skill_loader: SkillLoader,
         skill_selector: SkillSelector,
         required_entity_checker: RequiredEntityChecker | None = None,
+        no_skill_policy: str = "clarify",
+        app_env: str = "local",
     ) -> None:
+        if no_skill_policy == "generic_dev_only" and app_env != "local":
+            raise ValueError("NO_SKILL_POLICY=generic_dev_only is only allowed when APP_ENV=local")
         self.skill_catalog = skill_catalog
         self.skill_loader = skill_loader
         self.skill_selector = skill_selector
         self.required_entity_checker = required_entity_checker or RequiredEntityChecker()
+        self.no_skill_policy = no_skill_policy
+        self.app_env = app_env
 
     async def resolve(
         self,
@@ -66,34 +72,23 @@ class SkillContextResolver:
         self.write_selection_metadata(task, selection)
 
 
-        """When no skill matches, continue with generic sub-agent context."""
         if selection.selected_skill_id is None or selection.selected_skill_metadata is None:
-            task.metadata["selected_skill_id"] = None
-            task.metadata["selected_skill_metadata"] = None
-            task.metadata["missing_required_entities"] = []
-            task.metadata["need_clarification"] = False
-            task.metadata["clarification_question"] = None
-            log_event(
-                "skill_fallback_generic_execution",
-                request_id=task.metadata.get("request_id"),
-                trace_id=task.metadata.get("trace_id"),
-                session_key=task.session_key,
-                node="context_builder",
-                message="No confident skill match; continue with generic subagent execution",
-                data={"agent_name": task.name, "reason": selection.reason},
-            )
-            return SkillResolution(selection=selection, skill_content=self.generic_skill_content, entity_check=None)
+            return self._resolve_no_skill(task=task, selection=selection)
 
         """Load the selected skill content and check required entities."""
         loaded_skill = self.skill_loader.load(selection.selected_skill_id)
 
-        entity_bag = EntityBag(**parent_context.entity_bag) if parent_context.entity_bag else EntityBag()
-        entity_bag.merge(EntityBag.from_compact_dict(task.entities, source="rule", confidence=0.9))
+        entity_bag = EntityBag(**parent_context.entity_bag) if parent_context.entity_bag else EntityBag.from_compact_dict(
+            parent_context.entities or task.entities,
+            source="rule",
+            confidence=0.9,
+        )
+        resolved_entities = entity_bag.to_compact_dict()
 
         """Check required entities and determine if clarification is needed."""
         entity_check = self.required_entity_checker.check(
             skill=selection.selected_skill_metadata,
-            entities=task.entities,
+            entities=resolved_entities,
             entity_bag=entity_bag,
         )
         task.entities = entity_check.entities
@@ -117,6 +112,56 @@ class SkillContextResolver:
             },
         )
         return SkillResolution(selection=selection, skill_content=loaded_skill.content, entity_check=entity_check)
+
+    def _resolve_no_skill(self, *, task: SubAgentTask, selection: SkillSelectionResult) -> SkillResolution:
+        reason = selection.fallback_reason or (NO_ENABLED_SKILLS if selection.selection_source == "none" else NO_CONFIDENT_SKILL)
+        task.metadata["selected_skill_id"] = None
+        task.metadata["selected_skill_metadata"] = None
+        task.metadata["missing_required_entities"] = []
+        task.metadata["no_skill_policy"] = self.no_skill_policy
+        task.metadata["no_skill_blocked"] = self.no_skill_policy != "generic_dev_only"
+        task.metadata["skill_selection_fallback_reason"] = reason
+        task.metadata["skill_selection_llm_status"] = selection.llm_status
+        task.metadata["skill_selection_decision_trace"] = selection.decision_trace
+
+        if self.no_skill_policy == "generic_dev_only":
+            task.metadata["need_clarification"] = False
+            task.metadata["clarification_question"] = None
+            log_event(
+                "skill_generic_dev_execution",
+                request_id=task.metadata.get("request_id"),
+                trace_id=task.metadata.get("trace_id"),
+                session_key=task.session_key,
+                node="context_builder",
+                message="No confident skill match; generic execution allowed for local development",
+                data={"agent_name": task.name, "reason": selection.reason, "no_skill_policy": self.no_skill_policy},
+            )
+            return SkillResolution(selection=selection, skill_content=self.generic_skill_content, entity_check=None)
+
+        if self.no_skill_policy == "answer_no_skill":
+            question = "当前 Agent 没有匹配到可执行的业务技能，暂不继续调用工具。请补充更明确的业务场景或联系管理员配置对应 Skill。"
+            need_clarification = False
+        else:
+            question = "当前问题没有匹配到可执行的业务技能，请补充更明确的业务场景、业务类型或关键编号后我再继续处理。"
+            need_clarification = True
+
+        task.metadata["need_clarification"] = need_clarification
+        task.metadata["clarification_question"] = question
+        log_event(
+            "skill_no_match_blocked",
+            request_id=task.metadata.get("request_id"),
+            trace_id=task.metadata.get("trace_id"),
+            session_key=task.session_key,
+            node="context_builder",
+            message="No confident skill match; blocked by no-skill policy",
+            data={
+                "agent_name": task.name,
+                "reason": selection.reason,
+                "no_skill_policy": self.no_skill_policy,
+                "fallback_reason": reason or NO_SKILL_POLICY_BLOCKED,
+            },
+        )
+        return SkillResolution(selection=selection, skill_content="", entity_check=None)
 
     def build_candidates(self, *, task: SubAgentTask):
         agent_card_data = task.metadata.get("agent_card")
@@ -146,8 +191,12 @@ class SkillContextResolver:
         parent_context: OrchestratorContext,
     ) -> SkillSelectionContext:
         recent_summary = " ".join(str(item.get("content", "")) for item in parent_context.recent_messages[-6:])
-        query = f"{task.original_query} {task.query} {parent_context.rewritten_query}"
-        merged_entities = {**parent_context.entities, **task.entities}
+        entity_bag = EntityBag(**parent_context.entity_bag) if parent_context.entity_bag else EntityBag.from_compact_dict(
+            parent_context.entities or task.entities,
+            source="rule",
+            confidence=0.9,
+        )
+        entities = entity_bag.to_compact_dict()
         return SkillSelectionContext(
             agent_name=task.name,
             intent=task.intent,
@@ -155,16 +204,16 @@ class SkillContextResolver:
             original_query=task.original_query,
             rewritten_query=parent_context.rewritten_query,
             session_key=task.session_key,
-            entities=task.entities,
-            entity_bag=parent_context.entity_bag,
+            entities=entities,
+            entity_bag=entity_bag.model_dump(),
             short_summary=parent_context.short_summary,
             recent_messages_summary=recent_summary[:2000],
             lightweight_knowledge_hints=parent_context.lightweight_knowledge_hints,
             request_id=task.metadata.get("request_id"),
             trace_id=task.metadata.get("trace_id"),
-            extracted_error_code=self._entity_value(merged_entities, "error_code") or self.extract_error_code(query),
-            extracted_request_id=self._entity_value(merged_entities, "request_id") or self.extract_request_id(query),
-            extracted_interface_name=self._entity_value(merged_entities, "interface_name") or self.extract_interface_name(query),
+            extracted_error_code=self._entity_value(entities, "error_code"),
+            extracted_request_id=self._entity_value(entities, "request_id"),
+            extracted_interface_name=self._entity_value(entities, "interface_name"),
         )
 
     @staticmethod
@@ -175,22 +224,9 @@ class SkillContextResolver:
         task.metadata["skill_selection_source"] = selection.selection_source
         task.metadata["skill_selection_llm_confidence"] = selection.llm_confidence
         task.metadata["skill_selection_llm_reason"] = selection.llm_reason
-
-    @staticmethod
-    def extract_error_code(text: str) -> str | None:
-        match = re.search(r"\bE\d{3,}\b", text)
-        return match.group(0) if match else None
-
-    @staticmethod
-    def extract_request_id(text: str) -> str | None:
-        match = re.search(r"\bREQ_\d+\b", text)
-        return match.group(0) if match else None
-
-    @staticmethod
-    def extract_interface_name(text: str) -> str | None:
-        if "submitProposal" in text:
-            return "submitProposal"
-        return None
+        task.metadata["skill_selection_llm_status"] = selection.llm_status
+        task.metadata["skill_selection_fallback_reason"] = selection.fallback_reason
+        task.metadata["skill_selection_decision_trace"] = selection.decision_trace
 
     @staticmethod
     def _entity_value(entities: dict[str, object], entity_type: str) -> str | None:

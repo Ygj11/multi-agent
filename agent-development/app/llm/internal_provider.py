@@ -39,6 +39,8 @@ class InternalLLMProvider:
         temperature: float | None = None,
         max_tokens: int | None = None,
         request_id: str | None = None,
+        trace_id: str | None = None,
+        session_key: str | None = None,
     ) -> LLMResponse:
         started = perf_counter()
         actual_model = self.get_llm_model(scene=scene, explicit_model=model)
@@ -50,7 +52,7 @@ class InternalLLMProvider:
                 request_id=request_id,
                 started=started,
             )
-            self._log(scene, response)
+            self._log(scene, response, trace_id=trace_id, session_key=session_key)
             return response
 
         payload = self._build_payload(
@@ -78,10 +80,10 @@ class InternalLLMProvider:
                     latency_ms=latency_ms,
                     raw_response={"status_code": resp.status_code, "text": resp.text},
                 )
-                self._log(scene, response)
+                self._log(scene, response, trace_id=trace_id, session_key=session_key)
                 return response
             response = self._parse_response(resp.json(), model=actual_model, request_id=request_id, latency_ms=latency_ms)
-            self._log(scene, response)
+            self._log(scene, response, trace_id=trace_id, session_key=session_key)
             return response
         except Exception as exc:
             response = LLMResponse(
@@ -92,7 +94,7 @@ class InternalLLMProvider:
                 request_id=request_id,
                 latency_ms=int((perf_counter() - started) * 1000),
             )
-            self._log(scene, response)
+            self._log(scene, response, trace_id=trace_id, session_key=session_key)
             return response
 
     def _build_payload(
@@ -312,10 +314,12 @@ class InternalLLMProvider:
         return "已完成任务分析。"
 
     @staticmethod
-    def _log(scene: str | None, response: LLMResponse) -> None:
+    def _log(scene: str | None, response: LLMResponse, *, trace_id: str | None = None, session_key: str | None = None) -> None:
         log_event(
             "llm_chat_finished",
             request_id=response.request_id,
+            trace_id=trace_id,
+            session_key=session_key,
             node="llm_provider",
             message="LLM chat finished",
             data={

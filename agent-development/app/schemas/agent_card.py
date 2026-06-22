@@ -108,3 +108,8 @@ class AgentSelectionResult(BaseModel):
     selection_method: Literal["rule", "llm_router", "fallback"] = "rule"
     need_clarification: bool = False
     clarification_question: str | None = None
+    llm_status: str | None = None
+    fallback_used: bool = False
+    fallback_source: str | None = None
+    fallback_reason: str | None = None
+    decision_trace: dict[str, Any] = Field(default_factory=dict)

@@ -1,0 +1,83 @@
+version: "1.0.0"
+intents:
+  pos_query:
+    confidence: 0.86
+    keywords:
+      - 保全实时查询
+      - 可做保全项
+      - 可以做哪些保全项
+      - 可办理保全
+      - 批文查询
+      - 保全批文
+      - 退保试算
+      - 试算详情
+      - 提交校验
+      - 退保提交校验
+      - 保单标准查询
+      - pos
+    entity_hints:
+      - customer_no
+    default_sub_intent: pos_query
+    sub_intents:
+      pos_available_items:
+        keywords:
+          - 可做保全项
+          - 可以做哪些保全项
+          - 可办理保全
+      pos_approval_text_query:
+        keywords:
+          - 批文查询
+          - 保全批文
+      pos_surrender_premium_calc:
+        keywords:
+          - 退保试算
+          - 试算详情
+      pos_submit_verify:
+        keywords:
+          - 提交校验
+          - 退保提交校验
+      pos_policy_standard_query:
+        keywords:
+          - 保单标准查询
+          - 保单查询
+  troubleshooting:
+    confidence: 0.90
+    keywords:
+      - 退保失败
+      - 退保没有成功
+      - 没有成功
+      - 回调失败
+      - 签名
+      - 排查
+      - 报错
+      - 失败
+      - 错误
+      - 异常
+      - 保全任务完成
+      - 保全完成
+      - 没有更新
+      - 未更新
+      - 未解锁
+      - 未退费
+      - 未发短信
+    entity_hints:
+      - request_id
+      - error_code
+    sub_intents:
+      refund_failure:
+        keywords:
+          - 退保失败
+          - 退保没有成功
+          - 没有成功
+      endo_completion_aftercare:
+        keywords:
+          - 保全任务完成
+          - 保全完成
+          - 没有更新
+          - 未更新
+          - 未解锁
+          - 未退费
+          - 未发短信
+unknown:
+  confidence: 0.42
+  clarification_question: 请补充你要办理的业务类型，例如排查或保全实时查询。

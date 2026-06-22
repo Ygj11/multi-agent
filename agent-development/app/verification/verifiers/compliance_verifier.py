@@ -31,6 +31,9 @@ class ComplianceVerifier:
                 ],
                 tools=None,
                 scene="final_compliance",
+                request_id=input.request_id,
+                trace_id=input.trace_id,
+                session_key=input.session_key,
             )
 
         sanitized = answer

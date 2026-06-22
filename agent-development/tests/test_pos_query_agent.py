@@ -187,7 +187,7 @@ async def test_pos_intent_rule_fallback_for_approval_text():
 
     assert result.intent == "pos_query"
     assert result.sub_intent == "pos_approval_text_query"
-    assert result.entities["apply_seq"] == "930010412672222"
+    assert "entities" not in result.model_dump()
 
 
 @pytest.mark.asyncio

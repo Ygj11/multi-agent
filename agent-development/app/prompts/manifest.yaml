@@ -1,0 +1,58 @@
+version: "1.0.0"
+scenes:
+  query_rewrite:
+    version: "2026-06-12.1"
+    system: query_rewrite/system.md
+    user: query_rewrite/user.md
+    output_schema: QueryRewriteLLMOutput
+    eval_suite: query_rewrite_multiturn_v1
+    default_model: configured-default
+    tools_allowed: false
+  intent_recognition:
+    version: "2026-06-12.1"
+    system: intent_recognition/system.md
+    user: intent_recognition/user.md
+    output_schema: IntentRecognitionLLMOutput
+    eval_suite: intent_taxonomy_v1
+    default_model: configured-default
+    tools_allowed: false
+  agent_selection:
+    version: "2026-06-12.1"
+    system: agent_selection/system.md
+    user: agent_selection/user.md
+    output_schema: AgentSelectionLLMOutput
+    eval_suite: agent_selection_v1
+    default_model: configured-default
+    tools_allowed: false
+  skill_selection:
+    version: "2026-06-12.1"
+    system: skill_selection/system.md
+    user: skill_selection/user.md
+    output_schema: SkillSelectionLLMOutput
+    eval_suite: skill_selection_v1
+    default_model: configured-default
+    tools_allowed: false
+  subagent_reasoning:
+    version: "2026-06-12.1"
+    system: subagent_reasoning/system.md
+    user: subagent_reasoning/user.md
+    output_schema: SubAgentResult
+    eval_suite: tool_calling_v1
+    default_model: configured-default
+    tools_allowed: true
+  memory_summary:
+    version: "2026-06-12.1"
+    system: memory_summary/system.md
+    user: memory_summary/user.md
+    output_schema: text
+    eval_suite: memory_summary_v1
+    default_model: configured-default
+    tools_allowed: false
+  final_compliance:
+    version: "2026-06-12.1"
+    system: verification/final_compliance_system.md
+    user: null
+    output_schema: VerificationResult
+    eval_suite: final_compliance_v1
+    default_model: configured-default
+    tools_allowed: false

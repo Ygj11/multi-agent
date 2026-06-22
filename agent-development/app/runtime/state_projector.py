@@ -34,6 +34,7 @@ def project_checkpoint_snapshot(state: dict[str, Any]) -> CheckpointSnapshot:
         confidence=_optional_float(state.get("confidence")),
         entities=_drop_credential_fields(_as_dict(state.get("entities"))),
         selected_agent=_optional_str(state.get("selected_agent")),
+        agent_selection_summary=_drop_credential_fields(_as_dict(state.get("agent_selection_summary"))),
         selected_skill_id=_optional_str(subagent_result.get("selected_skill_id")),
         approval_required=bool(state.get("approval_required")),
         approval_id=_optional_str(state.get("approval_id")),

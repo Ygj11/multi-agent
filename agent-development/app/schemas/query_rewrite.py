@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.entities import EntityBag
+
 
 class QueryRewriteResult(BaseModel):
     """Query rewrite output with dynamic entities and clarification state."""
@@ -23,3 +25,14 @@ class QueryRewriteResult(BaseModel):
     reason: str = ""
     entity_bag: dict[str, Any] = Field(default_factory=dict)
     conversation_window: dict[str, Any] = Field(default_factory=dict)
+    llm_status: str | None = None
+    fallback_used: bool = False
+    fallback_source: str | None = None
+    fallback_reason: str | None = None
+    decision_trace: dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any) -> None:
+        """Keep compact entities as a derived compatibility view of entity_bag."""
+        if not self.entity_bag:
+            return
+        self.entities = EntityBag(**self.entity_bag).to_compact_dict()

@@ -1,0 +1,95 @@
+version: "1.0.0"
+defaults:
+  timeout_ms: 10000
+  retry:
+    max_attempts: 1
+  data_classification: internal
+mcp_default:
+  timeout_ms: 10000
+  retry:
+    max_attempts: 1
+  result_schema: AnyDictResult
+  data_classification: internal
+tools:
+  rag_search_tool:
+    timeout_ms: 5000
+    result_schema: TextResult
+  calculator_tool:
+    timeout_ms: 3000
+    result_schema: CalculatorResult
+  current_time_tool:
+    timeout_ms: 1000
+    result_schema: CurrentTimeResult
+  query_task_status:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+  query_node_status:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+  query_internal_log:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+  query_endo_task_record:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+  notice_policy_update:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+    idempotency_key_fields:
+      - apply_seq
+      - policyNo
+      - endorseType
+  notice_customer_update:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+    idempotency_key_fields:
+      - apply_seq
+      - policyNo
+      - endorseType
+  notice_period_update:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+    idempotency_key_fields:
+      - apply_seq
+      - policyNo
+      - endorseType
+  policy_suspendOrRecovery:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+    idempotency_key_fields:
+      - handleType
+      - premHandleFlag
+  notice_finance:
+    timeout_ms: 5000
+    result_schema: AnyDictResult
+    idempotency_key_fields:
+      - apply_seq
+      - policyNo
+      - endorseType
+  pos_query_available_items:
+    timeout_ms: 5000
+    result_schema: PosAPIResult
+  pos_calc_surrender_premium:
+    timeout_ms: 5000
+    result_schema: PosAPIResult
+  pos_query_policy_standard:
+    timeout_ms: 5000
+    result_schema: PosAPIResult
+  pos_query_approval_text:
+    timeout_ms: 5000
+    result_schema: PosAPIResult
+  pos_submit_verify:
+    timeout_ms: 5000
+    result_schema: PosAPIResult
+  shell_exec:
+    timeout_ms: 5000
+    result_schema: ShellExecResult
+    data_classification: confidential
+  http_request:
+    timeout_ms: 5000
+    result_schema: HTTPToolResult
+    data_classification: confidential
+  mcp_http.call_tool:
+    timeout_ms: 5000
+    result_schema: HTTPToolResult
+    data_classification: confidential

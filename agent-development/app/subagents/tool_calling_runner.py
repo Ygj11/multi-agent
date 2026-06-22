@@ -104,6 +104,8 @@ class ToolCallingRunner:
                 tools=tools,
                 scene="subagent_reasoning",
                 request_id=request_id,
+                trace_id=trace_id,
+                session_key=session_key,
             )
             
             if response.finish_reason == "error":

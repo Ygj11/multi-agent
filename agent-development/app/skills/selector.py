@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.llm.base import LLMProvider
 from app.observability.logger import log_event, preview_text
+from app.runtime.failure_codes import NO_ENABLED_SKILLS
 from app.schemas.skill import SkillMetadata, SkillSelectionContext, SkillSelectionResult
 from app.skills.reranker import SkillLLMReranker
 from app.skills.scorer import SkillRuleScorer
@@ -77,6 +78,10 @@ class SkillSelector:
                 reason=f"no enabled skills for agent: {agent_name}",
                 fallback=True,
                 selection_source="none",
+                fallback_used=True,
+                fallback_source="skill_selection",
+                fallback_reason=NO_ENABLED_SKILLS,
+                decision_trace={"source": "skill_selection", "method": "none", "fallback_reason": NO_ENABLED_SKILLS},
             )
 
         scored = [self.scorer.score(context, candidate) for candidate in candidates]
@@ -96,6 +101,7 @@ class SkillSelector:
             scored=scored,
             rerank_result=rerank_result,
             rerank_attempted=rerank_attempted,
+            rerank_attempt=self.reranker.last_attempt if rerank_attempted else None,
         )
 
         if decision.fallback:
@@ -111,6 +117,8 @@ class SkillSelector:
                     "selected_skill_id": decision.selected.skill_id if decision.selected else None,
                     "score": decision.score,
                     "reason": decision.reason,
+                    "fallback_reason": decision.fallback_reason,
+                    "llm_status": decision.llm_status,
                 },
             )
 
@@ -129,6 +137,9 @@ class SkillSelector:
                 "selection_source": decision.selection_source,
                 "llm_confidence": decision.llm_confidence,
                 "llm_reason": decision.llm_reason,
+                "llm_status": decision.llm_status,
+                "fallback_used": decision.fallback,
+                "fallback_reason": decision.fallback_reason,
                 "query_preview": preview_text(context.rewritten_query),
             },
         )
@@ -141,4 +152,9 @@ class SkillSelector:
             selection_source=decision.selection_source,
             llm_confidence=decision.llm_confidence,
             llm_reason=decision.llm_reason,
+            llm_status=decision.llm_status,
+            fallback_used=decision.fallback,
+            fallback_source="skill_selection" if decision.fallback else None,
+            fallback_reason=decision.fallback_reason,
+            decision_trace=decision.decision_trace or {},
         )

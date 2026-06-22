@@ -22,4 +22,69 @@ env/
 *.db
 *.sqlite
 
+# Local image assets
+/img/
+/agent-development/img/
+
 agent-development/.data/agent_mvp.sqlite3
+
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments and local dependency folders
+.venv/
+venv/
+env/
+ENV/
+
+# Local runtime data
+.data/
+api/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.log
+logs/
+
+# Build and packaging outputs
+build/
+dist/
+*.egg-info/
+
+# Local environment and secrets
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# opt
+/opt/
+/agent-development/opt/*
+!/agent-development/opt/
+!/agent-development/opt/*.md

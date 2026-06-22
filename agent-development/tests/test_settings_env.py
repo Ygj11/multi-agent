@@ -22,6 +22,8 @@ def test_get_settings_uses_defaults_without_env_file(tmp_path):
     assert settings.strict_taxonomy_route_coverage is True
     assert settings.pos_tool_mode == "mock"
     assert settings.troubleshooting_tool_mode == "mock"
+    assert settings.app_env == "local"
+    assert settings.no_skill_policy == "clarify"
 
 
 def test_get_settings_reads_dotenv_values(tmp_path):
@@ -36,6 +38,8 @@ def test_get_settings_reads_dotenv_values(tmp_path):
                 "POS_TOOL_MODE=real",
                 "TROUBLESHOOTING_TOOL_MODE=real",
                 "TROUBLESHOOTING_API_BASE_URL=https://troubleshooting.example.test",
+                "APP_ENV=staging",
+                "NO_SKILL_POLICY=answer_no_skill",
             ]
         ),
         encoding="utf-8",
@@ -51,6 +55,8 @@ def test_get_settings_reads_dotenv_values(tmp_path):
     assert settings.pos_tool_mode == "real"
     assert settings.troubleshooting_tool_mode == "real"
     assert settings.troubleshooting_api_base_url == "https://troubleshooting.example.test"
+    assert settings.app_env == "staging"
+    assert settings.no_skill_policy == "answer_no_skill"
 
 
 def test_os_environment_wins_over_dotenv(tmp_path):

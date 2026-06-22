@@ -54,3 +54,24 @@ async def test_skill_selector_returns_no_skill_for_unclear_query():
     assert result.selected_skill_id is None
     assert result.selected_skill_metadata is None
     assert result.fallback is True
+
+
+async def test_skill_selector_no_candidates_is_observable_fallback():
+    """无启用候选 skill 时也必须记录 fallback 语义。"""
+    selector = SkillSelector()
+    context = SkillSelectionContext(
+        agent_name="troubleshooting_agent",
+        intent="troubleshooting",
+        original_query="帮我看一下这个问题",
+        rewritten_query="帮我看一下这个问题",
+        session_key="s",
+    )
+
+    result = await selector.select(agent_name="troubleshooting_agent", context=context, candidates=[])
+
+    assert result.selected_skill_id is None
+    assert result.fallback is True
+    assert result.fallback_used is True
+    assert result.fallback_source == "skill_selection"
+    assert result.fallback_reason == "no_enabled_skills"
+    assert result.decision_trace["fallback_reason"] == "no_enabled_skills"

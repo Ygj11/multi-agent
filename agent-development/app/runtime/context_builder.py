@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.knowledge.service import KnowledgeService
+from app.schemas.entities import EntityBag
 from app.schemas.runtime import OrchestratorContext, SubAgentContext
 from app.schemas.subagent import SubAgentTask
 from app.runtime.context.knowledge_hint_builder import KnowledgeHintBuilder
@@ -24,17 +25,23 @@ class ContextBuilder:
         knowledge_service: KnowledgeService | None = None,
         skill_catalog: SkillCatalog | None = None,
         skill_selector: SkillSelector | None = None,
+        no_skill_policy: str = "clarify",
+        app_env: str = "local",
     ) -> None:
         self.skills_root = Path(skills_root)
         self.knowledge_service = knowledge_service
         self.skill_catalog = skill_catalog or SkillCatalog(self.skills_root)
         self.skill_loader = SkillLoader(self.skill_catalog)
         self.skill_selector = skill_selector or SkillSelector()
+        self.no_skill_policy = no_skill_policy
+        self.app_env = app_env
         self.knowledge_hint_builder = KnowledgeHintBuilder(knowledge_service=knowledge_service)
         self.skill_context_resolver = SkillContextResolver(
             skill_catalog=self.skill_catalog,
             skill_loader=self.skill_loader,
             skill_selector=self.skill_selector,
+            no_skill_policy=no_skill_policy,
+            app_env=app_env,
         )
 
     async def build_for_orchestrator(
@@ -54,6 +61,9 @@ class ContextBuilder:
         agent_candidate_summaries: list[dict[str, Any]] | None = None,
         auth_context: dict[str, Any] | None = None,
     ) -> OrchestratorContext:
+        compact_entities = entities or {}
+        if entity_bag:
+            compact_entities = EntityBag(**entity_bag).to_compact_dict()
         hints = await self.knowledge_hint_builder.build_lightweight_hints(
             query=f"{original_query} {rewritten_query}",
             intent=intent,
@@ -63,7 +73,7 @@ class ContextBuilder:
             rewritten_query=rewritten_query,
             intent=intent,
             sub_intent=sub_intent,
-            entities=entities or {},
+            entities=compact_entities,
             entity_bag=entity_bag or {},
             conversation_window=conversation_window or {},
             session_key=session_key,
@@ -102,9 +112,13 @@ class ContextBuilder:
             selected_skill_metadata=selection.selected_skill_metadata.model_dump() if selection.selected_skill_metadata else None,
             skill_selection_score=selection.score,
             skill_selection_reason=selection.reason,
+            skill_selection_fallback=selection.fallback,
+            skill_selection_source=selection.selection_source,
+            no_skill_policy=task.metadata.get("no_skill_policy"),
+            no_skill_blocked=bool(task.metadata.get("no_skill_blocked")),
             missing_required_entities=entity_check.missing_required_entities if entity_check else [],
-            need_clarification=entity_check.need_clarification if entity_check else False,
-            clarification_question=entity_check.clarification_question if entity_check else None,
+            need_clarification=bool(task.metadata.get("need_clarification")) if entity_check is None else entity_check.need_clarification,
+            clarification_question=task.metadata.get("clarification_question") if entity_check is None else entity_check.clarification_question,
             knowledge_hint=knowledge_hint,
             auth_context=parent_context.auth_context,
         )

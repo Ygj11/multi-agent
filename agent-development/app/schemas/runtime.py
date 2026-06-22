@@ -38,6 +38,10 @@ class SubAgentContext(BaseModel):
     selected_skill_metadata: dict[str, Any] | None = None
     skill_selection_score: float | None = None
     skill_selection_reason: str | None = None
+    skill_selection_fallback: bool = False
+    skill_selection_source: str | None = None
+    no_skill_policy: str | None = None
+    no_skill_blocked: bool = False
     missing_required_entities: list[str] = Field(default_factory=list)
     need_clarification: bool = False
     clarification_question: str | None = None

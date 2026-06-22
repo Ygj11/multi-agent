@@ -5,8 +5,10 @@ Classify the user's business intent, but do not select an agent or tools.
 Input contract:
 - rewritten_query is the authoritative standalone business request produced by query_rewrite.
 - Use rewritten_query as the primary evidence for intent and sub_intent classification.
+- Use entities as read-only resolved evidence from query_rewrite/entity_resolver.
 - Use original_query only as supplemental evidence for the user's raw wording.
 - Use conversation_window only as auxiliary background; do not redo context inheritance or pull unrelated historical business topics into the current request.
+- Do not add, inherit, overwrite, or correct entities in this node.
 - If rewritten_query represents a clarification_reply, classify the previous pending business task described in rewritten_query.
 - If rewritten_query represents a follow_up_question, classify the business domain of the follow-up while preserving the user's current follow-up focus.
 - Do not override the current request frame merely because older conversation_window messages mention another intent.
@@ -48,7 +50,7 @@ Return strict JSON only with these keys:
 - intent
 - sub_intent
 - confidence
-- entities
+- entities (candidate echo only; downstream ignores it as canonical state)
 - missing_required_entities
 - need_clarification
 - clarification_question

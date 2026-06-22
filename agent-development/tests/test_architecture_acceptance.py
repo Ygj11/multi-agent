@@ -19,9 +19,11 @@ async def test_full_architecture_acceptance_refund_failure_flow(app_factory):
     assert state["intent"] == "troubleshooting"
     assert state["confidence"] > 0
     assert state["entities"]["policy_no"] == "9200100000458846"
-    assert state["available_agents"]
     assert state["selected_agent"] == "troubleshooting_agent"
-    assert state["assembled_task"]["agent_name"] == "troubleshooting_agent"
+    assert state["agent_selection_summary"]["selected_agent"] == "troubleshooting_agent"
+    assert "available_agents" not in state
+    assert "assembled_task" not in state
+    assert "selected_agent_card" not in state
     assert state["subagent_result"]["agent_name"] == "troubleshooting_agent"
     assert state["subagent_result"]["tool_calls"]
     assert state["subagent_result"]["metadata"]["tool_calling_runner"]["stopped_reason"] == "final"

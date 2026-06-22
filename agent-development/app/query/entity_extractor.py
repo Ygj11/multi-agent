@@ -133,6 +133,7 @@ class EntityExtractor:
                     if not value:
                         continue
                     normalized = self._normalize(pattern, value)
+                    span_start, span_end = match.span()
                     bag.add(
                         EntityMention(
                             type=pattern.entity_type,
@@ -142,7 +143,12 @@ class EntityExtractor:
                             source=source,
                             turn_id=turn_id,
                             sensitive=pattern.sensitive,
-                            metadata={"description": pattern.description},
+                            metadata={
+                                "description": pattern.description,
+                                "span_start": span_start,
+                                "span_end": span_end,
+                                **self._context_metadata(text, span_start),
+                            },
                         )
                     )
         return bag
@@ -176,6 +182,26 @@ class EntityExtractor:
         if pattern.normalized_type == "string":
             return value.strip()
         return value.strip()
+
+    @staticmethod
+    def _context_metadata(text: str, span_start: int) -> dict[str, bool]:
+        """Mark simple user correction cues near an extracted mention."""
+        before = text[max(0, span_start - 16) : span_start]
+        compact = "".join(before.split()).lower()
+        metadata: dict[str, bool] = {}
+        if compact.endswith("不是") or compact.endswith("并非") or compact.endswith("非"):
+            metadata["negated"] = True
+        if (
+            compact.endswith("是")
+            or compact.endswith("改成")
+            or compact.endswith("改为")
+            or compact.endswith("更正为")
+            or compact.endswith("换成")
+            or compact.endswith("应为")
+            or compact.endswith("应该是")
+        ) and not metadata.get("negated"):
+            metadata["correction"] = True
+        return metadata
 
 
 def _parse_scalar(value: str) -> Any:

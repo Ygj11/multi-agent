@@ -5,13 +5,21 @@
             "name": "FastAPI Debug",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}/agent-development/.venv/bin/python",
             "module": "uvicorn",
             "args": [
-                "app.main:app"
-                // "--reload"
+                "app.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000"
             ],
-            "cwd": "${workspaceFolder}/agent-development",  // ← 关键：切换到子目录
+            "cwd": "${workspaceFolder}/agent-development",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/agent-development"
+            },
             "jinja": true,
+            "justMyCode": false,
             "console": "integratedTerminal"
         }
     ]

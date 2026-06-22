@@ -99,6 +99,15 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         troubleshooting_api_client=troubleshooting_api_client,
     )
     register_admin_restricted_tools(tool_registry, settings)
+    contract_errors = tool_registry.validate_contracts(strict=settings.app_env == "prod")
+    if contract_errors:
+        log_event(
+            "tool_contract_validation_warning",
+            level="WARNING",
+            node="app_startup",
+            message="Tool contract validation produced warnings",
+            data={"errors": contract_errors},
+        )
     verification_service = build_verification_service(llm_provider)
     tool_executor = ToolExecutor(
         registry=tool_registry,
@@ -139,6 +148,8 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             top_k=settings.skill_llm_rerank_top_k,
             min_margin=settings.skill_llm_rerank_min_margin,
         ),
+        no_skill_policy=settings.no_skill_policy,
+        app_env=settings.app_env,
     )
 
     subagent_manager = build_subagent_manager(
@@ -191,6 +202,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
         if settings.enable_mcp_client:
             await mcp_client_manager.initialize()
             tool_registry.register_mcp_tools(mcp_capability_registry.list_tools())
+            contract_errors = tool_registry.validate_contracts(strict=settings.app_env == "prod")
             log_event(
                 "mcp_capabilities_registered",
                 node="app_startup",
@@ -198,6 +210,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
                 data={
                     "tool_count": len(mcp_capability_registry.list_tools()),
                     "servers": [status.model_dump() for status in mcp_client_manager.get_server_statuses()],
+                    "contract_errors": contract_errors,
                 },
             )
         yield

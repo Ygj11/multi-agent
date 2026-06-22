@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from app.agents.routing_policy import AgentRoutingPolicy
 from app.observability.logger import log_event
 from app.schemas.agent_card import AgentCard, AgentCandidate
 from app.schemas.intent_taxonomy import IntentTaxonomy
@@ -16,8 +17,9 @@ from app.skills.catalog import SkillCatalog
 class AgentCardLoader:
     """Loads AgentCards and exposes discovery/matching APIs."""
 
-    def __init__(self, cards_root: Path) -> None:
+    def __init__(self, cards_root: Path, routing_policy: AgentRoutingPolicy | None = None) -> None:
         self.cards_root = cards_root
+        self.routing_policy = routing_policy or AgentRoutingPolicy.load()
         self._cards: dict[str, AgentCard] = {}
         self._loaded = False
 
@@ -73,42 +75,42 @@ class AgentCardLoader:
             matched_entities: list[str] = []
 
             if intent in routes:
-                score += 6
+                score += self.routing_policy.weight("intent_match")
                 reasons.append(f"intent matched: {intent}")
             elif intent != "unknown" and intent in " ".join(card.capabilities + [card.description]):
-                score += 2
+                score += self.routing_policy.weight("intent_capability_keyword")
                 reasons.append(f"intent keyword matched capability: {intent}")
 
             if sub_intent:
                 route_sub_intents = routes.get(intent, []) if intent != "unknown" else [item for values in routes.values() for item in values]
                 card_sub_intents = {item.lower() for item in route_sub_intents}
                 if sub_intent.lower() in card_sub_intents:
-                    score += 2
+                    score += self.routing_policy.weight("sub_intent_match")
                     reasons.append(f"sub_intent matched: {sub_intent}")
 
             if card.required_entities:
                 matched = len(card.required_entities) - len(missing_entities)
-                score += matched * 2.5
+                score += matched * self.routing_policy.weight("required_entity_present")
                 if matched:
                     matched_entities.extend([name for name in card.required_entities if name in entity_keys])
                     reasons.append(f"required entities matched: {matched}")
                 if missing_entities:
-                    score -= len(missing_entities) * 1.5
+                    score += len(missing_entities) * self.routing_policy.weight("required_entity_missing")
                     reasons.append(f"required entities missing: {missing_entities}")
             else:
-                score += 1
+                score += self.routing_policy.weight("no_required_entities")
                 reasons.append("no required entities")
 
             optional_matches = [name for name in card.optional_entities if name in entity_keys]
             if optional_matches:
                 matched_entities.extend(optional_matches)
-                score += len(optional_matches) * 1.2
+                score += len(optional_matches) * self.routing_policy.weight("optional_entity_present")
                 reasons.append(f"optional entities matched: {optional_matches}")
 
             for capability in card.capabilities:
                 normalized = capability.replace("_", " ").lower()
                 if capability.lower() in query_l or normalized in query_l:
-                    score += 1.5
+                    score += self.routing_policy.weight("capability_keyword")
                     reasons.append(f"capability keyword matched: {capability}")
 
             card_text = " ".join(
@@ -126,13 +128,13 @@ class AgentCardLoader:
                     " ".join(str(example.get("query", "")) for example in card.examples),
                 ]
             ).lower()
-            for token in _tokens(query):
+            for token in self.routing_policy.tokens(query):
                 if token in card_text:
-                    score += 1
+                    score += self.routing_policy.weight("query_keyword")
                     reasons.append(f"keyword matched: {token}")
 
             if card.enabled:
-                score += 0.5
+                score += self.routing_policy.weight("enabled")
                 reasons.append("enabled")
 
             candidates.append(
@@ -214,33 +216,6 @@ class AgentCardLoader:
                     errors.append(f"taxonomy sub_intent has no enabled AgentCard coverage: {intent}.{sub_intent}")
         if errors:
             raise ValueError("; ".join(errors))
-
-
-def _tokens(text: str) -> list[str]:
-    separators = ",.;:，。；：|()[]{}<> \n\t"
-    cleaned = text.lower()
-    for sep in separators:
-        cleaned = cleaned.replace(sep, " ")
-    tokens = {item.strip() for item in cleaned.split() if len(item.strip()) >= 2}
-    for keyword in [
-        "troubleshooting",
-        "refund",
-        "callback",
-        "claim",
-        "policy",
-        "status",
-        "privacy",
-        "compliance",
-        "e102",
-        "submitproposal",
-        "requestid",
-        "request_id",
-    ]:
-        if keyword in text.lower():
-            tokens.add(keyword)
-    return sorted(tokens)
-
-
 def _parse_card_yaml(text: str) -> dict[str, Any]:
     """Parse AgentCard YAML."""
     parsed = yaml.safe_load(text) or {}

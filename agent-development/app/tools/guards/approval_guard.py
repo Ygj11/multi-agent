@@ -43,6 +43,7 @@ class ToolApprovalGuard:
             "resource_type": definition.resource_type,
             "resource_id": self.executor._resource_id(definition, arguments),
             "required_scopes": definition.required_scopes,
+            "approval_policy_id": getattr(getattr(definition, "contract", None), "approval_policy_id", None),
         }
         pending_tool_call = {
             "name": tool_name,

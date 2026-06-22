@@ -47,6 +47,10 @@ async def test_close_rule_scores_call_llm_router():
     assert llm.calls == 1
     assert result.selected_agent == "pos_query_agent"
     assert result.selection_method == "llm_router"
+    assert result.decision_trace["prompt_scene"] == "agent_selection"
+    assert result.decision_trace["output_schema"] == "AgentSelectionLLMOutput"
+    assert result.decision_trace["parse_status"] == "success"
+    assert result.decision_trace["schema_status"] == "valid"
 
 
 async def test_llm_illegal_agent_falls_back_to_rule_top1():
@@ -57,6 +61,9 @@ async def test_llm_illegal_agent_falls_back_to_rule_top1():
 
     assert result.selection_method == "fallback"
     assert result.selected_agent != "not_allowed_agent"
+    assert result.fallback_used is True
+    assert result.fallback_reason == "agent_router_unusable"
+    assert result.llm_status == "invalid_output"
 
 
 async def test_llm_invalid_json_falls_back():
@@ -66,6 +73,9 @@ async def test_llm_invalid_json_falls_back():
     result = await node.select(intent="unknown", intent_confidence=0.4, entities={"policy_no": "9200100000458846"}, query="状态")
 
     assert result.selection_method == "fallback"
+    assert result.fallback_used is True
+    assert result.fallback_reason == "llm_json_parse_failed"
+    assert result.llm_status == "parse_failed"
 
 
 async def test_llm_low_confidence_requests_clarification():

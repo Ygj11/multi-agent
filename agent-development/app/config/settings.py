@@ -45,6 +45,15 @@ def _tool_mode(name: str, value: str | None, default: str = "mock") -> str:
     return mode
 
 
+def _choice(name: str, value: str | None, allowed: set[str], default: str) -> str:
+    """Parse a string enum environment variable."""
+    item = (value or default).strip().lower()
+    if item not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        raise ValueError(f"{name} must be one of: {allowed_text}")
+    return item
+
+
 def load_project_dotenv(dotenv_path: Path | None = None) -> None:
     """Load project .env without overriding existing OS environment variables."""
     load_dotenv(dotenv_path=dotenv_path or ENV_FILE, override=False)
@@ -55,6 +64,7 @@ class Settings:
     """Runtime settings with safe local defaults."""
 
     project_root: Path = PROJECT_ROOT
+    app_env: str = "local"
 
     # Security and auth
     enable_shell_exec: bool = False
@@ -130,9 +140,15 @@ class Settings:
     enable_skill_llm_rerank: bool = True
     skill_llm_rerank_top_k: int = 3
     skill_llm_rerank_min_margin: float = 3.0
+    no_skill_policy: str = "clarify"
 
     # Intent taxonomy
     strict_taxonomy_route_coverage: bool = True
+
+    # Runtime observability
+    log_graph_node_events: bool = False
+    log_disabled_service_events: bool = False
+    log_decision_trace_in_messages: bool = False
 
 
 def get_settings(dotenv_path: Path | None = None) -> Settings:
@@ -140,6 +156,7 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
     load_project_dotenv(dotenv_path)
     return Settings(
         project_root=PROJECT_ROOT,
+        app_env=_choice("APP_ENV", os.getenv("APP_ENV"), {"local", "test", "staging", "prod"}, "local"),
         enable_shell_exec=_as_bool(os.getenv("ENABLE_SHELL_EXEC"), False),
         auth_mode=os.getenv("AUTH_MODE", "dev_header"),
         allow_request_body_identity_fallback=_as_bool(os.getenv("ALLOW_REQUEST_BODY_IDENTITY_FALLBACK"), True),
@@ -201,5 +218,17 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
         enable_skill_llm_rerank=_as_bool(os.getenv("ENABLE_SKILL_LLM_RERANK"), True),
         skill_llm_rerank_top_k=int(os.getenv("SKILL_LLM_RERANK_TOP_K", "3")),
         skill_llm_rerank_min_margin=float(os.getenv("SKILL_LLM_RERANK_MIN_MARGIN", "3")),
+        no_skill_policy=_choice(
+            "NO_SKILL_POLICY",
+            os.getenv("NO_SKILL_POLICY"),
+            {"clarify", "answer_no_skill", "generic_dev_only"},
+            "clarify",
+        ),
         strict_taxonomy_route_coverage=_as_bool(os.getenv("STRICT_TAXONOMY_ROUTE_COVERAGE"), True),
+        log_graph_node_events=_as_bool(
+            os.getenv("LOG_GRAPH_NODE_EVENTS"),
+            _choice("APP_ENV", os.getenv("APP_ENV"), {"local", "test", "staging", "prod"}, "local") == "local",
+        ),
+        log_disabled_service_events=_as_bool(os.getenv("LOG_DISABLED_SERVICE_EVENTS"), False),
+        log_decision_trace_in_messages=_as_bool(os.getenv("LOG_DECISION_TRACE_IN_MESSAGES"), False),
     )

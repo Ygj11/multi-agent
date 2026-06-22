@@ -6,8 +6,10 @@ from typing import Any
 
 from app.agents.card_loader import AgentCardLoader
 from app.agents.llm_router import LLMRouter
+from app.agents.routing_policy import AgentRoutingPolicy
 from app.llm.base import LLMProvider
 from app.observability.logger import log_event
+from app.runtime.failure_codes import AGENT_ROUTER_UNUSABLE
 from app.schemas.agent_card import AgentSelectionResult
 
 
@@ -19,16 +21,26 @@ class AgentSelectionNode:
         card_loader: AgentCardLoader,
         llm_provider: LLMProvider | None = None,
         *,
-        rule_confident_threshold: float = 8.0,
-        rule_margin_threshold: float = 3.0,
-        top_k: int = 3,
+        rule_confident_threshold: float | None = None,
+        rule_margin_threshold: float | None = None,
+        top_k: int | None = None,
+        routing_policy: AgentRoutingPolicy | None = None,
     ) -> None:
         self.card_loader = card_loader
         self.llm_provider = llm_provider
         self.llm_router = LLMRouter(llm_provider)
-        self.rule_confident_threshold = rule_confident_threshold
-        self.rule_margin_threshold = rule_margin_threshold
-        self.top_k = top_k
+        self.routing_policy = routing_policy or card_loader.routing_policy
+        self.rule_confident_threshold = (
+            rule_confident_threshold
+            if rule_confident_threshold is not None
+            else self.routing_policy.threshold("rule_confident_threshold", 8.0)
+        )
+        self.rule_margin_threshold = (
+            rule_margin_threshold
+            if rule_margin_threshold is not None
+            else self.routing_policy.threshold("rule_margin_threshold", 3.0)
+        )
+        self.top_k = int(top_k if top_k is not None else self.routing_policy.threshold("top_k", 3))
 
     async def select(
         self,
@@ -67,11 +79,25 @@ class AgentSelectionNode:
                 query=query,
                 candidates=top_candidates,
                 request_id=request_id,
+                trace_id=trace_id,
+                session_key=session_key,
             )
             if llm_selection is not None:
+                llm_selection.decision_trace = {
+                    **self.routing_policy.trace(),
+                    **llm_selection.decision_trace,
+                }
                 self._log_selection(llm_selection, request_id, trace_id, session_key)
                 return llm_selection
-            selection = self._rule_selection(candidates, method="fallback", reason_suffix="; llm_router_unusable")
+            attempt = self.llm_router.last_attempt
+            selection = self._rule_selection(
+                candidates,
+                method="fallback",
+                reason_suffix=f"; {attempt.fallback_reason or AGENT_ROUTER_UNUSABLE}",
+                llm_status=attempt.llm_status,
+                fallback_reason=attempt.fallback_reason or AGENT_ROUTER_UNUSABLE,
+                decision_trace=attempt.trace(source="agent_selection"),
+            )
             self._log_selection(selection, request_id, trace_id, session_key)
             return selection
 
@@ -85,12 +111,19 @@ class AgentSelectionNode:
         *,
         method: str,
         reason_suffix: str = "",
+        llm_status: str | None = None,
+        fallback_reason: str | None = None,
+        decision_trace: dict[str, Any] | None = None,
     ) -> AgentSelectionResult:
         selected = candidates[0]
         fallback = method == "fallback" or selected.score <= 0
-        confidence = min(0.99, max(0.2, selected.score / 12))
+        min_confidence = self.routing_policy.threshold("min_confidence", 0.2)
+        max_confidence = self.routing_policy.threshold("max_confidence", 0.99)
+        divisor = self.routing_policy.threshold("score_to_confidence_divisor", 12.0)
+        clarify_threshold = self.routing_policy.threshold("clarify_score_threshold", 0.5)
+        confidence = min(max_confidence, max(min_confidence, selected.score / divisor))
         risk_level = "medium" if selected.missing_entities else "low"
-        need_clarification = selected.score <= 0.5
+        need_clarification = selected.score <= clarify_threshold
         result = AgentSelectionResult(
             selected_agent=selected.agent_name,
             confidence=confidence,
@@ -101,9 +134,19 @@ class AgentSelectionNode:
             fallback=fallback,
             selection_method=method,  # type: ignore[arg-type]
             need_clarification=need_clarification,
-            clarification_question="请补充你希望处理的业务场景，例如排查或保全实时查询。"
+            clarification_question=self.routing_policy.clarification_question
             if need_clarification
             else None,
+            llm_status=llm_status,
+            fallback_used=fallback,
+            fallback_source="agent_selection" if fallback else None,
+            fallback_reason=fallback_reason,
+            decision_trace={
+                "source": "agent_selection",
+                "method": method,
+                **self.routing_policy.trace(),
+                **(decision_trace or {}),
+            },
         )
         return result
 
@@ -149,5 +192,8 @@ class AgentSelectionNode:
                 "candidate_count": len(result.candidates),
                 "selection_method": result.selection_method,
                 "reason": result.reason,
+                "fallback_used": result.fallback_used,
+                "fallback_reason": result.fallback_reason,
+                "llm_status": result.llm_status,
             },
         )

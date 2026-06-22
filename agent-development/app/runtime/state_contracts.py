@@ -87,6 +87,7 @@ class CheckpointSnapshot(BaseModel):
     confidence: float | None = None
     entities: dict[str, Any] = Field(default_factory=dict)
     selected_agent: str | None = None
+    agent_selection_summary: dict[str, Any] = Field(default_factory=dict)
     selected_skill_id: str | None = None
     approval_required: bool = False
     approval_id: str | None = None

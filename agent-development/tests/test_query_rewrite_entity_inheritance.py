@@ -1,3 +1,5 @@
+import json
+
 from app.llm.schemas import LLMResponse
 from app.query.query_rewrite_node import QueryRewriteNode
 from app.schemas.entities import EntityBag
@@ -8,6 +10,42 @@ class InvalidJsonLLM:
         return LLMResponse(content="not json", finish_reason="stop", model="fake")
 
 
+class JsonLLM:
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def chat(self, *args, **kwargs):
+        return LLMResponse(content=json.dumps(self.payload, ensure_ascii=False), finish_reason="stop", model="fake")
+
+
+async def test_query_rewrite_llm_primary_path_records_prompt_manifest_trace():
+    node = QueryRewriteNode(
+        llm_provider=JsonLLM(
+            {
+                "is_follow_up": False,
+                "rewritten_query": "保全任务完成，保单9200100000458846为什么没有更新？",
+                "rewrite_type": "new_request",
+                "entities": {"policy_no": "9200100000458846"},
+                "inherited_entities": {},
+                "missing_required_entities": [],
+                "need_clarification": False,
+                "clarification_question": None,
+                "confidence": 0.92,
+                "reason": "standalone request",
+            }
+        )
+    )
+
+    result = await node.rewrite("保全任务完成，保单9200100000458846没有更新？")
+
+    assert result.rewrite_type == "new_request"
+    assert result.entities["policy_no"] == "9200100000458846"
+    assert result.decision_trace["prompt_scene"] == "query_rewrite"
+    assert result.decision_trace["output_schema"] == "QueryRewriteLLMOutput"
+    assert result.decision_trace["parse_status"] == "success"
+    assert result.decision_trace["schema_status"] == "valid"
+
+
 async def test_follow_up_inherits_unique_policy_no():
     node = QueryRewriteNode(llm_provider=InvalidJsonLLM())
     result = await node.rewrite("继续查一下状态", short_summary="上一轮保单号 9200100000458846。")
@@ -15,6 +53,10 @@ async def test_follow_up_inherits_unique_policy_no():
     assert result.inherited_entities["policy_no"] == "9200100000458846"
     assert result.need_clarification is False
     assert "policy_no=9200100000458846" in result.rewritten_query
+    assert result.fallback_used is True
+    assert result.fallback_source == "query_rewrite"
+    assert result.fallback_reason == "llm_json_parse_failed"
+    assert result.llm_status == "parse_failed"
 
 
 async def test_multiple_policy_no_candidates_need_clarification():
@@ -180,6 +222,17 @@ async def test_current_entity_has_priority_over_historical_same_type():
 
     assert result.entities["policy_no"] == "9200100000458847"
     assert "policy_no" not in result.inherited_entities
+
+
+async def test_current_correction_query_uses_corrected_entity_value():
+    node = QueryRewriteNode(llm_provider=InvalidJsonLLM())
+    result = await node.rewrite(
+        "不是保单9200100000458846，是9200100000458847，继续查",
+        recent_messages=[{"role": "user", "content": "保单号 9200100000458846", "metadata": {}}],
+    )
+
+    assert result.entities["policy_no"] == "9200100000458847"
+    assert result.need_clarification is False
 
 
 async def test_follow_up_rewrite_uses_focused_latest_answer_summary():

@@ -6,27 +6,25 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.llm.base import LLMProvider
+from app.llm.output_schemas import QueryRewriteLLMOutput, parse_llm_json_schema
 from app.prompts.loader import PromptLoader, default_prompt_loader
+from app.query.context_reference_policy import QueryContextReferencePolicy
 from app.query.entity_extractor import EntityExtractor
-from app.query.json_utils import parse_json_object
+from app.query.entity_resolver import EntityResolver
+from app.runtime.decision_trace import LLMAttempt
+from app.runtime.failure_codes import (
+    LLM_DISABLED,
+    LLM_JSON_PARSE_FAILED,
+    LLM_PROVIDER_ERROR,
+    LLM_SCHEMA_VALIDATION_FAILED,
+    LLM_STATUS_DISABLED,
+    LLM_STATUS_INVALID_OUTPUT,
+    LLM_STATUS_PARSE_FAILED,
+    LLM_STATUS_PROVIDER_ERROR,
+    LLM_STATUS_SUCCESS,
+)
 from app.schemas.entities import ConversationWindow, EntityBag, EntityMention
 from app.schemas.query_rewrite import QueryRewriteResult
-
-
-EXPLICIT_REFERENCE_SIGNALS = ("这个", "那个", "刚才", "上一轮", "前面", "继续", "接着", "它", "还是这个", "刚才那个")
-WEAK_FOLLOW_UP_SIGNALS = ("为什么", "谁的问题", "怎么办", "怎么处理", "状态呢", "有没有更新", "查一下")
-STRONG_ANCHOR_ENTITY_TYPES = {"policy_no", "apply_seq", "request_id", "task_id", "claim_no"}
-ENTITY_TYPE_ALIASES = {"policyNo": "policy_no", "applySeq": "apply_seq"}
-ORDINAL_TARGETS = {
-    "第一个": 0,
-    "第一": 0,
-    "1个": 0,
-    "第1个": 0,
-    "第二个": 1,
-    "第二": 1,
-    "2个": 1,
-    "第2个": 1,
-}
 
 
 @dataclass(frozen=True)
@@ -47,11 +45,15 @@ class QueryRewriteNode:
         self,
         llm_provider: LLMProvider | None = None,
         entity_extractor: EntityExtractor | None = None,
+        entity_resolver: EntityResolver | None = None,
         prompt_loader: PromptLoader | None = None,
+        context_reference_policy: QueryContextReferencePolicy | None = None,
     ) -> None:
         self.llm_provider = llm_provider
         self.entity_extractor = entity_extractor or EntityExtractor()
+        self.entity_resolver = entity_resolver or EntityResolver()
         self.prompt_loader = prompt_loader or default_prompt_loader
+        self.context_reference_policy = context_reference_policy or QueryContextReferencePolicy.load()
 
     async def rewrite(
         self,
@@ -59,11 +61,22 @@ class QueryRewriteNode:
         recent_messages: list[dict[str, Any]] | None = None,
         short_summary: str | None = None,
         session_key: str = "",
+        request_id: str | None = None,
+        trace_id: str | None = None,
     ) -> QueryRewriteResult:
         """Rewrite the query and return dynamic entities plus clarification state."""
-        current_bag = self.entity_extractor.extract(original_query, source="current_query")
-        history_bag = self.entity_extractor.extract_from_summary(short_summary)
-        history_bag.merge(self.entity_extractor.extract_from_recent_turns(recent_messages or []))
+        current_bag = self.entity_resolver.resolve(
+            base_bag=EntityBag(),
+            candidate_bag=self.entity_extractor.extract(original_query, source="current_query"),
+            stage="query_rewrite_current",
+        ).entity_bag
+        summary_bag = self.entity_extractor.extract_from_summary(short_summary)
+        recent_bag = self.entity_extractor.extract_from_recent_turns(recent_messages or [])
+        history_bag = self.entity_resolver.resolve(
+            base_bag=summary_bag,
+            candidate_bag=recent_bag,
+            stage="query_rewrite_history",
+        ).entity_bag
         window_bag = EntityBag().merge(history_bag).merge(current_bag)
         window = ConversationWindow(
             session_key=session_key,
@@ -72,60 +85,136 @@ class QueryRewriteNode:
             entity_bag=window_bag,
         )
 
-        llm_result = await self._rewrite_with_llm(original_query, current_bag, window)
+        llm_result, llm_attempt = await self._rewrite_with_llm(original_query, current_bag, window, request_id, trace_id, session_key)
         if llm_result is not None:
             return llm_result
 
-        return self._rewrite_with_rules(original_query, current_bag, history_bag, window)
+        return self._rewrite_with_rules(original_query, current_bag, history_bag, window, llm_attempt)
 
     async def _rewrite_with_llm(
         self,
         original_query: str,
         current_bag: EntityBag,
         window: ConversationWindow,
-    ) -> QueryRewriteResult | None:
+        request_id: str | None,
+        trace_id: str | None,
+        session_key: str | None,
+    ) -> tuple[QueryRewriteResult | None, LLMAttempt]:
+        prompt_trace = self.prompt_loader.scene_trace("query_rewrite")
         if not self._should_use_llm_json():
-            return None
-        response = await self.llm_provider.chat(
-            messages=[
-                {
-                    "role": "system",
-                    "content": self.prompt_loader.render("query_rewrite/system.md"),
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_DISABLED,
+                fallback_reason=LLM_DISABLED,
+                extra=prompt_trace,
+            )
+        try:
+            response = await self.llm_provider.chat(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": self.prompt_loader.render_scene_system("query_rewrite"),
+                    },
+                    {
+                        "role": "user",
+                        "content": self.prompt_loader.render_scene_user(
+                            "query_rewrite",
+                            original_query=original_query,
+                            current_entities=current_bag.to_compact_dict(),
+                            conversation_window=window.model_dump(),
+                        ),
+                    },
+                ],
+                tools=None,
+                scene="query_rewrite",
+                request_id=request_id,
+                trace_id=trace_id,
+                session_key=session_key,
+            )
+        except Exception as exc:
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_PROVIDER_ERROR,
+                fallback_reason=LLM_PROVIDER_ERROR,
+                detail=str(exc),
+                extra=prompt_trace,
+            )
+        if response.finish_reason == "error" or response.error:
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_PROVIDER_ERROR,
+                fallback_reason=LLM_PROVIDER_ERROR,
+                detail=response.error or "llm_error",
+                extra={
+                    **prompt_trace,
+                    "finish_reason": response.finish_reason,
+                    "model": response.model,
                 },
-                {
-                    "role": "user",
-                    "content": self.prompt_loader.render(
-                        "query_rewrite/user.md",
-                        original_query=original_query,
-                        current_entities=current_bag.to_compact_dict(),
-                        conversation_window=window.model_dump(),
-                    ),
-                },
-            ],
-            tools=None,
-            scene="query_rewrite",
+            )
+        parsed = parse_llm_json_schema(response.content, QueryRewriteLLMOutput)
+        parse_trace = {
+            **prompt_trace,
+            "finish_reason": response.finish_reason,
+            "model": response.model,
+            "parse_status": parsed.parse_status,
+            "schema_status": "valid" if parsed.success else "invalid",
+            "schema_name": parsed.schema_name,
+        }
+        if not parsed.success:
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_PARSE_FAILED
+                if parsed.error_code == LLM_JSON_PARSE_FAILED
+                else LLM_STATUS_INVALID_OUTPUT,
+                fallback_reason=LLM_JSON_PARSE_FAILED
+                if parsed.error_code == LLM_JSON_PARSE_FAILED
+                else LLM_SCHEMA_VALIDATION_FAILED,
+                detail=parsed.error_detail,
+                extra=parse_trace,
+            )
+        output = parsed.data
+        if not isinstance(output, QueryRewriteLLMOutput):
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_INVALID_OUTPUT,
+                fallback_reason=LLM_SCHEMA_VALIDATION_FAILED,
+                detail="schema result type mismatch",
+                extra=parse_trace,
+            )
+        rewritten_query = output.rewritten_query or original_query
+        inherited_bag = self._inherited_bag_from_compact(output.inherited_entities)
+        llm_bag = EntityBag.from_compact_dict(self._compact_dict(output.entities), source="llm", confidence=0.85)
+        candidate_bag = EntityBag().merge(inherited_bag).merge(llm_bag)
+        resolution = self.entity_resolver.resolve(
+            base_bag=current_bag,
+            candidate_bag=candidate_bag,
+            stage="query_rewrite_llm",
         )
-        data = parse_json_object(response.content)
-        if data is None:
-            return None
-        rewritten_query = str(data.get("rewritten_query") or original_query)
-        entities = self._merge_llm_entities(current_bag, data.get("entities"))
-        inherited = self._compact_dict(data.get("inherited_entities"))
-        request_bag = EntityBag.from_compact_dict(entities, source="llm", confidence=0.85)
+        request_bag = resolution.entity_bag
         return QueryRewriteResult(
             original_query=original_query,
             rewritten_query=rewritten_query,
-            is_follow_up=bool(data.get("is_follow_up", False)),
-            rewrite_type=str(data.get("rewrite_type") or "direct"),
-            entities=entities,
-            inherited_entities=inherited,
-            missing_required_entities=[str(item) for item in data.get("missing_required_entities") or []],
-            need_clarification=bool(data.get("need_clarification", False)),
-            clarification_question=data.get("clarification_question"),
-            confidence=float(data.get("confidence", 0.0) or 0.0),
-            reason=str(data.get("reason") or "llm_json_rewrite"),
+            is_follow_up=output.is_follow_up,
+            rewrite_type=output.rewrite_type,
+            entities=request_bag.to_compact_dict(),
+            inherited_entities=self.entity_resolver.normalize_bag(inherited_bag, stage="query_rewrite_llm_inherited").to_compact_dict(),
+            missing_required_entities=[str(item) for item in output.missing_required_entities],
+            need_clarification=output.need_clarification or resolution.need_clarification,
+            clarification_question=output.clarification_question or resolution.clarification_question,
+            confidence=output.confidence,
+            reason=output.reason,
             entity_bag=request_bag.model_dump(),
             conversation_window=window.model_dump(),
+            llm_status=LLM_STATUS_SUCCESS,
+            fallback_used=False,
+            fallback_source=None,
+            fallback_reason=None,
+            decision_trace={
+                "source": "query_rewrite",
+                "method": "llm_json",
+                **self.context_reference_policy.trace(),
+                "llm_status": LLM_STATUS_SUCCESS,
+                "entity_conflicts": [conflict.__dict__ for conflict in resolution.conflicts],
+                **parse_trace,
+            },
+        ), LLMAttempt(
+            llm_status=LLM_STATUS_SUCCESS,
+            extra=parse_trace,
         )
 
     def _rewrite_with_rules(
@@ -134,6 +223,7 @@ class QueryRewriteNode:
         current_bag: EntityBag,
         history_bag: EntityBag,
         window: ConversationWindow,
+        llm_attempt: LLMAttempt,
     ) -> QueryRewriteResult:
         pending_clarification = self._detect_pending_clarification(window.recent_turns)
         reference = self._detect_context_reference(original_query, current_bag, pending_clarification)
@@ -148,7 +238,12 @@ class QueryRewriteNode:
                 current_bag=current_bag,
                 pending_metadata=pending_clarification,
             )
-            effective_bag = EntityBag().merge(inherited_bag).merge(current_bag)
+            resolution = self.entity_resolver.resolve(
+                base_bag=inherited_bag,
+                candidate_bag=current_bag,
+                stage="query_rewrite_pending_clarification",
+            )
+            effective_bag = resolution.entity_bag
             missing_required_entities = self._remaining_required_entities(
                 pending_clarification.get("missing_required_entities"),
                 effective_bag,
@@ -156,6 +251,9 @@ class QueryRewriteNode:
             if missing_required_entities:
                 need_clarification = True
                 clarification_question = self._missing_required_question(missing_required_entities)
+            elif resolution.need_clarification:
+                need_clarification = True
+                clarification_question = resolution.clarification_question
         else:
             inherited_bag, clarification_question = self._inherit_context_entities(
                 current_bag=current_bag,
@@ -163,7 +261,15 @@ class QueryRewriteNode:
                 reference=reference,
             )
             need_clarification = clarification_question is not None
-            effective_bag = EntityBag().merge(current_bag).merge(inherited_bag)
+            resolution = self.entity_resolver.resolve(
+                base_bag=inherited_bag,
+                candidate_bag=current_bag,
+                stage="query_rewrite_rule",
+            )
+            effective_bag = resolution.entity_bag
+            if resolution.need_clarification and not need_clarification:
+                need_clarification = True
+                clarification_question = resolution.clarification_question
 
         entities = effective_bag.to_compact_dict()
         rewrite_type = self._rewrite_type(reference, need_clarification)
@@ -191,6 +297,19 @@ class QueryRewriteNode:
             reason="entity_bag_rule_rewrite",
             entity_bag=effective_bag.model_dump(),
             conversation_window=window.model_dump(),
+            llm_status=llm_attempt.llm_status,
+            fallback_used=True,
+            fallback_source="query_rewrite",
+            fallback_reason=llm_attempt.fallback_reason or LLM_DISABLED,
+            decision_trace={
+                "source": "query_rewrite",
+                "method": "rule_fallback",
+                **self.context_reference_policy.trace(),
+                "reference_reason": reference.reason,
+                "turn_type": reference.turn_type,
+                "entity_conflicts": [conflict.__dict__ for conflict in resolution.conflicts],
+                **llm_attempt.trace(source="query_rewrite"),
+            },
         )
 
     def _detect_context_reference(
@@ -205,7 +324,7 @@ class QueryRewriteNode:
                 reason="pending_clarification",
                 turn_type="clarification_reply",
             )
-        target_index, target_hint = self._ordinal_target(query)
+        target_index, target_hint = self.context_reference_policy.ordinal_target(query)
         if target_index is not None:
             return ContextReferenceResult(
                 is_reference=True,
@@ -214,12 +333,12 @@ class QueryRewriteNode:
                 target_index=target_index,
                 target_hint=target_hint,
             )
-        if self._has_any(query, *EXPLICIT_REFERENCE_SIGNALS):
+        if self.context_reference_policy.has_explicit_reference(query):
             return ContextReferenceResult(is_reference=True, reason="explicit_reference", turn_type="follow_up_question")
-        has_strong_anchor = bool(STRONG_ANCHOR_ENTITY_TYPES.intersection(current_bag.entities))
-        if self._has_any(query, *WEAK_FOLLOW_UP_SIGNALS) and not has_strong_anchor:
+        has_strong_anchor = self.context_reference_policy.has_strong_anchor(current_bag)
+        if self.context_reference_policy.has_weak_follow_up(query) and not has_strong_anchor:
             return ContextReferenceResult(is_reference=True, reason="weak_follow_up", turn_type="follow_up_question")
-        if not has_strong_anchor and not current_bag.to_compact_dict() and len(query.strip()) <= 16:
+        if self.context_reference_policy.is_short_query_without_anchor(query, current_bag):
             return ContextReferenceResult(is_reference=True, reason="short_query_without_anchor", turn_type="follow_up_question")
         if has_strong_anchor:
             return ContextReferenceResult(is_reference=False, reason="new_anchor_present", turn_type="new_request")
@@ -315,20 +434,8 @@ class QueryRewriteNode:
                 return mention
         return None
 
-    @staticmethod
-    def _ordinal_target(query: str) -> tuple[int | None, str | None]:
-        for hint, index in ORDINAL_TARGETS.items():
-            if hint in query:
-                return index, hint
-        return None, None
-
-    @staticmethod
-    def _remaining_required_entities(raw_required: Any, bag: EntityBag) -> list[str]:
-        required = [str(item) for item in raw_required or [] if item]
-        compact = bag.to_compact_dict()
-        present = set(compact)
-        present.update(alias for alias, canonical in ENTITY_TYPE_ALIASES.items() if canonical in present)
-        return [item for item in required if item not in present and ENTITY_TYPE_ALIASES.get(item, item) not in present]
+    def _remaining_required_entities(self, raw_required: Any, bag: EntityBag) -> list[str]:
+        return self.context_reference_policy.remaining_required_entities(raw_required, bag)
 
     @staticmethod
     def _missing_required_question(missing: list[str]) -> str:
@@ -349,11 +456,6 @@ class QueryRewriteNode:
             """表示当前轮出现了新的强锚点，默认开启一个新请求帧，不继承历史实体。"""
             return "new_request"
         return "direct"
-
-    @staticmethod
-    def _has_any(text: str, *keywords: str) -> bool:
-        lower = text.lower()
-        return any(keyword.lower() in lower for keyword in keywords)
 
     @staticmethod
     def _build_rewritten_query(
@@ -485,12 +587,13 @@ class QueryRewriteNode:
     def _compact_dict(value: Any) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
 
-    @classmethod
-    def _merge_llm_entities(cls, current_bag: EntityBag, llm_entities: Any) -> dict[str, Any]:
-        bag = EntityBag().merge(current_bag)
-        if isinstance(llm_entities, dict):
-            bag.merge(EntityBag.from_compact_dict(llm_entities, source="llm", confidence=0.85))
-        return bag.to_compact_dict()
+    def _inherited_bag_from_compact(self, value: Any) -> EntityBag:
+        bag = EntityBag.from_compact_dict(self._compact_dict(value), source="recent_turn", confidence=0.9)
+        inherited = EntityBag()
+        for mentions in bag.entities.values():
+            for mention in mentions:
+                inherited.add(self._as_inherited(mention))
+        return inherited
 
     def _should_use_llm_json(self) -> bool:
         if self.llm_provider is None:

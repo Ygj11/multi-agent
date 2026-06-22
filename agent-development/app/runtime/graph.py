@@ -14,18 +14,21 @@ from app.agents.task_assembler import AgentTaskAssembler
 from app.auth.authorization_service import AuthorizationService
 from app.auth.principal import principal_from_auth_context
 from app.approval.service import ApprovalService
+from app.config.settings import get_settings
 from app.observability.logger import log_event, preview_text
+from app.query.entity_resolver import build_entity_state_updates
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.query.query_rewrite_node import QueryRewriteNode
 from app.runtime.context_builder import ContextBuilder
 from app.runtime.graph_state import AgentGraphState
+from app.runtime.route_policy import RoutePolicy
 from app.runtime.handlers.approval_handler import ApprovalGraphHandler
 from app.runtime.handlers.clarification_handler import ClarificationHandler
 from app.runtime.handlers.memory_commit_handler import MemoryCommitHandler
 from app.runtime.handlers.message_commit_handler import MessageCommitHandler
 from app.runtime.handlers.verification_handler import VerificationHandler
 from app.schemas.agent_card import AgentCard, AgentSelectionResult
-from app.schemas.agent_task import AgentTaskEnvelope
+from app.schemas.entities import EntityBag
 from app.schemas.runtime import OrchestratorContext
 from app.session.message_store import MessageStore
 from app.session.session_manager import SessionManager
@@ -84,6 +87,7 @@ class AgentGraphFactory:
         self.max_write_tools_per_request = max_write_tools_per_request
         self.authorization_service = authorization_service
         self.verification_service = verification_service
+        self.log_graph_node_events = get_settings().log_graph_node_events
         self.clarification_handler = ClarificationHandler()
         self.message_commit_handler = MessageCommitHandler(message_store=message_store)
         self.memory_commit_handler = MemoryCommitHandler(short_memory=short_memory)
@@ -92,6 +96,7 @@ class AgentGraphFactory:
             approval_service=approval_service,
             tool_executor=tool_executor,
             tool_calling_runner=tool_calling_runner,
+            agent_card_loader=agent_card_loader,
             max_approval_chain_depth=max_approval_chain_depth,
             max_write_tools_per_request=max_write_tools_per_request,
         )
@@ -106,9 +111,7 @@ class AgentGraphFactory:
         graph.add_node("query_rewrite", self.query_rewrite)
         graph.add_node("intent_recognition", self.intent_recognition)
         graph.add_node("build_orchestrator_context", self.build_orchestrator_context)
-        graph.add_node("discover_agents", self.discover_agents)
         graph.add_node("select_agent", self.select_agent)
-        graph.add_node("assemble_task", self.assemble_task)
         graph.add_node("dispatch_agent", self.dispatch_agent)
         graph.add_node("build_clarification_answer", self.build_clarification_answer)
         graph.add_node("check_human_approval_required", self.check_human_approval_required)
@@ -141,14 +144,12 @@ class AgentGraphFactory:
             self.clarification_route,
             {"clarify": "build_clarification_answer", "continue": "build_orchestrator_context"},
         )
-        graph.add_edge("build_orchestrator_context", "discover_agents")
-        graph.add_edge("discover_agents", "select_agent")
+        graph.add_edge("build_orchestrator_context", "select_agent")
         graph.add_conditional_edges(
             "select_agent",
             self.clarification_route,
-            {"clarify": "build_clarification_answer", "continue": "assemble_task"},
+            {"clarify": "build_clarification_answer", "continue": "dispatch_agent"},
         )
-        graph.add_edge("assemble_task", "dispatch_agent")
         graph.add_edge("dispatch_agent", "check_human_approval_required")
         graph.add_edge("build_clarification_answer", "pre_answer_verify")
         graph.add_conditional_edges(
@@ -188,7 +189,7 @@ class AgentGraphFactory:
         return {"graph_path": self._append_path(state, "route_entry")}
 
     def entry_route(self, state: AgentGraphState) -> str:
-        return "resume" if state.get("approval_resume") else "normal"
+        return RoutePolicy.route_entry(state)
 
     async def load_session(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "load_session")
@@ -214,18 +215,23 @@ class AgentGraphFactory:
             recent_messages=state.get("recent_messages", []),
             short_summary=state.get("short_summary"),
             session_key=state["session_key"],
+            request_id=state.get("request_id"),
+            trace_id=state.get("trace_id"),
         )
         self._log_node_exit(state, "query_rewrite")
+        entity_updates = build_entity_state_updates(EntityBag(**result.entity_bag))
         return {
             "rewritten_query": result.rewritten_query,
-            "entities": result.entities,
-            "entity_bag": result.entity_bag,
+            **entity_updates,
             "conversation_window": result.conversation_window,
             "is_follow_up": result.is_follow_up,
             "need_clarification": result.need_clarification,
             "clarification_question": result.clarification_question,
             "clarification_source": "query_rewrite" if result.need_clarification else None,
             "missing_required_entities": result.missing_required_entities,
+            "query_rewrite_decision_trace": result.decision_trace,
+            "query_rewrite_llm_status": result.llm_status,
+            "query_rewrite_fallback_reason": result.fallback_reason,
             "graph_path": self._append_path(state, "query_rewrite"),
         }
 
@@ -238,20 +244,25 @@ class AgentGraphFactory:
             recent_messages=state.get("recent_messages", []),
             short_summary=state.get("short_summary"),
             current_entities=state.get("entities", {}),
+            entity_bag=state.get("entity_bag", {}),
             conversation_window=state.get("conversation_window", {}),
             agent_card_summaries=agent_summaries,
+            request_id=state.get("request_id"),
+            trace_id=state.get("trace_id"),
+            session_key=state.get("session_key"),
         )
         self._log_node_exit(state, "intent_recognition")
-        merged_entities = {**(state.get("entities") or {}), **(result.entities or {})}
         return {
             "intent": result.intent,
             "sub_intent": result.sub_intent,
             "confidence": result.confidence,
-            "entities": merged_entities,
             "need_clarification": result.need_clarification,
             "clarification_question": result.clarification_question,
             "clarification_source": "intent_recognition" if result.need_clarification else state.get("clarification_source"),
             "missing_required_entities": result.missing_required_entities,
+            "intent_decision_trace": result.decision_trace,
+            "intent_llm_status": result.llm_status,
+            "intent_fallback_reason": result.fallback_reason,
             "graph_path": self._append_path(state, "intent_recognition"),
         }
 
@@ -277,21 +288,6 @@ class AgentGraphFactory:
             "graph_path": self._append_path(state, "build_orchestrator_context"),
         }
 
-    """
-        1. 从 AgentCardLoader 里拿 enabled 的 AgentCard 对象
-        2. 转成 dict/json 可序列化结构
-        3. 写入 graph state 的 available_agents
-    """
-    async def discover_agents(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "discover_agents")
-        cards = self.agent_card_loader.list_available_agents()
-        payload = [card.model_dump() for card in cards]
-        self._log_node_exit(state, "discover_agents")
-        return {
-            "available_agents": payload,
-            "graph_path": self._append_path(state, "discover_agents"),
-        }
-
     async def select_agent(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "select_agent")
         selection = await self.agent_selection_node.select(
@@ -311,48 +307,41 @@ class AgentGraphFactory:
         if not access_decision.get("allowed", True):
             self._log_node_exit(state, "select_agent")
             return {
-                "agent_selection": selection.model_dump(),
+                "agent_selection_summary": self._agent_selection_summary(selection),
                 "selected_agent": selection.selected_agent,
-                "selected_agent_card": selected_card.model_dump(),
                 "need_clarification": True,
                 "clarification_question": "当前身份无权使用该业务 Agent，请联系管理员开通对应机构或岗位权限。",
                 "clarification_source": "agent_authorization",
                 "error": f"permission_denied:{access_decision.get('reason')}",
+                "agent_selection_decision_trace": selection.decision_trace,
+                "agent_selection_llm_status": selection.llm_status,
+                "agent_selection_fallback_reason": selection.fallback_reason,
                 "graph_path": self._append_path(state, "select_agent"),
             }
         self._log_node_exit(state, "select_agent")
         return {
-            "agent_selection": selection.model_dump(),
+            "agent_selection_summary": self._agent_selection_summary(selection),
             "selected_agent": selection.selected_agent,
-            "selected_agent_card": selected_card.model_dump(),
             "need_clarification": selection.need_clarification,
             "clarification_question": selection.clarification_question,
             "clarification_source": "agent_selection" if selection.need_clarification else state.get("clarification_source"),
+            "agent_selection_decision_trace": selection.decision_trace,
+            "agent_selection_llm_status": selection.llm_status,
+            "agent_selection_fallback_reason": selection.fallback_reason,
             "graph_path": self._append_path(state, "select_agent"),
-        }
-
-    """参数组装层，只是组装时会做一点 memory 裁剪"""
-    async def assemble_task(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "assemble_task")
-        context = OrchestratorContext(**state["orchestrator_context"])
-        card = AgentCard(**state["selected_agent_card"])
-        task = self.task_assembler.assemble(
-            selected_card=card,
-            orchestrator_context=context,
-            entities=state.get("entities", {}),
-            request_id=state["request_id"],
-            trace_id=state["trace_id"],
-        )
-        self._log_node_exit(state, "assemble_task")
-        return {
-            "assembled_task": task.model_dump(),
-            "graph_path": self._append_path(state, "assemble_task"),
         }
 
     async def dispatch_agent(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "dispatch_agent")
         context = OrchestratorContext(**state["orchestrator_context"])
-        task = AgentTaskEnvelope(**state["assembled_task"])
+        selected_card = self._selected_agent_card(state)
+        task = self.task_assembler.assemble(
+            selected_card=selected_card,
+            orchestrator_context=context,
+            entities=state.get("entities", {}),
+            request_id=state["request_id"],
+            trace_id=state["trace_id"],
+        )
         result = await self.dispatch_agent_node.dispatch(task, context)
         self._log_node_exit(state, "dispatch_agent")
         updates: dict[str, Any] = {
@@ -368,7 +357,6 @@ class AgentGraphFactory:
                     "clarification_question": result_metadata.get("clarification_question") or result.answer,
                     "clarification_source": result_metadata.get("clarification_source") or "subagent",
                     "missing_required_entities": result_metadata.get("missing_required_entities") or [],
-                    "entities": result_metadata.get("entities") or state.get("entities", {}),
                 }
             )
         return updates
@@ -387,10 +375,10 @@ class AgentGraphFactory:
         return {**updates, "graph_path": self._append_path(state, "check_human_approval_required")}
 
     def human_approval_route(self, state: AgentGraphState) -> str:
-        return ApprovalGraphHandler.human_route(state)
+        return RoutePolicy.route_approval_required(state)
 
     def after_create_approval_route(self, state: AgentGraphState) -> str:
-        return ApprovalGraphHandler.after_create_route(state)
+        return RoutePolicy.route_after_create_approval(state)
 
     async def create_approval_request(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "create_approval_request")
@@ -418,7 +406,7 @@ class AgentGraphFactory:
         return updates
 
     def compliance_route(self, state: AgentGraphState) -> str:
-        return VerificationHandler.route(state)
+        return RoutePolicy.route_verification(state)
 
     async def regenerate_compliant_answer(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "regenerate_compliant_answer")
@@ -452,7 +440,7 @@ class AgentGraphFactory:
 
     # 路由函数
     def clarification_route(self, state: AgentGraphState) -> str:
-        return "clarify" if state.get("need_clarification") else "continue"
+        return RoutePolicy.route_clarification(state)
 
     async def compress_short_memory(self, state: AgentGraphState) -> dict[str, Any]:
         self._log_node_enter(state, "compress_short_memory")
@@ -491,6 +479,8 @@ class AgentGraphFactory:
         }
 
     def _log_node_enter(self, state: AgentGraphState, node: str) -> None:
+        if not self._should_log_graph_node_events():
+            return
         log_event(
             "langgraph_node_enter",
             **self._log_context(state, node),
@@ -499,6 +489,8 @@ class AgentGraphFactory:
         )
 
     def _log_node_exit(self, state: AgentGraphState, node: str) -> None:
+        if not self._should_log_graph_node_events():
+            return
         log_event(
             "langgraph_node_exit",
             **self._log_context(state, node),
@@ -512,6 +504,30 @@ class AgentGraphFactory:
         principal = principal_from_auth_context(state.get("auth_context"))
         decision = self.authorization_service.check_agent_access(principal=principal, agent_card=card)
         return decision.model_dump()
+
+    def _selected_agent_card(self, state: AgentGraphState) -> AgentCard:
+        selected_agent = state.get("selected_agent")
+        if not selected_agent:
+            raise RuntimeError("selected_agent_required")
+        card = self.agent_card_loader.get_agent_card(selected_agent)
+        if card is None:
+            raise RuntimeError(f"selected_agent_card_not_found:{selected_agent}")
+        return card
+
+    @staticmethod
+    def _agent_selection_summary(selection: AgentSelectionResult) -> dict[str, Any]:
+        return {
+            "selected_agent": selection.selected_agent,
+            "confidence": selection.confidence,
+            "selection_method": selection.selection_method,
+            "fallback_used": bool(selection.fallback_used),
+            "fallback_reason": selection.fallback_reason,
+            "candidate_count": len(selection.candidates),
+            "llm_status": selection.llm_status,
+        }
+
+    def _should_log_graph_node_events(self) -> bool:
+        return self.log_graph_node_events
 
     @staticmethod
     def _agent_card_summary(card: AgentCard) -> dict[str, Any]:

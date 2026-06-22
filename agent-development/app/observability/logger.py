@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,7 +22,19 @@ SENSITIVE_KEYS = {
     "bank_card",
     "health_info",
     "medical_record",
+    "policy_no",
+    "policyno",
+    "apply_seq",
+    "id_no",
+    "identity_no",
 }
+
+PII_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?<!\d)920\d{13}(?!\d)", re.IGNORECASE), "920*************"),
+    (re.compile(r"(?<!\d)930\d{12}(?!\d)", re.IGNORECASE), "930************"),
+    (re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"), "1**********"),
+    (re.compile(r"(?<![A-Za-z0-9])\d{6}(?:19|20)\d{2}\d{2}\d{2}\d{3}[\dXx](?![A-Za-z0-9])"), "****** ******** ****"),
+)
 
 
 def get_runtime_logger() -> logging.Logger:
@@ -90,8 +103,14 @@ def sanitize_data(data: Any) -> Any:
 
 def preview_text(text: str, limit: int = 120) -> str:
     """生成适合日志输出的短文本预览。"""
-    normalized = text.replace("\r", " ").replace("\n", " ").strip()
+    normalized = _mask_sensitive_text(text.replace("\r", " ").replace("\n", " ").strip())
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[:limit]}..."
 
+
+def _mask_sensitive_text(text: str) -> str:
+    masked = text
+    for pattern, replacement in PII_PATTERNS:
+        masked = pattern.sub(replacement, masked)
+    return masked

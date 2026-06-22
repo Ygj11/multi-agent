@@ -53,6 +53,8 @@ class OpenSDKLLMProvider:
         temperature: float | None = None,
         max_tokens: int | None = None,
         request_id: str | None = None,
+        trace_id: str | None = None,
+        session_key: str | None = None,
     ) -> LLMResponse:
         started = perf_counter()
         actual_model = self.get_llm_model(scene=scene, explicit_model=model)
@@ -101,6 +103,8 @@ class OpenSDKLLMProvider:
         log_event(
             "llm_chat_finished",
             request_id=request_id,
+            trace_id=trace_id,
+            session_key=session_key,
             node="opensdk_llm_provider",
             message="OpenSDK LLM chat finished",
             data={
@@ -114,4 +118,3 @@ class OpenSDKLLMProvider:
             },
         )
         return result
-

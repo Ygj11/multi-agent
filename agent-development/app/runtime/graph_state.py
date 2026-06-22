@@ -17,11 +17,17 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "auth_context": {"owner": "auth", "source": "RequestAdapter", "kind": "resume", "persistence": "approval_store"},
     "original_query": {"owner": "request", "source": "RequestAdapter", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "rewritten_query": {"owner": "understanding", "source": "query_rewrite", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "query_rewrite_decision_trace": {"owner": "understanding_trace", "source": "query_rewrite", "kind": "debug_temporary", "persistence": "none"},
+    "query_rewrite_llm_status": {"owner": "understanding_trace", "source": "query_rewrite", "kind": "debug_temporary", "persistence": "none"},
+    "query_rewrite_fallback_reason": {"owner": "understanding_trace", "source": "query_rewrite", "kind": "debug_temporary", "persistence": "none"},
     "intent": {"owner": "understanding", "source": "intent_recognition", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "sub_intent": {"owner": "understanding", "source": "intent_recognition", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "intent_decision_trace": {"owner": "understanding_trace", "source": "intent_recognition", "kind": "debug_temporary", "persistence": "none"},
+    "intent_llm_status": {"owner": "understanding_trace", "source": "intent_recognition", "kind": "debug_temporary", "persistence": "none"},
+    "intent_fallback_reason": {"owner": "understanding_trace", "source": "intent_recognition", "kind": "debug_temporary", "persistence": "none"},
     "confidence": {"owner": "understanding", "source": "intent_recognition / agent_selection", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
-    "entities": {"owner": "routing_compact_entities", "source": "query_rewrite + intent_recognition", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
-    "entity_bag": {"owner": "rich_entities", "source": "query_rewrite", "kind": "runtime", "persistence": "none"},
+    "entities": {"owner": "routing_compact_entities", "source": "query_rewrite entity_bag projection", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "entity_bag": {"owner": "canonical_entities", "source": "query_rewrite + EntityResolver", "kind": "runtime", "persistence": "none"},
     "conversation_window": {"owner": "history_snapshot", "source": "query_rewrite", "kind": "runtime", "persistence": "none"},
     "is_follow_up": {"owner": "understanding", "source": "query_rewrite", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "need_clarification": {
@@ -51,13 +57,12 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "recent_messages": {"owner": "memory_snapshot", "source": "load_session", "kind": "runtime", "persistence": "none"},
     "short_summary": {"owner": "memory_snapshot", "source": "load_session / compress_short_memory", "kind": "memory", "persistence": "message_store"},
     "orchestrator_context": {"owner": "derived_context_snapshot", "source": "build_orchestrator_context", "kind": "runtime", "persistence": "none"},
-    "available_agents": {"owner": "debug_trace", "source": "discover_agents", "kind": "debug_temporary", "persistence": "none"},
-    "agent_selection": {"owner": "routing_trace", "source": "select_agent", "kind": "debug_temporary", "persistence": "none"},
+    "agent_selection_summary": {"owner": "routing_trace", "source": "select_agent", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "agent_selection_decision_trace": {"owner": "routing_trace", "source": "select_agent", "kind": "debug_temporary", "persistence": "none"},
+    "agent_selection_llm_status": {"owner": "routing_trace", "source": "select_agent", "kind": "debug_temporary", "persistence": "none"},
+    "agent_selection_fallback_reason": {"owner": "routing_trace", "source": "select_agent", "kind": "debug_temporary", "persistence": "none"},
     "selected_agent": {"owner": "routing", "source": "select_agent", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
-    "selected_agent_card": {"owner": "routing", "source": "select_agent", "kind": "runtime", "persistence": "none"},
-    "assembled_task": {"owner": "execution_input", "source": "assemble_task", "kind": "runtime", "persistence": "none"},
     "subagent_result": {"owner": "execution_result", "source": "dispatch_agent / resume_approved_tool", "kind": "runtime", "persistence": "none"},
-    "verification_results": {"owner": "verification_trace", "source": "pre_answer_verify", "kind": "debug_temporary", "persistence": "none"},
     "pre_answer_verification_result": {"owner": "verification_route", "source": "pre_answer_verify", "kind": "runtime", "persistence": "none"},
     "approval_required": {"owner": "approval_summary", "source": "check_human_approval_required", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "approval_payloads": {"owner": "approval_summary", "source": "subagent_result.approval_payloads", "kind": "runtime", "persistence": "none"},
@@ -101,8 +106,14 @@ class AgentGraphState(TypedDict, total=False):
 
     original_query: str
     rewritten_query: str
+    query_rewrite_decision_trace: dict[str, Any]
+    query_rewrite_llm_status: str | None
+    query_rewrite_fallback_reason: str | None
     intent: str
     sub_intent: str | None
+    intent_decision_trace: dict[str, Any]
+    intent_llm_status: str | None
+    intent_fallback_reason: str | None
     confidence: float
     entities: dict[str, Any]
     entity_bag: dict[str, Any]
@@ -117,13 +128,12 @@ class AgentGraphState(TypedDict, total=False):
     short_summary: str | None
 
     orchestrator_context: dict[str, Any]
-    available_agents: list[dict[str, Any]]
-    agent_selection: dict[str, Any]
+    agent_selection_summary: dict[str, Any]
+    agent_selection_decision_trace: dict[str, Any]
+    agent_selection_llm_status: str | None
+    agent_selection_fallback_reason: str | None
     selected_agent: str | None
-    selected_agent_card: dict[str, Any] | None
-    assembled_task: dict[str, Any] | None
     subagent_result: dict[str, Any] | None
-    verification_results: list[dict[str, Any]]
     pre_answer_verification_result: dict[str, Any] | None
     approval_required: bool
     approval_payloads: list[dict[str, Any]]

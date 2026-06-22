@@ -2,6 +2,9 @@ from __future__ import annotations
 
 """Card-driven tool executor."""
 
+import asyncio
+import inspect
+import json
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
@@ -15,13 +18,20 @@ from app.mcp.errors import MCPServerUnavailableError, MCPToolError, MCPToolTimeo
 from app.schemas.agent_card import AgentCard
 from app.approval.store import SQLiteApprovalStore
 from app.schemas.tool import ToolResult
+from app.tools.error_codes import (
+    MCP_SERVER_UNAVAILABLE,
+    MCP_TOOL_ERROR,
+    MCP_TOOL_TIMEOUT,
+    TOOL_EXECUTION_EXCEPTION,
+    TOOL_RESULT_SCHEMA_INVALID,
+    TOOL_TIMEOUT,
+)
 from app.tools.execution_pipeline import ToolExecutionContext, ToolExecutionPipeline
 from app.tools.tool_execution_log_store import ToolExecutionLogStore
 from app.tools.registry import ToolRegistry
+from app.tools.result_schemas import validate_tool_result_schema
 from app.verification.schemas import VerificationInput
 from app.verification.service import VerificationService
-import json
-import inspect
 
 
 class ToolExecutor:
@@ -210,34 +220,89 @@ class ToolExecutor:
         auth_context: dict[str, Any] | None = None,
     ) -> ToolResult:
         try:
-            if definition.source == "mcp":
-                if self.mcp_client_manager is None:
-                    raise MCPServerUnavailableError("mcp_client_manager_not_configured")
-                raw = await self.mcp_client_manager.call_tool(tool_name, arguments)
-            else:
-                raw = await definition.callable(**self._call_arguments(definition, arguments, principal, auth_context))
-            success = not (isinstance(raw, dict) and raw.get("success") is False)
-            result = ToolResult(
-                name=tool_name,
-                agent_name=agent_name,
-                allowed=True,
-                success=success,
-                result=raw,
-                error=str(raw.get("error")) if isinstance(raw, dict) and raw.get("success") is False else None,
+            raw = await asyncio.wait_for(
+                self._invoke_definition(
+                    definition=definition,
+                    arguments=arguments,
+                    principal=principal,
+                    auth_context=auth_context,
+                    tool_name=tool_name,
+                ),
+                timeout=self._tool_timeout_seconds(definition),
             )
+            result = self._result_from_raw(
+                definition=definition,
+                agent_name=agent_name,
+                tool_name=tool_name,
+                raw=raw,
+            )
+            if result.success:
+                schema_error = validate_tool_result_schema(self._result_schema(definition), raw)
+                if schema_error:
+                    result = ToolResult(
+                        name=tool_name,
+                        agent_name=agent_name,
+                        allowed=True,
+                        success=False,
+                        error=TOOL_RESULT_SCHEMA_INVALID,
+                        result={"detail": schema_error},
+                    )
+        except asyncio.TimeoutError as exc:
+            error_code = MCP_TOOL_TIMEOUT if getattr(definition, "source", None) == "mcp" else TOOL_TIMEOUT
+            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=error_code)
+            result.result = {"detail": str(exc) or error_code}
         except MCPServerUnavailableError as exc:
-            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error="mcp_server_unavailable")
+            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=MCP_SERVER_UNAVAILABLE)
             result.result = {"detail": str(exc)}
         except MCPToolTimeoutError as exc:
-            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error="mcp_tool_timeout")
+            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=MCP_TOOL_TIMEOUT)
             result.result = {"detail": str(exc)}
         except MCPToolError as exc:
-            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error="mcp_tool_error")
+            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=MCP_TOOL_ERROR)
             result.result = {"detail": str(exc)}
         except Exception as exc:
-            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=str(exc))
+            result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=TOOL_EXECUTION_EXCEPTION)
+            result.result = {"detail": str(exc)}
 
         return result
+
+    async def _invoke_definition(
+        self,
+        *,
+        definition,
+        arguments: dict[str, Any],
+        principal: Principal | None,
+        auth_context: dict[str, Any] | None,
+        tool_name: str,
+    ) -> Any:
+        if definition.source == "mcp":
+            if self.mcp_client_manager is None:
+                raise MCPServerUnavailableError("mcp_client_manager_not_configured")
+            return await self.mcp_client_manager.call_tool(tool_name, arguments)
+        return await definition.callable(**self._call_arguments(definition, arguments, principal, auth_context))
+
+    @staticmethod
+    def _result_from_raw(*, definition, agent_name: str, tool_name: str, raw: Any) -> ToolResult:
+        success = not (isinstance(raw, dict) and raw.get("success") is False)
+        return ToolResult(
+            name=tool_name,
+            agent_name=agent_name,
+            allowed=True,
+            success=success,
+            result=raw,
+            error=str(raw.get("error")) if isinstance(raw, dict) and raw.get("success") is False else None,
+        )
+
+    @staticmethod
+    def _tool_timeout_seconds(definition) -> float:
+        contract = getattr(definition, "contract", None)
+        timeout_ms = getattr(contract, "timeout_ms", None) or 10000
+        return max(0.001, float(timeout_ms) / 1000.0)
+
+    @staticmethod
+    def _result_schema(definition) -> str | None:
+        contract = getattr(definition, "contract", None)
+        return getattr(contract, "result_schema", None)
 
     @staticmethod
     def _call_arguments(
@@ -460,7 +525,11 @@ class ToolExecutor:
 
     @classmethod
     def _requires_approval(cls, definition, tool_name: str) -> bool:
-        return bool(getattr(definition, "is_write", False))
+        contract = getattr(definition, "contract", None)
+        if getattr(contract, "approval_policy_id", None):
+            return True
+        operation = str(getattr(definition, "operation", "") or "").lower()
+        return bool(getattr(definition, "is_write", False)) or operation in {"write", "notify"}
 
     @classmethod
     def _validate_approved_tool_request(

@@ -1,0 +1,36 @@
+suite: query_rewrite_multiturn_v1
+scene: query_rewrite
+cases:
+  - id: clarification_reply_inherits_policy
+    description: Clarification reply should combine prior business request with current entity.
+    input:
+      current_query: "001028"
+      recent_messages:
+        - role: assistant
+          content: "还缺少保全项 endorseType，请补充后继续处理。"
+          metadata:
+            need_clarification: true
+            rewritten_query: "保单 9200100000458846 保全完成后未更新"
+            entities:
+              policy_no: "9200100000458846"
+            missing_required_entities:
+              - endorseType
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      rewrite_type: clarification_reply
+      must_include:
+        - policy_no
+        - endorseType
+  - id: new_strong_anchor_does_not_inherit_history
+    description: A new strong anchor should be treated as a standalone request.
+    input:
+      current_query: "保单 9200100000458847 查一下保全状态"
+      short_summary: "上一轮保单号 9200100000458846。"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      rewrite_type: new_request
+      must_include:
+        - "9200100000458847"
+      must_not_include:
+        - "9200100000458846"
+

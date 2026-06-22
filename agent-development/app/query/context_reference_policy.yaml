@@ -1,0 +1,39 @@
+version: "1.0.0"
+explicit_reference_signals:
+  - 这个
+  - 那个
+  - 刚才
+  - 上一轮
+  - 前面
+  - 继续
+  - 接着
+  - 它
+  - 还是这个
+  - 刚才那个
+weak_follow_up_signals:
+  - 为什么
+  - 谁的问题
+  - 怎么办
+  - 怎么处理
+  - 状态呢
+  - 有没有更新
+  - 查一下
+strong_anchor_entity_types:
+  - policy_no
+  - apply_seq
+  - request_id
+  - task_id
+  - claim_no
+entity_type_aliases:
+  policyNo: policy_no
+  applySeq: apply_seq
+ordinal_targets:
+  第一个: 0
+  第一: 0
+  1个: 0
+  第1个: 0
+  第二个: 1
+  第二: 1
+  2个: 1
+  第2个: 1
+short_query_without_anchor_max_len: 16

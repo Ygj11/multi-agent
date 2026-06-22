@@ -20,6 +20,8 @@ def isolated_runtime_env(monkeypatch) -> None:
     monkeypatch.setenv("POS_TOOL_MODE", "mock")
     monkeypatch.setenv("TROUBLESHOOTING_TOOL_MODE", "mock")
     monkeypatch.setenv("TROUBLESHOOTING_API_BASE_URL", "")
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("NO_SKILL_POLICY", "clarify")
 
 
 @pytest.fixture

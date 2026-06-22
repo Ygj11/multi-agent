@@ -37,7 +37,11 @@ async def test_intent_llm_json_primary_path():
 
     assert result.intent == "troubleshooting"
     assert result.sub_intent == "refund_failure"
-    assert result.entities["policy_no"] == "9200100000458846"
+    assert "entities" not in result.model_dump()
+    assert result.decision_trace["prompt_scene"] == "intent_recognition"
+    assert result.decision_trace["output_schema"] == "IntentRecognitionLLMOutput"
+    assert result.decision_trace["parse_status"] == "success"
+    assert result.decision_trace["schema_status"] == "valid"
     assert "required_tools" not in result.model_dump()
 
 
@@ -45,15 +49,19 @@ async def test_intent_invalid_json_fallback_business_cases():
     node = IntentRecognitionNode(llm_provider=InvalidJsonLLM())
 
     cases = [
-        ("REQ_001 为什么返回 E102？", "troubleshooting", None),
-        ("退保失败，保单 9200100000458846", "troubleshooting", "refund_failure"),
-        ("查询保单 9200100000458846 可做保全项", "pos_query", "pos_available_items"),
+        ("REQ_001 为什么返回 E102？", "troubleshooting", None, {"request_id": "REQ_001", "error_code": "E102"}),
+        ("退保失败，保单 9200100000458846", "troubleshooting", "refund_failure", {}),
+        ("查询保单 9200100000458846 可做保全项", "pos_query", "pos_available_items", {}),
     ]
-    for query, intent, sub_intent in cases:
-        result = await node.recognize(query, query)
+    for query, intent, sub_intent, entities in cases:
+        result = await node.recognize(query, query, current_entities=entities)
         assert result.intent == intent
         assert result.sub_intent == sub_intent
-        assert isinstance(result.entities, dict)
+        assert "entities" not in result.model_dump()
+        assert result.fallback_used is True
+        assert result.fallback_source == "intent_recognition"
+        assert result.fallback_reason == "llm_json_parse_failed"
+        assert result.llm_status == "parse_failed"
 
 
 async def test_intent_llm_prompt_contains_dynamic_candidate_space():
@@ -126,6 +134,9 @@ async def test_intent_llm_invalid_intent_falls_back_to_rules():
     assert result.intent == "troubleshooting"
     assert result.sub_intent == "refund_failure"
     assert result.reason == "entity_aware_rule_fallback"
+    assert result.fallback_used is True
+    assert result.fallback_reason == "invalid_intent"
+    assert result.llm_status == "invalid_output"
 
 
 async def test_intent_llm_invalid_sub_intent_is_not_accepted():

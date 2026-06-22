@@ -2,8 +2,8 @@ from app.adapters.request_adapter import RequestAdapter
 from app.schemas.message import ChatMessage, ChatRequest
 
 
-async def test_troubleshooting_req_001_runs_without_selected_skill(app_factory):
-    """删除专用排查 skill 后，REQ_001 端到端不应选择 skill。"""
+async def test_troubleshooting_req_001_blocks_without_selected_skill(app_factory):
+    """删除专用排查 skill 后，REQ_001 端到端不应进入泛化工具执行。"""
     app = app_factory("skill-e2e.sqlite3")
     inbound = RequestAdapter().adapt(
         ChatRequest(
@@ -19,7 +19,9 @@ async def test_troubleshooting_req_001_runs_without_selected_skill(app_factory):
 
     assert state["intent"] == "troubleshooting"
     assert state["subagent_result"]["selected_skill_id"] is None
-    assert "E102" in state["answer"]
+    assert state["subagent_result"]["metadata"]["no_skill_blocked"] is True
+    assert state["subagent_result"]["tool_calls"] == []
+    assert "没有匹配到可执行的业务技能" in state["answer"]
 
 
 async def test_pos_query_selects_realtime_query_skill(app_factory):

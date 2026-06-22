@@ -60,6 +60,16 @@ def test_agent_and_skill_router_prompt_contracts_are_candidate_bounded():
     assert "Do not request or assume full SKILL.md bodies" in skill_prompt
 
 
+def test_subagent_reasoning_prompt_has_enterprise_tool_constraints():
+    prompt = PromptLoader().load("subagent_reasoning/system.md")
+
+    assert "Never invent, assume, or simulate tool results" in prompt
+    assert "If a tool returns an error" in prompt
+    assert "Write, notify, update, submit, recovery, or side-effect tools" in prompt
+    assert "Do not output raw internal logs, full tool JSON" in prompt
+    assert "Final answer structure" in prompt
+
+
 def test_all_prompt_files_are_utf8_readable():
     for path in Path(PROMPTS_ROOT).rglob("*.md"):
         content = path.read_text(encoding="utf-8")

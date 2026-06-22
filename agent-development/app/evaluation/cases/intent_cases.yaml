@@ -1,0 +1,26 @@
+suite: intent_taxonomy_v1
+scene: intent_recognition
+cases:
+  - id: troubleshooting_aftercare_intent
+    description: Endorsement completed but policy not updated should route to troubleshooting.
+    input:
+      rewritten_query: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028"
+      entities:
+        policy_no: "9200100000458846"
+        apply_seq: "930021042875719"
+        endorseType: "001028"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: endo_completion_aftercare
+  - id: pos_available_items_intent
+    description: Available endorsement items should route to POS query.
+    input:
+      rewritten_query: "查询保单 9200100000458846 可以做哪些保全项"
+      entities:
+        policy_no: "9200100000458846"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_available_items
+

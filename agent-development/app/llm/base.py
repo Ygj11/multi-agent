@@ -20,6 +20,7 @@ class LLMProvider(Protocol):
         temperature: float | None = None,
         max_tokens: int | None = None,
         request_id: str | None = None,
+        trace_id: str | None = None,
+        session_key: str | None = None,
     ) -> LLMResponse:
         ...
-

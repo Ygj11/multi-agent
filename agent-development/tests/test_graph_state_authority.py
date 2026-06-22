@@ -38,12 +38,15 @@ def test_subagent_result_is_authoritative_for_skill_selection_cache():
     assert GRAPH_STATE_FIELD_AUTHORITY["pre_answer_verification_result"]["owner"] == "verification_route"
     assert GRAPH_STATE_FIELD_AUTHORITY["pre_answer_verification_result"]["kind"] == "runtime"
     assert GRAPH_STATE_FIELD_AUTHORITY["pre_answer_verification_result"]["persistence"] == "none"
-    assert GRAPH_STATE_FIELD_AUTHORITY["verification_results"]["kind"] == "debug_temporary"
+    assert "verification_results" not in AgentGraphState.__annotations__
+    assert "verification_results" not in GRAPH_STATE_FIELD_AUTHORITY
     assert "approval_request" not in AgentGraphState.__annotations__
     assert "approval_request" not in GRAPH_STATE_FIELD_AUTHORITY
     assert "target_subagent" not in AgentGraphState.__annotations__
     assert "target_subagent" not in GRAPH_STATE_FIELD_AUTHORITY
-    assert GRAPH_STATE_FIELD_AUTHORITY["available_agents"]["kind"] == "debug_temporary"
+    assert "available_agents" not in AgentGraphState.__annotations__
+    assert "available_agents" not in GRAPH_STATE_FIELD_AUTHORITY
+    assert GRAPH_STATE_FIELD_AUTHORITY["agent_selection_summary"]["kind"] == "checkpoint"
     assert "principal" not in AgentGraphState.__annotations__
     assert "principal" not in GRAPH_STATE_FIELD_AUTHORITY
     assert GRAPH_STATE_FIELD_AUTHORITY["auth_context"]["kind"] == "resume"

@@ -10,6 +10,8 @@ from app.mcp.schemas import MCPToolCapability
 from app.auth.authorization_service import AuthorizationService
 from app.auth.principal import Principal
 from app.tools.base import ToolCallable, ToolDefinition
+from app.tools.contracts import ToolContractCatalog
+from app.tools.result_schemas import RESULT_SCHEMA_REGISTRY
 
 
 class ToolRegistry:
@@ -19,11 +21,12 @@ class ToolRegistry:
     existing tests and adapters.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, contract_catalog: ToolContractCatalog | None = None) -> None:
         self._tools: dict[str, ToolDefinition] = {}
         self._private_tools_by_agent: dict[str, set[str]] = {}
         self._public_tools: set[str] = set()
         self._mcp_tools: set[str] = set()
+        self.contract_catalog = contract_catalog or ToolContractCatalog.load()
 
     def register(self, name: str, tool: ToolCallable) -> None:
         """Compatibility API: register a public tool."""
@@ -46,7 +49,7 @@ class ToolRegistry:
         idempotency_required: bool = False,
     ) -> None:
         """Register a tool available to agents that allow public tools."""
-        self._tools[name] = ToolDefinition(
+        self._tools[name] = self._with_contract(ToolDefinition(
             name=name,
             callable=tool,
             description=description,
@@ -62,7 +65,7 @@ class ToolRegistry:
             risk_level=risk_level,  # type: ignore[arg-type]
             precondition_id=precondition_id,
             idempotency_required=idempotency_required,
-        )
+        ))
         self._public_tools.add(name)
 
     def register_public_tool(
@@ -117,7 +120,7 @@ class ToolRegistry:
         idempotency_required: bool = False,
     ) -> None:
         """Register a tool bound to one sub agent."""
-        self._tools[name] = ToolDefinition(
+        self._tools[name] = self._with_contract(ToolDefinition(
             name=name,
             callable=tool,
             description=description,
@@ -134,7 +137,7 @@ class ToolRegistry:
             risk_level=risk_level,  # type: ignore[arg-type]
             precondition_id=precondition_id,
             idempotency_required=idempotency_required,
-        )
+        ))
         self._private_tools_by_agent.setdefault(agent_name, set()).add(name)
 
     def register_agent_tool(
@@ -184,7 +187,7 @@ class ToolRegistry:
     def register_mcp_tools(self, mcp_tools: list[MCPToolCapability]) -> None:
         """Register MCP tools discovered at startup or refresh."""
         for capability in mcp_tools:
-            self._tools[capability.registered_tool_name] = ToolDefinition(
+            self._tools[capability.registered_tool_name] = self._with_contract(ToolDefinition(
                 name=capability.registered_tool_name,
                 callable=_mcp_placeholder,
                 description=capability.description,
@@ -201,7 +204,7 @@ class ToolRegistry:
                 },
                 operation="execute",
                 risk_level="medium",
-            )
+            ))
             self._mcp_tools.add(capability.registered_tool_name)
 
     def list_mcp_tools(self) -> list[str]:
@@ -330,6 +333,24 @@ class ToolRegistry:
         )
         return [str(item) for item in parameters.get("required", [])]
 
+    def validate_contracts(self, *, strict: bool = False, check_unknown: bool = True) -> list[str]:
+        """Validate registered tools against the loaded contract catalog."""
+        errors: list[str] = []
+        for name, definition in sorted(self._tools.items()):
+            if definition.contract is None:
+                errors.append(f"tool missing contract: {name}")
+                continue
+            result_schema = definition.contract.result_schema
+            if result_schema and result_schema not in RESULT_SCHEMA_REGISTRY:
+                errors.append(f"{name} references unknown result_schema: {result_schema}")
+        if check_unknown:
+            registered_names = set(self._tools)
+            for name in sorted(self.contract_catalog.explicit_tool_names() - registered_names):
+                errors.append(f"contract references unknown tool: {name}")
+        if strict and errors:
+            raise ValueError("; ".join(errors))
+        return errors
+
     def is_tool_available_for_agent(self, agent_name: str, tool_name: str, card: AgentCard | None = None) -> bool:
         """Check card-driven tool availability."""
         if tool_name not in self._tools:
@@ -350,6 +371,18 @@ class ToolRegistry:
     def _is_enabled_mcp_tool(self, name: str) -> bool:
         definition = self._tools.get(name)
         return bool(definition and definition.source == "mcp" and definition.enabled)
+
+    def _with_contract(self, definition: ToolDefinition) -> ToolDefinition:
+        contract = self.contract_catalog.contract_for(definition.name, source=definition.source)
+        if contract is None:
+            return definition
+        data_classification = contract.data_classification
+        return definition.model_copy(
+            update={
+                "contract": contract,
+                "data_classification": data_classification,
+            }
+        )
 
     @staticmethod
     def _coerce_principal(value: Principal | dict[str, Any] | None) -> Principal | None:

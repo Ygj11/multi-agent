@@ -21,11 +21,14 @@ async def test_langgraph_flow_selects_and_dispatches_troubleshooting_agent(app_f
     assert state["intent"] == "troubleshooting"
     assert state["entities"]["request_id"] == "REQ_001"
     assert state["selected_agent"] == "troubleshooting_agent"
-    assert "discover_agents" in state["graph_path"]
+    assert "discover_agents" not in state["graph_path"]
     assert "select_agent" in state["graph_path"]
-    assert "assemble_task" in state["graph_path"]
+    assert "assemble_task" not in state["graph_path"]
     assert "dispatch_agent" in state["graph_path"]
     assert "pre_answer_verify" in state["graph_path"]
     assert "route_intent" not in state["graph_path"]
     assert "call_troubleshooting_agent" not in state["graph_path"]
     assert state["graph_path"][-1] == "finalize_response"
+    assert "available_agents" not in state
+    assert "assembled_task" not in state
+    assert state["agent_selection_summary"]["selected_agent"] == "troubleshooting_agent"

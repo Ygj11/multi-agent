@@ -35,9 +35,10 @@ def test_messages_and_summary_survive_app_recreate(app_factory):
     data = second.json()
     assert second.status_code == 200
     assert data["intent"] == "troubleshooting"
-    assert "继续排查上一轮" in data["rewritten_query"]
-    assert "E102" in data["answer"]
-    assert "timestamp" in data["answer"]
+    assert "上一轮" in data["rewritten_query"]
+    assert "REQ_001" in data["rewritten_query"]
+    assert "E102" in data["rewritten_query"]
+    assert "没有匹配到可执行的业务技能" in data["answer"]
 
 
 async def test_checkpoint_store_persists_by_thread_id(app_factory):

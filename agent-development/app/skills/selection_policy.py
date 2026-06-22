@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.schemas.skill import SkillMetadata
+from app.runtime.decision_trace import LLMAttempt
+from app.runtime.failure_codes import (
+    LLM_STATUS_SUCCESS,
+    NO_CONFIDENT_SKILL,
+    NO_ENABLED_SKILLS,
+    SKILL_RERANK_UNUSABLE,
+)
 from app.skills.reranker import SkillRerankResult
 from app.skills.scorer import ScoredSkill
 
@@ -18,6 +25,9 @@ class SkillDecision:
     selection_source: str
     llm_confidence: float | None = None
     llm_reason: str | None = None
+    llm_status: str | None = None
+    fallback_reason: str | None = None
+    decision_trace: dict | None = None
 
 
 class SkillSelectionPolicy:
@@ -33,6 +43,7 @@ class SkillSelectionPolicy:
         scored: list[ScoredSkill],
         rerank_result: SkillRerankResult | None,
         rerank_attempted: bool,
+        rerank_attempt: LLMAttempt | None = None,
     ) -> SkillDecision:
         if not scored:
             return SkillDecision(
@@ -41,6 +52,8 @@ class SkillSelectionPolicy:
                 reason="no enabled skill candidates",
                 fallback=True,
                 selection_source="none",
+                fallback_reason=NO_ENABLED_SKILLS,
+                decision_trace={"source": "skill_selection", "method": "none", "fallback_reason": NO_ENABLED_SKILLS},
             )
 
         top = scored[0]
@@ -50,6 +63,9 @@ class SkillSelectionPolicy:
         selection_source = "rule"
         llm_confidence = None
         llm_reason = None
+        llm_status = None
+        fallback_reason = None
+        decision_trace: dict | None = {"source": "skill_selection", "method": "rule"}
 
         if rerank_attempted:
             if rerank_result is not None:
@@ -59,9 +75,23 @@ class SkillSelectionPolicy:
                 selection_source = "llm_rerank"
                 llm_confidence = rerank_result.llm_confidence
                 llm_reason = rerank_result.llm_reason
+                llm_status = LLM_STATUS_SUCCESS
+                decision_trace = {
+                    "source": "skill_selection",
+                    "method": "llm_rerank",
+                    "llm_status": LLM_STATUS_SUCCESS,
+                    **(rerank_attempt.trace(source="skill_selection") if rerank_attempt else {}),
+                }
             else:
                 selection_source = "fallback"
+                llm_status = rerank_attempt.llm_status if rerank_attempt else None
+                fallback_reason = (rerank_attempt.fallback_reason if rerank_attempt else None) or SKILL_RERANK_UNUSABLE
                 reason = f"llm rerank unavailable; fallback to rule top1: {reason}"
+                decision_trace = {
+                    "source": "skill_selection",
+                    "method": "rule_after_llm_rerank_failed",
+                    **(rerank_attempt.trace(source="skill_selection") if rerank_attempt else {}),
+                }
 
         if score < self.min_confident_score:
             return SkillDecision(
@@ -72,6 +102,14 @@ class SkillSelectionPolicy:
                 selection_source="none",
                 llm_confidence=llm_confidence,
                 llm_reason=llm_reason,
+                llm_status=llm_status,
+                fallback_reason=fallback_reason or NO_CONFIDENT_SKILL,
+                decision_trace={
+                    "source": "skill_selection",
+                    "method": selection_source,
+                    "fallback_reason": fallback_reason or NO_CONFIDENT_SKILL,
+                    **(decision_trace or {}),
+                },
             )
 
         return SkillDecision(
@@ -82,4 +120,7 @@ class SkillSelectionPolicy:
             selection_source=selection_source,
             llm_confidence=llm_confidence,
             llm_reason=llm_reason,
+            llm_status=llm_status,
+            fallback_reason=fallback_reason,
+            decision_trace=decision_trace,
         )

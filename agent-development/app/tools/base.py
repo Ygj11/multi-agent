@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.tools.contracts import ToolContract
+
 
 ToolCallable = Callable[..., Awaitable[Any]]
 ToolScope = Literal["public", "private", "mcp"]
@@ -39,6 +41,7 @@ class ToolDefinition(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "low"
     precondition_id: str | None = None
     idempotency_required: bool = False
+    contract: ToolContract | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"arbitrary_types_allowed": True}

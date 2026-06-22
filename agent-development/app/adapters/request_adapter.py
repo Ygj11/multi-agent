@@ -54,15 +54,6 @@ class RequestAdapter:
         trace_id = f"trace_{uuid4().hex}"
 
         log_event(
-            "session_key_created",
-            session_key=session_key,
-            user_id=user_id,
-            tenant_id=tenant_id,
-            node="request_adapter",
-            message="Session key created",
-            data={"channel": request.channel, "session_id": request.session_id},
-        )
-        log_event(
             "request_adapted",
             request_id=request_id,
             trace_id=trace_id,
@@ -71,18 +62,13 @@ class RequestAdapter:
             tenant_id=tenant_id,
             node="request_adapter",
             message="Request adapted to inbound message",
-            data={"message_count": len(request.messages), "original_query_preview": preview_text(original_query)},
-        )
-        log_event(
-            "original_query",
-            request_id=request_id,
-            trace_id=trace_id,
-            session_key=session_key,
-            user_id=user_id,
-            tenant_id=tenant_id,
-            node="request_adapter",
-            message="Original query extracted",
-            data={"original_query_preview": preview_text(original_query)},
+            data={
+                "channel": request.channel,
+                "session_id": request.session_id,
+                "message_count": len(request.messages),
+                "original_query_preview": preview_text(original_query),
+                "auth_source": auth_context.auth_source,
+            },
         )
 
         return InboundMessage(

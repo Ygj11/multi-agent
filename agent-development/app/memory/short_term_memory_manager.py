@@ -49,6 +49,8 @@ class ShortTermMemoryManager:
         intent: str,
         answer: str,
         subagent_result: dict[str, Any] | None = None,
+        request_id: str | None = None,
+        trace_id: str | None = None,
     ) -> str:
         """滚动压缩短期记忆：previous_summary + current_turn -> new_summary。
 
@@ -64,6 +66,9 @@ class ShortTermMemoryManager:
             intent=intent,
             answer=answer,
             subagent_result=subagent_result,
+            request_id=request_id,
+            trace_id=trace_id,
+            session_key=session_key,
         )
         if summary:
             summary_source = "llm_summary"
@@ -110,6 +115,9 @@ class ShortTermMemoryManager:
         intent: str,
         answer: str,
         subagent_result: dict[str, Any] | None = None,
+        request_id: str | None = None,
+        trace_id: str | None = None,
+        session_key: str | None = None,
     ) -> str | None:
         """Use LLM semantic rolling summary. Return None to trigger rule fallback."""
         if self.llm_provider is None:
@@ -139,6 +147,9 @@ class ShortTermMemoryManager:
                 ],
                 tools=None,
                 scene="summary",
+                request_id=request_id,
+                trace_id=trace_id,
+                session_key=session_key,
             )
         except Exception as exc:
             log_event(

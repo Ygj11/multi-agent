@@ -18,6 +18,12 @@ def test_checkpoint_projection_excludes_runtime_only_fields_and_large_payloads()
         "confidence": 0.95,
         "entities": {"policy_no": "9200100000458846", "token": "should_not_persist"},
         "selected_agent": "troubleshooting_agent",
+        "agent_selection_summary": {
+            "selected_agent": "troubleshooting_agent",
+            "confidence": 0.95,
+            "selection_method": "rule",
+            "candidate_count": 2,
+        },
         "conversation_window": {"raw": "large history"},
         "recent_messages": [{"role": "user", "content": "history"}],
         "entity_bag": {"policy_no": [{"value": "9200100000458846"}]},
@@ -61,6 +67,8 @@ def test_checkpoint_projection_excludes_runtime_only_fields_and_large_payloads()
     ):
         assert key not in snapshot
     assert snapshot["entities"] == {"policy_no": "9200100000458846"}
+    assert snapshot["agent_selection_summary"]["selected_agent"] == "troubleshooting_agent"
+    assert "candidates" not in snapshot["agent_selection_summary"]
     assert snapshot["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
     assert snapshot["tool_log_refs"] == [
         {

@@ -6,6 +6,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from app.prompts.manifest import PromptManifest, PromptSceneManifest
+
 
 PROMPTS_ROOT = Path(__file__).resolve().parent
 
@@ -18,8 +20,9 @@ class _SafeFormatDict(defaultdict):
 class PromptLoader:
     """Load prompt templates from app/prompts and render simple named variables."""
 
-    def __init__(self, root: Path = PROMPTS_ROOT) -> None:
+    def __init__(self, root: Path = PROMPTS_ROOT, manifest: PromptManifest | None = None) -> None:
         self.root = Path(root)
+        self.manifest = manifest or PromptManifest.load(self.root / "manifest.yaml")
 
     def load(self, relative_path: str) -> str:
         path = self._resolve(relative_path)
@@ -30,6 +33,21 @@ class PromptLoader:
         values = _SafeFormatDict(str)
         values.update({key: self._stringify(value) for key, value in variables.items()})
         return template.format_map(values)
+
+    def scene(self, scene: str) -> PromptSceneManifest:
+        return self.manifest.scene(scene)
+
+    def render_scene_system(self, scene: str, **variables: Any) -> str:
+        return self.render(self.scene(scene).system, **variables)
+
+    def render_scene_user(self, scene: str, **variables: Any) -> str:
+        user_prompt = self.scene(scene).user
+        if not user_prompt:
+            raise FileNotFoundError(f"prompt scene has no user template: {scene}")
+        return self.render(user_prompt, **variables)
+
+    def scene_trace(self, scene: str) -> dict[str, Any]:
+        return self.scene(scene).trace()
 
     def _resolve(self, relative_path: str) -> Path:
         path = (self.root / relative_path).resolve()

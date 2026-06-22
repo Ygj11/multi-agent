@@ -6,6 +6,7 @@ from typing import Any
 
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
 from app.observability.logger import log_event
+from app.session.message_metadata_sanitizer import sanitize_messages_for_runtime
 from app.session.message_store import MessageStore
 
 
@@ -22,14 +23,19 @@ class SessionManager:
 
         一轮通常包含 user + assistant 两条消息，所以默认读取最近 60 条。
         """
-        recent_messages = await self.message_store.list_by_session(session_key, limit=recent_limit)
+        persisted_messages = await self.message_store.list_by_session(session_key, limit=recent_limit)
+        recent_messages = sanitize_messages_for_runtime(persisted_messages)
         short_summary = await self.short_memory.get_summary(session_key)
         log_event(
             "memory_context_loaded",
             session_key=session_key,
             node="session_manager",
             message="Memory context loaded",
-            data={"recent_message_count": len(recent_messages), "has_short_summary": bool(short_summary)},
+            data={
+                "recent_message_count": len(recent_messages),
+                "has_short_summary": bool(short_summary),
+                "metadata_sanitized": True,
+            },
         )
         return {
             "session_key": session_key,

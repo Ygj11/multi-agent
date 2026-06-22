@@ -48,7 +48,6 @@ class VerificationHandler:
 
         pre_answer_result = verification.model_dump()
         return {
-            "verification_results": [pre_answer_result],
             "pre_answer_verification_result": pre_answer_result,
             "answer": answer,
         }

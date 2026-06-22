@@ -5,10 +5,25 @@ from __future__ import annotations
 from typing import Any
 
 from app.llm.base import LLMProvider
+from app.llm.output_schemas import IntentRecognitionLLMOutput, parse_llm_json_schema
 from app.prompts.loader import PromptLoader, default_prompt_loader
-from app.query.entity_extractor import EntityExtractor
+from app.query.entity_resolver import EntityResolver
+from app.query.intent_fallback_policy import IntentFallbackPolicy
 from app.query.intent_taxonomy_loader import IntentTaxonomyLoader
-from app.query.json_utils import parse_json_object
+from app.runtime.decision_trace import LLMAttempt
+from app.runtime.failure_codes import (
+    INVALID_INTENT,
+    INVALID_SUB_INTENT,
+    LLM_DISABLED,
+    LLM_JSON_PARSE_FAILED,
+    LLM_PROVIDER_ERROR,
+    LLM_SCHEMA_VALIDATION_FAILED,
+    LLM_STATUS_DISABLED,
+    LLM_STATUS_INVALID_OUTPUT,
+    LLM_STATUS_PARSE_FAILED,
+    LLM_STATUS_PROVIDER_ERROR,
+    LLM_STATUS_SUCCESS,
+)
 from app.schemas.entities import ConversationWindow, EntityBag
 from app.schemas.intent import IntentResult
 
@@ -19,14 +34,16 @@ class IntentRecognitionNode:
     def __init__(
         self,
         llm_provider: LLMProvider | None = None,
-        entity_extractor: EntityExtractor | None = None,
+        entity_resolver: EntityResolver | None = None,
         prompt_loader: PromptLoader | None = None,
         intent_taxonomy_loader: IntentTaxonomyLoader | None = None,
+        intent_fallback_policy: IntentFallbackPolicy | None = None,
     ) -> None:
         self.llm_provider = llm_provider
-        self.entity_extractor = entity_extractor or EntityExtractor()
+        self.entity_resolver = entity_resolver or EntityResolver()
         self.prompt_loader = prompt_loader or default_prompt_loader
         self.intent_taxonomy_loader = intent_taxonomy_loader or IntentTaxonomyLoader()
+        self.intent_fallback_policy = intent_fallback_policy or IntentFallbackPolicy.load()
 
     async def recognize(
         self,
@@ -35,20 +52,27 @@ class IntentRecognitionNode:
         recent_messages: list[dict[str, Any]] | None = None,
         short_summary: str | None = None,
         current_entities: dict[str, Any] | None = None,
+        entity_bag: dict[str, Any] | None = None,
         conversation_window: dict[str, Any] | None = None,
         agent_card_summaries: list[dict[str, Any]] | None = None,
+        request_id: str | None = None,
+        trace_id: str | None = None,
+        session_key: str | None = None,
     ) -> IntentResult:
         """Classify intent and sub_intent; never select tools."""
-        extracted_bag = self.entity_extractor.extract(f"{original_query}\n{rewritten_query}", source="current_query")
-        extracted_bag.merge(EntityBag.from_compact_dict(current_entities or {}, source="rule", confidence=0.9))
-        window = self._window(conversation_window, short_summary, recent_messages, extracted_bag)
+        resolved_bag = self._resolved_bag(entity_bag=entity_bag, current_entities=current_entities)
+        entities = resolved_bag.to_compact_dict()
+        window = self._window(conversation_window, short_summary, recent_messages, resolved_bag)
 
-        llm_result = await self._recognize_with_llm(
+        llm_result, llm_attempt = await self._recognize_with_llm(
             original_query=original_query,
             rewritten_query=rewritten_query,
-            entities=extracted_bag.to_compact_dict(),
+            entities=entities,
             window=window,
             agent_card_summaries=agent_card_summaries or [],
+            request_id=request_id,
+            trace_id=trace_id,
+            session_key=session_key,
         )
         if llm_result is not None:
             return llm_result
@@ -56,8 +80,9 @@ class IntentRecognitionNode:
         return self._recognize_with_rules(
             original_query=original_query,
             rewritten_query=rewritten_query,
-            entities=extracted_bag.to_compact_dict(),
+            entities=entities,
             window=window,
+            llm_attempt=llm_attempt,
         )
 
     async def _recognize_with_llm(
@@ -68,58 +93,136 @@ class IntentRecognitionNode:
         entities: dict[str, Any],
         window: ConversationWindow,
         agent_card_summaries: list[dict[str, Any]],
-    ) -> IntentResult | None:
+        request_id: str | None,
+        trace_id: str | None,
+        session_key: str | None,
+    ) -> tuple[IntentResult | None, LLMAttempt]:
+        prompt_trace = self.prompt_loader.scene_trace("intent_recognition")
         if not self._should_use_llm_json():
-            return None
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_DISABLED,
+                fallback_reason=LLM_DISABLED,
+                extra=prompt_trace,
+            )
         allowed_intents = self.intent_taxonomy_loader.list_allowed_intents()
         candidate_sub_intents = self.intent_taxonomy_loader.list_candidate_sub_intents()
         intent_taxonomy = self.intent_taxonomy_loader.summaries_for_prompt()
-        response = await self.llm_provider.chat(
-            messages=[
-                {
-                    "role": "system",
-                    "content": self.prompt_loader.render("intent_recognition/system.md"),
+        try:
+            response = await self.llm_provider.chat(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": self.prompt_loader.render_scene_system("intent_recognition"),
+                    },
+                    {
+                        "role": "user",
+                        "content": self.prompt_loader.render_scene_user(
+                            "intent_recognition",
+                            original_query=original_query,
+                            rewritten_query=rewritten_query,
+                            entities=entities,
+                            conversation_window=window.model_dump(),
+                            intent_taxonomy=intent_taxonomy,
+                            allowed_intents=allowed_intents,
+                            candidate_sub_intents=candidate_sub_intents,
+                            agent_card_summaries=agent_card_summaries,
+                        ),
+                    },
+                ],
+                tools=None,
+                scene="intent_recognition",
+                request_id=request_id,
+                trace_id=trace_id,
+                session_key=session_key,
+            )
+        except Exception as exc:
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_PROVIDER_ERROR,
+                fallback_reason=LLM_PROVIDER_ERROR,
+                detail=str(exc),
+                extra=prompt_trace,
+            )
+        if response.finish_reason == "error" or response.error:
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_PROVIDER_ERROR,
+                fallback_reason=LLM_PROVIDER_ERROR,
+                detail=response.error or "llm_error",
+                extra={
+                    **prompt_trace,
+                    "finish_reason": response.finish_reason,
+                    "model": response.model,
                 },
-                {
-                    "role": "user",
-                    "content": self.prompt_loader.render(
-                        "intent_recognition/user.md",
-                        original_query=original_query,
-                        rewritten_query=rewritten_query,
-                        entities=entities,
-                        conversation_window=window.model_dump(),
-                        intent_taxonomy=intent_taxonomy,
-                        allowed_intents=allowed_intents,
-                        candidate_sub_intents=candidate_sub_intents,
-                        agent_card_summaries=agent_card_summaries,
-                    ),
-                },
-            ],
-            tools=None,
-            scene="intent_recognition",
-        )
-        data = parse_json_object(response.content)
-        if data is None:
-            return None
-        intent = str(data.get("intent") or "unknown")
+            )
+        parsed = parse_llm_json_schema(response.content, IntentRecognitionLLMOutput)
+        parse_trace = {
+            **prompt_trace,
+            "finish_reason": response.finish_reason,
+            "model": response.model,
+            "parse_status": parsed.parse_status,
+            "schema_status": "valid" if parsed.success else "invalid",
+            "schema_name": parsed.schema_name,
+        }
+        if not parsed.success:
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_PARSE_FAILED
+                if parsed.error_code == LLM_JSON_PARSE_FAILED
+                else LLM_STATUS_INVALID_OUTPUT,
+                fallback_reason=LLM_JSON_PARSE_FAILED
+                if parsed.error_code == LLM_JSON_PARSE_FAILED
+                else LLM_SCHEMA_VALIDATION_FAILED,
+                detail=parsed.error_detail,
+                extra=parse_trace,
+            )
+        output = parsed.data
+        if not isinstance(output, IntentRecognitionLLMOutput):
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_INVALID_OUTPUT,
+                fallback_reason=LLM_SCHEMA_VALIDATION_FAILED,
+                detail="schema result type mismatch",
+                extra=parse_trace,
+            )
+        intent = output.intent or "unknown"
         if not self._is_allowed_intent(intent, allowed_intents):
-            return None
-        confidence = float(data.get("confidence", 0.0) or 0.0)
-        need_clarification = bool(data.get("need_clarification", False)) or confidence < 0.35
-        llm_entities = data.get("entities") if isinstance(data.get("entities"), dict) else {}
-        merged_entities = {**entities, **llm_entities}
-        sub_intent = self._validated_sub_intent(data.get("sub_intent"), intent, candidate_sub_intents)
+            return None, LLMAttempt(
+                llm_status=LLM_STATUS_INVALID_OUTPUT,
+                fallback_reason=INVALID_INTENT,
+                detail=f"intent={intent}",
+                extra=parse_trace,
+            )
+        confidence = output.confidence
+        need_clarification = output.need_clarification or confidence < 0.35
+        sub_intent_raw = output.sub_intent
+        sub_intent = self._validated_sub_intent(sub_intent_raw, intent, candidate_sub_intents)
+        invalid_sub_intent = sub_intent_raw not in (None, "") and sub_intent is None
+        if sub_intent_raw not in (None, "") and sub_intent is None:
+            need_clarification = True if confidence < 0.75 else need_clarification
         return IntentResult(
             intent=intent,
             sub_intent=sub_intent,
             confidence=confidence,
-            entities=merged_entities,
-            missing_required_entities=[str(item) for item in data.get("missing_required_entities") or []],
+            missing_required_entities=[str(item) for item in output.missing_required_entities],
             need_clarification=need_clarification,
-            clarification_question=data.get("clarification_question"),
-            is_follow_up=bool(data.get("is_follow_up", False)),
-            reason=str(data.get("reason") or "llm_json_classification"),
+            clarification_question=output.clarification_question,
+            is_follow_up=output.is_follow_up,
+            reason=output.reason,
             target_subagent=None,
+            llm_status=LLM_STATUS_INVALID_OUTPUT if invalid_sub_intent else LLM_STATUS_SUCCESS,
+            fallback_used=invalid_sub_intent,
+            fallback_source="intent_recognition" if invalid_sub_intent else None,
+            fallback_reason=INVALID_SUB_INTENT if invalid_sub_intent else None,
+            decision_trace={
+                "source": "intent_recognition",
+                "method": "llm_json",
+                **self.intent_fallback_policy.trace(),
+                "llm_status": LLM_STATUS_INVALID_OUTPUT if invalid_sub_intent else LLM_STATUS_SUCCESS,
+                "fallback_reason": INVALID_SUB_INTENT if invalid_sub_intent else None,
+                "invalid_sub_intent": str(sub_intent_raw) if invalid_sub_intent else None,
+                **parse_trace,
+            },
+        ), LLMAttempt(
+            llm_status=LLM_STATUS_INVALID_OUTPUT if invalid_sub_intent else LLM_STATUS_SUCCESS,
+            fallback_reason=INVALID_SUB_INTENT if invalid_sub_intent else None,
+            extra=parse_trace,
         )
 
     def _recognize_with_rules(
@@ -129,47 +232,16 @@ class IntentRecognitionNode:
         rewritten_query: str,
         entities: dict[str, Any],
         window: ConversationWindow,
+        llm_attempt: LLMAttempt,
     ) -> IntentResult:
-        query = f"{original_query} {rewritten_query}".lower()
         query_raw = f"{original_query} {rewritten_query}"
         is_follow_up = bool(window.entity_bag.to_compact_dict()) and original_query.strip() != rewritten_query.strip()
 
-        intent = "unknown"
-        sub_intent: str | None = None
-        confidence = 0.42
+        decision = self.intent_fallback_policy.classify(text=query_raw, entities=entities)
+        intent = decision.intent
+        sub_intent = decision.sub_intent
+        confidence = decision.confidence
         reason = "entity_aware_rule_fallback"
-
-        if self._is_pos_query(query_raw, entities):
-            intent = "pos_query"
-            sub_intent = self._pos_sub_intent(query_raw)
-            confidence = 0.86
-        elif (
-            self._has_any(
-                query_raw,
-                "退保失败",
-                "退保没有成功",
-                "没有成功",
-                "回调失败",
-                "签名",
-                "排查",
-                "报错",
-                "失败",
-                "错误",
-                "异常",
-                "保全任务完成",
-                "保全完成",
-                "没有更新",
-                "未更新",
-                "未解锁",
-                "未退费",
-                "未发短信",
-            )
-            or entities.get("request_id")
-            or entities.get("error_code")
-        ):
-            intent = "troubleshooting"
-            sub_intent = self._troubleshooting_sub_intent(query_raw, entities)
-            confidence = 0.9
 
         candidate_sub_intents = self.intent_taxonomy_loader.list_candidate_sub_intents()
         if intent != "unknown" and not self.intent_taxonomy_loader.is_allowed_intent(intent):
@@ -184,12 +256,23 @@ class IntentRecognitionNode:
             intent=intent,
             sub_intent=sub_intent,
             confidence=confidence,
-            entities=entities,
             need_clarification=need_clarification,
-            clarification_question="请补充你要办理的业务类型，例如排查或保全实时查询。" if need_clarification else None,
+            clarification_question=decision.clarification_question if need_clarification else None,
             is_follow_up=is_follow_up,
             reason=reason,
             target_subagent=None,
+            llm_status=llm_attempt.llm_status,
+            fallback_used=True,
+            fallback_source="intent_recognition",
+            fallback_reason=llm_attempt.fallback_reason or LLM_DISABLED,
+            decision_trace={
+                "source": "intent_recognition",
+                "method": "rule_fallback",
+                **self.intent_fallback_policy.trace(),
+                "matched_keywords": decision.matched_keywords,
+                "matched_entity_hints": decision.matched_entity_hints,
+                **llm_attempt.trace(source="intent_recognition"),
+            },
         )
 
     def _window(
@@ -204,15 +287,24 @@ class IntentRecognitionNode:
                 return ConversationWindow(**conversation_window)
             except Exception:
                 pass
-        bag = EntityBag().merge(self.entity_extractor.extract_from_summary(short_summary))
-        bag.merge(self.entity_extractor.extract_from_recent_turns(recent_messages or []))
-        bag.merge(current_bag)
-        return ConversationWindow(session_key="", summary=short_summary, recent_turns=recent_messages or [], entity_bag=bag)
+        return ConversationWindow(session_key="", summary=short_summary, recent_turns=recent_messages or [], entity_bag=current_bag)
 
-    @staticmethod
-    def _has_any(text: str, *keywords: str) -> bool:
-        lower = text.lower()
-        return any(keyword.lower() in lower for keyword in keywords)
+    def _resolved_bag(
+        self,
+        *,
+        entity_bag: dict[str, Any] | None,
+        current_entities: dict[str, Any] | None,
+    ) -> EntityBag:
+        if entity_bag:
+            try:
+                return self.entity_resolver.normalize_bag(EntityBag(**entity_bag), stage="intent_recognition_read")
+            except Exception:
+                pass
+        return self.entity_resolver.resolve(
+            base_bag=EntityBag(),
+            candidate_bag=EntityBag.from_compact_dict(current_entities or {}, source="rule", confidence=0.9),
+            stage="intent_recognition_compat_read",
+        ).entity_bag
 
     def _should_use_llm_json(self) -> bool:
         if self.llm_provider is None:
@@ -238,42 +330,3 @@ class IntentRecognitionNode:
             return sub_intent
         allowed = set(candidate_sub_intents.get(intent) or [])
         return sub_intent if sub_intent in allowed else None
-
-    @classmethod
-    def _troubleshooting_sub_intent(cls, text: str, entities: dict[str, Any]) -> str | None:
-        if cls._has_any(text, "退保失败", "退保没有成功", "没有成功"):
-            return "refund_failure"
-        if cls._has_any(text, "保全任务完成", "保全完成", "没有更新", "未更新", "未解锁", "未退费", "未发短信"):
-            return "endo_completion_aftercare"
-        return None
-
-    @classmethod
-    def _is_pos_query(cls, text: str, entities: dict[str, Any]) -> bool:
-        return cls._has_any(
-            text,
-            "保全实时查询",
-            "可做保全项",
-            "可办理保全",
-            "批文查询",
-            "保全批文",
-            "退保试算",
-            "试算详情",
-            "提交校验",
-            "退保提交校验",
-            "保单标准查询",
-            "pos",
-        ) or bool(entities.get("customer_no"))
-
-    @classmethod
-    def _pos_sub_intent(cls, text: str) -> str:
-        if cls._has_any(text, "可做保全项", "可以做哪些保全项", "可办理保全"):
-            return "pos_available_items"
-        if cls._has_any(text, "批文查询", "保全批文"):
-            return "pos_approval_text_query"
-        if cls._has_any(text, "退保试算", "试算详情"):
-            return "pos_surrender_premium_calc"
-        if cls._has_any(text, "提交校验", "退保提交校验"):
-            return "pos_submit_verify"
-        if cls._has_any(text, "保单标准查询", "保单查询"):
-            return "pos_policy_standard_query"
-        return "pos_query"

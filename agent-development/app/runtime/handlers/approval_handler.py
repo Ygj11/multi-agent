@@ -7,6 +7,7 @@ from typing import Any
 
 from app.auth.principal import principal_dict_from_auth_context
 from app.approval.service import ApprovalService
+from app.agents.card_loader import AgentCardLoader
 from app.runtime.state_projector import project_approval_resume_state
 from app.schemas.agent_card import AgentCard
 from app.schemas.approval import ApprovalRequest
@@ -25,10 +26,12 @@ class ApprovalGraphHandler:
         tool_calling_runner: ToolCallingRunner | None,
         max_approval_chain_depth: int,
         max_write_tools_per_request: int,
+        agent_card_loader: AgentCardLoader | None = None,
     ) -> None:
         self.approval_service = approval_service
         self.tool_executor = tool_executor
         self.tool_calling_runner = tool_calling_runner
+        self.agent_card_loader = agent_card_loader
         self.max_approval_chain_depth = max_approval_chain_depth
         self.max_write_tools_per_request = max_write_tools_per_request
 
@@ -50,7 +53,7 @@ class ApprovalGraphHandler:
         pending_messages = list(state.get("pending_messages") or approval_request.pending_messages or resume_state.get("pending_messages") or [])
         pending_tools = list(state.get("pending_tools") or approval_request.pending_tools or resume_state.get("pending_tools") or [])
         pending_tool_call = dict(state.get("pending_tool_call") or approval_request.pending_tool_call or resume_state.get("pending_tool_call") or {})
-        agent_card = self._agent_card_from_state(state)
+        agent_card = self._agent_card_from_state(state, self.agent_card_loader)
         tool_call_id = pending_tool_call.get("tool_call_id") or pending_tool_call.get("id") or f"approved_{approval_id}"
 
         auth_context = state.get("auth_context") or approval_request.auth_context_snapshot
@@ -282,9 +285,14 @@ class ApprovalGraphHandler:
         return f"{state.get('session_key')}:{state.get('request_id')}"
 
     @staticmethod
-    def _agent_card_from_state(state: dict[str, Any]) -> AgentCard | None:
+    def _agent_card_from_state(state: dict[str, Any], loader: AgentCardLoader | None = None) -> AgentCard | None:
         data = state.get("selected_agent_card")
-        return AgentCard(**data) if isinstance(data, dict) else None
+        if isinstance(data, dict):
+            return AgentCard(**data)
+        selected_agent = state.get("selected_agent")
+        if loader is not None and selected_agent:
+            return loader.get_agent_card(str(selected_agent))
+        return None
 
     async def _approval_request_from_state(self, state: dict[str, Any], approval_id: str | None) -> ApprovalRequest | None:
         if self.approval_service is not None and approval_id:
@@ -319,9 +327,7 @@ class ApprovalGraphHandler:
         return {
             "name": state.get("selected_agent") or "unknown",
             "agent_name": state.get("selected_agent") or "unknown",
-            "task_id": (state.get("assembled_task") or {}).get("task_id")
-            if isinstance(state.get("assembled_task"), dict)
-            else None,
+            "task_id": ((state.get("subagent_result") or {}).get("task_id") if isinstance(state.get("subagent_result"), dict) else None),
             "answer": final_answer,
             "diagnosis": None,
             "evidence": [],

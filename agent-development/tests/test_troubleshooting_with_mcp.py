@@ -1,4 +1,4 @@
-def test_chat_req_001_mentions_local_evidence_and_mcp_client_boundary(client):
+def test_chat_req_001_blocks_without_skill_instead_of_claiming_mcp_evidence(client):
     response = client.post(
         "/api/chat",
         json={
@@ -12,8 +12,6 @@ def test_chat_req_001_mentions_local_evidence_and_mcp_client_boundary(client):
 
     assert response.status_code == 200
     answer = response.json()["answer"]
-    assert "E102" in answer
-    assert "签名校验失败" in answer
-    assert "timestamp" in answer
-    assert "MCP workflow" in answer or "密钥版本" in answer
-
+    assert "没有匹配到可执行的业务技能" in answer
+    assert "MCP workflow" not in answer
+    assert "签名校验失败" not in answer

@@ -53,6 +53,14 @@ def test_entity_extractor_empty_and_unknown_are_safe():
     assert bag.to_compact_dict() == {}
 
 
+def test_entity_extractor_marks_correction_context_metadata():
+    bag = EntityExtractor().extract("不是保单9200100000458846，是9200100000458847")
+    mentions = bag.entities["policy_no"]
+
+    assert mentions[0].metadata["negated"] is True
+    assert mentions[1].metadata["correction"] is True
+
+
 def test_entity_extractor_uses_yaml_rule_changes(tmp_path):
     path = tmp_path / "entity_patterns.yaml"
     path.write_text(

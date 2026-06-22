@@ -58,10 +58,37 @@ class BaseSubAgent(ABC):
                 risk_level="low",
                 metadata={
                     "clarification": True,
-                    "clarification_source": "skill_required_entities",
+                    "clarification_source": "skill_selection" if sub_context.no_skill_blocked else "skill_required_entities",
                     "clarification_question": sub_context.clarification_question,
                     "missing_required_entities": sub_context.missing_required_entities,
                     "entities": task.entities,
+                    "no_skill_blocked": sub_context.no_skill_blocked,
+                    "no_skill_policy": sub_context.no_skill_policy,
+                    "skill_selection_source": sub_context.skill_selection_source,
+                    "skill_selection_fallback": sub_context.skill_selection_fallback,
+                    "skill_selection_decision_trace": task.metadata.get("skill_selection_decision_trace"),
+                },
+                selected_skill_id=sub_context.selected_skill_id,
+                selected_skill_metadata=sub_context.selected_skill_metadata,
+                skill_selection_score=sub_context.skill_selection_score,
+                skill_selection_reason=sub_context.skill_selection_reason,
+            )
+        if sub_context.no_skill_blocked:
+            return SubAgentResult(
+                name=self.name,
+                agent_name=self.name,
+                task_id=task.task_id,
+                answer=sub_context.clarification_question
+                or "当前 Agent 没有匹配到可执行的业务技能，暂不继续调用工具。请补充更明确的业务场景或联系管理员配置对应 Skill。",
+                confidence=0.2,
+                risk_level="low",
+                metadata={
+                    "no_skill_blocked": True,
+                    "no_skill_policy": sub_context.no_skill_policy,
+                    "clarification_source": "skill_selection",
+                    "skill_selection_fallback": sub_context.skill_selection_fallback,
+                    "skill_selection_source": sub_context.skill_selection_source,
+                    "skill_selection_decision_trace": task.metadata.get("skill_selection_decision_trace"),
                 },
                 selected_skill_id=sub_context.selected_skill_id,
                 selected_skill_metadata=sub_context.selected_skill_metadata,
@@ -215,11 +242,11 @@ class BaseSubAgent(ABC):
             agent_name=self.name,
             task_id=task.task_id,
             answer=answer,
-            diagnosis=self._diagnosis_from_runner(run_result),
+            diagnosis=None,
             evidence=evidence,
             tool_calls=run_result.tool_calls,
-            recommendation=self._recommendation_from_runner(run_result),
-            responsibility=self._responsibility_from_runner(run_result),
+            recommendation=None,
+            responsibility=None,
             confidence=0.88 if run_result.stopped_reason == "final" else 0.3,
             needs_human_approval=needs_approval,
             approval_payloads=[run_result.approval_payload] if run_result.approval_payload else [],
@@ -233,7 +260,10 @@ class BaseSubAgent(ABC):
                     "pending_tool_call": run_result.pending_tool_call,
                     "pending_messages": run_result.messages,
                     "pending_tools": run_result.tools,
-                }
+                },
+                "skill_selection_source": sub_context.skill_selection_source,
+                "skill_selection_fallback": sub_context.skill_selection_fallback,
+                "skill_selection_decision_trace": task.metadata.get("skill_selection_decision_trace"),
             },
             selected_skill_id=sub_context.selected_skill_id,
             selected_skill_metadata=sub_context.selected_skill_metadata,
@@ -259,21 +289,6 @@ class BaseSubAgent(ABC):
             "result_preview": item.get("result"),
             "confidence": 0.8 if item.get("success") else 0.3,
         }
-
-    def _diagnosis_from_runner(self, run_result: ToolCallingRunResult) -> str | None:
-        if self.name == "troubleshooting_agent":
-            return "E102 签名校验失败方向，已结合工具观察进行排查。"
-        return None
-
-    def _recommendation_from_runner(self, run_result: ToolCallingRunResult) -> str | None:
-        if self.name == "troubleshooting_agent":
-            return "建议核对 timestamp、密钥版本、字段排序、空值处理和 body 序列化方式。"
-        return None
-
-    def _responsibility_from_runner(self, run_result: ToolCallingRunResult) -> str | None:
-        if self.name == "troubleshooting_agent":
-            return "需结合 MCP workflow 证据和我方验签日志确认最终归属。"
-        return None
 
     def _log_runner_started(self, task: SubAgentTask) -> None:
         event_name = "troubleshooting_started" if self.name == "troubleshooting_agent" else "subagent_started"
