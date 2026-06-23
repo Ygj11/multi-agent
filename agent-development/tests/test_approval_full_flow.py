@@ -36,8 +36,8 @@ class AcceptingApprovalClient:
 
 def test_chat_returns_pending_when_write_tool_needs_approval(app_factory, real_troubleshooting_env):
     app = app_factory("approval_full.sqlite3")
-    app.state.llm_provider.chat = ApprovalLLM().chat
-    app.state.approval_service.client = AcceptingApprovalClient()
+    app.state.container.llm_provider.chat = ApprovalLLM().chat
+    app.state.container.approval_service.client = AcceptingApprovalClient()
     client = TestClient(app)
 
     response = client.post(
@@ -59,7 +59,7 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory, real_t
     assert data["approval_id"] in data["answer"]
 
     async def _read():
-        return await app.state.approval_store.get(data["approval_id"])
+        return await app.state.container.storage.approval_store.get(data["approval_id"])
 
     import anyio
 
@@ -78,7 +78,7 @@ def test_chat_returns_pending_when_write_tool_needs_approval(app_factory, real_t
     assert "subagent_result" not in item.resume_state
 
     async def _logs():
-        return await app.state.tool_execution_log_store.list_by_session("tenant:web:u1:s1")
+        return await app.state.container.storage.tool_execution_log_store.list_by_session("tenant:web:u1:s1")
 
     logs = anyio.run(_logs)
     assert logs[0]["tool_name"] == "notice_policy_update"

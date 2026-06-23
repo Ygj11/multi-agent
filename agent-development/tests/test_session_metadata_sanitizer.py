@@ -16,6 +16,7 @@ def test_sanitize_message_for_runtime_keeps_business_metadata_only():
             "need_clarification": True,
             "clarification_source": "skill_required_entities",
             "missing_required_entities": ["endorseType"],
+            "missing_tool_arguments": [{"tool_name": "query_endo_task_record", "arguments": ["apply_seq"]}],
             "selected_agent": "troubleshooting_agent",
             "selected_skill_id": "troubleshooting_agent.endo_completion_aftercare",
             "decision_traces": {"intent_recognition": {"policy_version": "1.0.0"}},
@@ -38,6 +39,7 @@ def test_sanitize_message_for_runtime_keeps_business_metadata_only():
         "need_clarification": True,
         "clarification_source": "skill_required_entities",
         "missing_required_entities": ["endorseType"],
+        "missing_tool_arguments": [{"tool_name": "query_endo_task_record", "arguments": ["apply_seq"]}],
         "selected_agent": "troubleshooting_agent",
         "selected_skill_id": "troubleshooting_agent.endo_completion_aftercare",
     }
@@ -62,6 +64,7 @@ async def test_session_manager_sanitizes_recent_messages_without_changing_persis
             "need_clarification": True,
             "clarification_source": "skill_required_entities",
             "missing_required_entities": ["endorseType"],
+            "missing_tool_arguments": [{"tool_name": "query_endo_task_record", "arguments": ["apply_seq"]}],
             "selected_skill_id": "troubleshooting_agent.endo_completion_aftercare",
             "decision_traces": {"query_rewrite": {"policy_version": "1.0.0"}},
             "selected_skill_metadata": {"name": "aftercare", "content": "large"},
@@ -78,6 +81,9 @@ async def test_session_manager_sanitizes_recent_messages_without_changing_persis
 
     assert runtime_metadata["need_clarification"] is True
     assert runtime_metadata["missing_required_entities"] == ["endorseType"]
+    assert runtime_metadata["missing_tool_arguments"] == [
+        {"tool_name": "query_endo_task_record", "arguments": ["apply_seq"]}
+    ]
     assert runtime_metadata["entities"] == {"policy_no": "9200100000458846"}
     assert runtime_metadata["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
     assert "decision_traces" not in runtime_metadata

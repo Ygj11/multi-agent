@@ -18,8 +18,7 @@ def _card(**overrides):
         output_schema="SubAgentResult",
         private_tools=["private_tool"],
         public_tools_allowed=True,
-        mcp_tools=[],
-        mcp_tool_scopes=[],
+        mcp_policy={"enabled": False},
         skills=["agent_a.default"],
         rag_namespaces=[],
         enabled=True,
@@ -42,7 +41,7 @@ def _cap(name: str, server="workflow"):
 def _registry():
     registry = ToolRegistry()
     registry.register_private(agent_name="agent_a", name="private_tool", tool=_local_tool)
-    registry.register_public_tool("public_tool", _local_tool)
+    registry.register_public("public_tool", _local_tool)
     registry.register_mcp_tools(
         [
             _cap("mcp.workflow.query_refund_task"),
@@ -53,36 +52,39 @@ def _registry():
     return registry
 
 
-def test_register_mcp_tools_and_exact_visibility():
+def test_mcp_policy_enabled_exposes_all_discovered_mcp_tools():
     registry = _registry()
-    card = _card(mcp_tools=["mcp.workflow.query_refund_task"], mcp_tool_scopes=[])
-    names = registry.list_tool_names_for_agent(card)
+    card = _card(mcp_policy={"enabled": True})
+    names = registry.list_available_tools_for_agent(card.agent_name, card)
 
     assert "private_tool" in names
     assert "public_tool" in names
     assert "mcp.workflow.query_refund_task" in names
-    assert "mcp.workflow.query_node" not in names
-    assert "mcp.audit.query_audit_detail" not in names
-
-
-def test_scope_visibility_does_not_return_all_mcp_tools():
-    registry = _registry()
-    card = _card(mcp_tools=[], mcp_tool_scopes=["mcp.workflow"])
-    names = registry.list_tool_names_for_agent(card)
-
-    assert "mcp.workflow.query_refund_task" in names
     assert "mcp.workflow.query_node" in names
+    assert "mcp.audit.query_audit_detail" in names
+
+
+def test_mcp_policy_disabled_hides_all_mcp_tools():
+    registry = _registry()
+    card = _card(mcp_policy={"enabled": False})
+    names = registry.list_available_tools_for_agent(card.agent_name, card)
+
+    assert "private_tool" in names
+    assert "public_tool" in names
+    assert "mcp.workflow.query_refund_task" not in names
+    assert "mcp.workflow.query_node" not in names
     assert "mcp.audit.query_audit_detail" not in names
 
 
 def test_public_disabled_keeps_private_and_mcp_but_hides_public():
     registry = _registry()
-    card = _card(public_tools_allowed=False, mcp_tools=["mcp.workflow.query_refund_task"])
-    names = registry.list_tool_names_for_agent(card)
+    card = _card(public_tools_allowed=False, mcp_policy={"enabled": True})
+    names = registry.list_available_tools_for_agent(card.agent_name, card)
 
     assert "private_tool" in names
     assert "public_tool" not in names
     assert "mcp.workflow.query_refund_task" in names
+    assert "mcp.workflow.query_node" in names
 
 
 def test_mcp_schema_generation():

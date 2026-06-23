@@ -21,7 +21,7 @@ async def test_graph_final_state_keeps_entities_and_entity_bag_synchronized(app_
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     assert state["entities"] == EntityBag(**state["entity_bag"]).to_compact_dict()
     assert state["entities"] == {
@@ -42,7 +42,7 @@ async def test_query_rewrite_result_entities_are_projected_from_entity_bag(app_f
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     assert "query_rewrite" in state["graph_path"]
     assert state["entities"] == EntityBag(**state["entity_bag"]).to_compact_dict()

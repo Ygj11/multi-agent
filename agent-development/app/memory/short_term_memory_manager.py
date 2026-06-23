@@ -176,11 +176,11 @@ class ShortTermMemoryManager:
         del subagent_result
         request_id = self._find_request_id(" ".join([original_query, rewritten_query, answer]))
         error_code = "E102" if "E102" in " ".join([original_query, rewritten_query, answer]) else None
-        interface_name = "submitProposal" if "submitProposal" in answer else "健康险个险接口"
+        service_label = "submitProposal" if "submitProposal" in answer else "健康险个险接口"
 
         if request_id and error_code:
             summary = (
-                f"上一轮讨论 requestId={request_id} 的 {interface_name} {error_code} 问题，"
+                f"上一轮讨论 requestId={request_id} 的 {service_label} {error_code} 问题，"
                 "初步结论为签名校验失败，需要检查 timestamp 是否参与签名、密钥版本和字段排序。"
             )
         elif intent == "troubleshooting":

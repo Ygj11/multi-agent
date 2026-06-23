@@ -14,7 +14,7 @@ async def test_runtime_state_omits_large_routing_objects(app_factory):
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     forbidden = {
         "available_agents",

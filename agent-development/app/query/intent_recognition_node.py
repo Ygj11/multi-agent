@@ -105,6 +105,7 @@ class IntentRecognitionNode:
                 extra=prompt_trace,
             )
         allowed_intents = self.intent_taxonomy_loader.list_allowed_intents()
+        """intent_taxonomy.yaml 中给某个 intent 配置了 sub_intents，就按白名单校验；没配置则表示该 intent 没有合法子意图，而不是跳过校验。"""
         candidate_sub_intents = self.intent_taxonomy_loader.list_candidate_sub_intents()
         intent_taxonomy = self.intent_taxonomy_loader.summaries_for_prompt()
         try:

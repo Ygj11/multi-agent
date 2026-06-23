@@ -62,7 +62,7 @@ def load_project_dotenv(dotenv_path: Path | None = None) -> None:
 @dataclass(frozen=True)
 class Settings:
     """Runtime settings with safe local defaults."""
-
+    """系统环境变量 > .env > settings.py 默认值"""
     project_root: Path = PROJECT_ROOT
     app_env: str = "local"
 
@@ -95,6 +95,7 @@ class Settings:
     # Knowledge and MCP
     enable_mcp_client: bool = True
     mcp_servers_json: str | None = None
+    unknown_mcp_tool_policy: str = "allow"
     enable_knowledge_api: bool = False
     knowledge_api_url: str | None = None
     knowledge_api_timeout: float = 10.0
@@ -179,6 +180,12 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
         summary_model=os.getenv("SUMMARY_MODEL") or None,
         enable_mcp_client=_as_bool(os.getenv("ENABLE_MCP_CLIENT"), True),
         mcp_servers_json=os.getenv("MCP_SERVERS_JSON") or os.getenv("MCP_SERVERS") or None,
+        unknown_mcp_tool_policy=_choice(
+            "UNKNOWN_MCP_TOOL_POLICY",
+            os.getenv("UNKNOWN_MCP_TOOL_POLICY"),
+            {"allow", "approval", "deny"},
+            "allow",
+        ),
         enable_knowledge_api=_as_bool(os.getenv("ENABLE_KNOWLEDGE_API"), False),
         knowledge_api_url=os.getenv("KNOWLEDGE_API_URL") or None,
         knowledge_api_timeout=float(os.getenv("KNOWLEDGE_API_TIMEOUT", "10")),

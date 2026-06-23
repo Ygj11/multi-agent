@@ -14,7 +14,7 @@ async def test_full_architecture_acceptance_refund_failure_flow(app_factory):
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     assert state["intent"] == "troubleshooting"
     assert state["confidence"] > 0
@@ -36,9 +36,9 @@ async def test_full_architecture_acceptance_refund_failure_flow(app_factory):
     assert state["pre_answer_verification_result"]["stage"] == "pre_answer"
     assert state["pre_answer_verification_result"]["action"] in {"allow", "patch"}
 
-    messages = await app.state.message_store.list_by_session(inbound.session_key)
-    summary = await app.state.short_memory.get_summary(inbound.session_key)
-    logs = await app.state.tool_execution_log_store.list_by_session(inbound.session_key)
+    messages = await app.state.container.storage.message_store.list_by_session(inbound.session_key)
+    summary = await app.state.container.short_memory.get_summary(inbound.session_key)
+    logs = await app.state.container.storage.tool_execution_log_store.list_by_session(inbound.session_key)
 
     assert any(message["role"] == "user" for message in messages)
     assert any(message["role"] == "assistant" for message in messages)

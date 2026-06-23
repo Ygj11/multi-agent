@@ -2,6 +2,8 @@ import pytest
 
 from app.bootstrap.tools import register_admin_restricted_tools
 from app.config.settings import Settings
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.mcp.schemas import MCPToolCapability
 from app.tools.agent_tools import register_agent_private_tools
 from app.tools.contracts import ToolContract, ToolContractCatalog
@@ -17,7 +19,13 @@ async def _ok_tool(**kwargs):
 def _full_registry() -> ToolRegistry:
     registry = ToolRegistry()
     register_public_tools(registry, FakeKnowledgeService())
-    register_agent_private_tools(registry, troubleshooting_tool_mode="real")
+    register_agent_private_tools(
+        registry,
+        troubleshooting_tool_mode="real",
+        troubleshooting_api_client=TroubleshootingAPIClient(
+            BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+        ),
+    )
     register_admin_restricted_tools(registry, Settings())
     return registry
 
@@ -91,4 +99,3 @@ def test_mcp_tools_receive_default_contract():
     assert definition.contract is not None
     assert definition.contract.tool_name == "mcp.workflow.query_refund_task"
     assert definition.contract.result_schema == "AnyDictResult"
-

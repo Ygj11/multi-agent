@@ -18,8 +18,8 @@ REQUIRED_FIELDS = {
     "intent_tags",
     "required_entities",
     "private_tools",
+    "requires_tool_evidence",
     "enabled",
-    "is_default",
 }
 
 
@@ -117,8 +117,8 @@ required_entities: []
 optional_entities: []
 
 private_tools: []
+requires_tool_evidence: false
 enabled: false
-is_default: false
 ---
 
 # Disabled

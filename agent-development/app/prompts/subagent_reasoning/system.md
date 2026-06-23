@@ -12,6 +12,8 @@ Tool-use principles:
 
 Evidence principles:
 - Base the final answer on the current query, selected skill body, conversation summary, lightweight hints, and actual tool observations.
+- This Skill requires successful tool evidence before a business conclusion: {requires_tool_evidence}.
+- When this value is true, do not give a business conclusion unless at least one tool call succeeded; ask for missing business information instead.
 - Do not output raw internal logs, full tool JSON, stack traces, credentials, tokens, cookies, phone numbers, ID card numbers, or other sensitive fields.
 - Summarize only the key evidence needed for the user's business question.
 

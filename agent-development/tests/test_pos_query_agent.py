@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from app.agents.card_loader import AgentCardLoader
 from app.agents.selection import AgentSelectionNode
 from app.auth.principal import AuthContext, Principal
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.integrations.pos_api_client import PosAPIClient
 from app.llm.schemas import LLMResponse
 from app.query.intent_recognition_node import IntentRecognitionNode
@@ -264,11 +266,51 @@ async def test_pos_query_agent_tool_loop_executes_read_tool_and_returns_final_an
 
 
 @pytest.mark.asyncio
-async def test_pos_api_client_disabled_is_safe_empty_integration():
-    client = PosAPIClient(base_url=None, enabled=False)
+async def test_pos_api_client_missing_base_url_returns_controlled_result():
+    client = PosAPIClient(BaseIntegrationHTTPClient(base_url=None))
 
     result = await client.post("/process/api/i/endotItemType/list", {"policyNo": "P001"})
 
-    assert client.enabled is False
     assert result["success"] is False
-    assert result["error"] == "pos_api_disabled"
+    assert result["error"] == "pos_api_base_url_missing"
+
+
+@pytest.mark.asyncio
+async def test_pos_api_client_uses_shared_http_transport():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert str(request.url) == "https://pos.example.test/process/api/i/endotItemType/list"
+        assert request.headers["Content-Type"] == "application/json"
+        return httpx.Response(200, json={"available_items": []})
+
+    http_client = BaseIntegrationHTTPClient(
+        base_url="https://pos.example.test",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    client = PosAPIClient(http_client)
+
+    result = await client.post("/process/api/i/endotItemType/list", {"policyNo": "P001"})
+
+    assert result["success"] is True
+    assert result["status_code"] == 200
+    assert result["url"] == "https://pos.example.test/process/api/i/endotItemType/list"
+    assert result["response"] == {"available_items": []}
+    await http_client.close()
+
+
+@pytest.mark.asyncio
+async def test_pos_api_client_preserves_non_json_response_as_text():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="upstream plain text")
+
+    http_client = BaseIntegrationHTTPClient(
+        base_url="https://pos.example.test",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    client = PosAPIClient(http_client)
+
+    result = await client.post("/process/api/i/endotItemType/list", {"policyNo": "P001"})
+
+    assert result["success"] is True
+    assert result["response"] == {"text": "upstream plain text"}
+    await http_client.close()

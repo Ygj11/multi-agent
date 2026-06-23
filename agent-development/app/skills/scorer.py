@@ -79,11 +79,6 @@ class SkillRuleScorer:
             score += self.policy.weight("business_domain_match")
             reasons.append("business domain matched")
 
-        if context.extracted_interface_name and context.extracted_interface_name.lower() in skill_text:
-            score += self.policy.weight("interface_match")
-            reasons.append(f"interface matched: {context.extracted_interface_name}")
-            has_strong_signal = True
-
         if context.extracted_error_code and context.extracted_error_code.lower() in skill_text:
             score += self.policy.weight("error_code_match")
             reasons.append(f"error code matched: {context.extracted_error_code}")
@@ -117,7 +112,6 @@ class SkillRuleScorer:
                 " ".join(context.lightweight_knowledge_hints),
                 " ".join(str(value) for value in context.entities.values()),
                 context.extracted_error_code or "",
-                context.extracted_interface_name or "",
             ]
         ).lower()
 
@@ -145,7 +139,6 @@ class SkillRuleScorer:
         mapping = {
             "request_id": context.extracted_request_id,
             "error_code": context.extracted_error_code,
-            "interface_name": context.extracted_interface_name,
             "short_summary": context.short_summary,
             "apply_seq": context.entities.get("apply_seq"),
             "policy_no": context.entities.get("policy_no"),

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.knowledge.service import KnowledgeService
+from app.schemas.agent_card import AgentCard
 from app.schemas.entities import EntityBag
 from app.schemas.runtime import OrchestratorContext, SubAgentContext
 from app.schemas.subagent import SubAgentTask
@@ -53,12 +54,9 @@ class ContextBuilder:
         sub_intent: str | None = None,
         entities: dict[str, Any] | None = None,
         entity_bag: dict[str, Any] | None = None,
-        conversation_window: dict[str, Any] | None = None,
         session_key: str,
         recent_messages: list[dict[str, Any]],
         short_summary: str | None,
-        available_subagents: list[str],
-        agent_candidate_summaries: list[dict[str, Any]] | None = None,
         auth_context: dict[str, Any] | None = None,
     ) -> OrchestratorContext:
         compact_entities = entities or {}
@@ -75,12 +73,9 @@ class ContextBuilder:
             sub_intent=sub_intent,
             entities=compact_entities,
             entity_bag=entity_bag or {},
-            conversation_window=conversation_window or {},
             session_key=session_key,
             recent_messages=recent_messages[-10:],
             short_summary=short_summary,
-            available_subagents=available_subagents,
-            agent_candidate_summaries=agent_candidate_summaries or [],
             lightweight_knowledge_hints=hints,
             auth_context=auth_context,
         )
@@ -90,17 +85,20 @@ class ContextBuilder:
         *,
         task: SubAgentTask,
         parent_context: OrchestratorContext,
+        agent_card: AgentCard,
         allowed_tools: list[str],
     ) -> SubAgentContext:
-        agent_card_data = task.metadata.get("agent_card")
-        resolution = await self.skill_context_resolver.resolve(task=task, parent_context=parent_context)
+        resolution = await self.skill_context_resolver.resolve(
+            task=task,
+            parent_context=parent_context,
+            agent_card=agent_card,
+        )
         selection = resolution.selection
         entity_check = resolution.entity_check
 
-        namespaces = agent_card_data.get("rag_namespaces", []) if isinstance(agent_card_data, dict) else []
         knowledge_hint = await self.knowledge_hint_builder.build_subagent_knowledge_hint(
             query=parent_context.rewritten_query,
-            namespaces=namespaces,
+            namespaces=agent_card.rag_namespaces,
         )
         return SubAgentContext(
             task=task.model_dump(),

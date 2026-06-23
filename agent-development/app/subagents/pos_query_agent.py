@@ -19,7 +19,7 @@ class PosQueryAgent(BaseSubAgent):
         task: SubAgentTask,
         parent_context: OrchestratorContext,
         sub_context: SubAgentContext,
-        agent_card: AgentCard | None,
+        agent_card: AgentCard,
     ) -> SubAgentResult:
         return SubAgentResult(
             name=self.name,

@@ -47,6 +47,7 @@ class MessageCommitHandler:
             "clarification_source": state.get("clarification_source"),
             "clarification_question": state.get("clarification_question") or subagent_metadata.get("clarification_question"),
             "missing_required_entities": state.get("missing_required_entities") or subagent_metadata.get("missing_required_entities") or [],
+            "missing_tool_arguments": subagent_metadata.get("missing_tool_arguments") or [],
             "selected_agent": state.get("selected_agent"),
             "selected_skill_id": subagent_result.get("selected_skill_id"),
             "fallback_summary": {

@@ -17,7 +17,7 @@ async def test_graph_final_state_blocks_tool_loop_without_skill(app_factory):
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
     subagent_result = state["subagent_result"]
 
     assert subagent_result["selected_skill_id"] is None

@@ -23,7 +23,12 @@ class IntentFallbackDecision:
 
 
 class IntentFallbackPolicy:
-    """Classify fallback intent using declarative keyword/entity policy."""
+    """Classify fallback intent using declarative keyword/entity policy.
+
+    ``keywords`` 和 ``entity_hints`` 是按需启用的匹配信号。某个 intent
+    两者均未配置时不会被该兜底规则选中；未配置 ``default_sub_intent`` 时，
+    不产生兜底 sub_intent。
+    """
 
     policy_name = "intent_fallback_policy"
 

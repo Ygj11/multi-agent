@@ -15,4 +15,4 @@ TOOL_RESULT_SCHEMA_INVALID = "tool_result_schema_invalid"
 MCP_SERVER_UNAVAILABLE = "mcp_server_unavailable"
 MCP_TOOL_TIMEOUT = "mcp_tool_timeout"
 MCP_TOOL_ERROR = "mcp_tool_error"
-
+MCP_TOOL_POLICY_DENIED = "mcp_tool_policy_denied"

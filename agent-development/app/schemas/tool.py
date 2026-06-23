@@ -26,6 +26,7 @@ class ToolResult(BaseModel):
     success: bool
     result: Any = None
     error: str | None = None
+    missing_required_arguments: list[str] = Field(default_factory=list)
     agent_name: str | None = None
     duration_ms: int | None = None
     needs_human_approval: bool = False

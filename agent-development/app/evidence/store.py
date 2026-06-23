@@ -20,31 +20,6 @@ class EvidenceStore:
 
     def __init__(self, db: SQLiteDatabase | None = None) -> None:
         self.db = db or SQLiteDatabase(get_settings().sqlite_db_path)
-        self._initialize()
-
-    def _initialize(self) -> None:
-        with self.db.connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS evidence (
-                    evidence_id TEXT PRIMARY KEY,
-                    request_id TEXT,
-                    trace_id TEXT,
-                    session_key TEXT NOT NULL,
-                    source_type TEXT NOT NULL,
-                    source_name TEXT NOT NULL,
-                    content_json TEXT NOT NULL,
-                    summary TEXT,
-                    citations_json TEXT NOT NULL,
-                    redactions_json TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_request ON evidence(request_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence(session_key)")
-            conn.commit()
 
     async def save(self, evidence: Evidence) -> Evidence:
         def write(conn):

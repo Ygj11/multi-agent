@@ -15,7 +15,7 @@ async def test_troubleshooting_req_001_blocks_without_selected_skill(app_factory
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     assert state["intent"] == "troubleshooting"
     assert state["subagent_result"]["selected_skill_id"] is None
@@ -42,7 +42,7 @@ async def test_pos_query_selects_realtime_query_skill(app_factory):
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     assert state["intent"] == "pos_query"
     assert state["subagent_result"]["selected_skill_id"] == "pos_query_agent.realtime_query"

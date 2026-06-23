@@ -16,7 +16,7 @@ async def test_langgraph_flow_selects_and_dispatches_troubleshooting_agent(app_f
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     assert state["intent"] == "troubleshooting"
     assert state["entities"]["request_id"] == "REQ_001"

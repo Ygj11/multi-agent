@@ -26,7 +26,7 @@ class SQLiteDatabase:
         self.initialize()
 
     def initialize(self) -> None:
-        """创建第二阶段需要的 messages、short_term_memory、graph_checkpoints 表。"""
+        """创建项目运行时使用的全部 SQLite 表及索引。"""
         with self.connect() as conn:
             conn.executescript(
                 """
@@ -84,6 +84,27 @@ class SQLiteDatabase:
 
                 CREATE INDEX IF NOT EXISTS idx_tool_execution_logs_request
                 ON tool_execution_logs(request_id);
+
+                CREATE TABLE IF NOT EXISTS evidence (
+                    evidence_id TEXT PRIMARY KEY,
+                    request_id TEXT,
+                    trace_id TEXT,
+                    session_key TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_name TEXT NOT NULL,
+                    content_json TEXT NOT NULL,
+                    summary TEXT,
+                    citations_json TEXT NOT NULL,
+                    redactions_json TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_evidence_request
+                ON evidence(request_id);
+
+                CREATE INDEX IF NOT EXISTS idx_evidence_session
+                ON evidence(session_key);
 
                 CREATE TABLE IF NOT EXISTS approval_requests (
                     approval_id TEXT PRIMARY KEY,

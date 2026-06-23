@@ -16,7 +16,11 @@ DEFAULT_CONTEXT_REFERENCE_POLICY_PATH = Path(__file__).with_name("context_refere
 
 @dataclass(frozen=True)
 class QueryContextReferencePolicy:
-    """Declarative policy for deciding whether a query references conversation history."""
+    """Declarative policy for deciding whether a query references conversation history.
+
+    信号列表和映射均为按需启用的启发式规则：省略或为空时，只是不提供对应
+    的引用信号。标量阈值未配置时使用既定默认值。
+    """
 
     version: str
     explicit_reference_signals: tuple[str, ...] = ()

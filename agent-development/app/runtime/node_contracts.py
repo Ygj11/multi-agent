@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""Declarative contracts for LangGraph nodes."""
+"""LangGraph 节点的声明式架构契约。
+
+本模块记录每个节点预期读取/写入的 State 字段、可选路由和失败码，
+供架构审查、文档和测试使用。它不是 LangGraph 的运行时拦截器：节点
+执行时不会自动按这里校验输入或输出，实际行为仍以 graph.py 与节点实现为准。
+"""
 
 from typing import Any
 
@@ -43,6 +48,8 @@ def _contract(
     )
 
 
+# 架构治理清单：测试会校验它与实际注册节点、已知 State 字段和失败码保持一致。
+# 修改节点职责、State 字段或分支时，应同步更新这里；不要在这里复制业务逻辑。
 NODE_CONTRACTS: dict[str, NodeContract] = {
     "route_entry": _contract(
         "route_entry",
@@ -210,7 +217,7 @@ ALLOWED_FAILURE_CODES = {
 
 
 def validate_node_contracts() -> list[str]:
-    """Return contract validation errors without importing graph internals."""
+    """校验契约引用是否合法，不执行节点，也不验证节点实际读写了哪些字段。"""
     errors: list[str] = []
     known_fields = set(GRAPH_STATE_FIELD_AUTHORITY)
     for node_name, contract in NODE_CONTRACTS.items():

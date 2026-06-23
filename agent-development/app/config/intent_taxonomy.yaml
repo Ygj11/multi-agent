@@ -1,3 +1,5 @@
+# ``sub_intents`` 是严格白名单。省略它（或写成 ``{}``）表示父 intent
+# 没有合法 sub_intent，绝不表示可以接受任意值。
 intents:
   troubleshooting:
     display_name: 问题排查

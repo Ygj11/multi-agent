@@ -64,7 +64,7 @@ async def test_normal_graph_state_has_no_top_level_selected_skill_cache(app_fact
         )
     )
 
-    state = await app.state.orchestrator.run(inbound)
+    state = await app.state.container.orchestrator.run(inbound)
 
     for field in TOP_LEVEL_CACHE_FIELDS:
         assert field not in state
@@ -73,8 +73,8 @@ async def test_normal_graph_state_has_no_top_level_selected_skill_cache(app_fact
 
 def test_pending_approval_checkpoint_has_no_top_level_approval_request(app_factory, real_troubleshooting_env):
     app = app_factory("no-approval-request-cache.sqlite3")
-    app.state.llm_provider.chat = WriteApprovalLLM().chat
-    app.state.approval_service.client = AcceptingApprovalClient()
+    app.state.container.llm_provider.chat = WriteApprovalLLM().chat
+    app.state.container.approval_service.client = AcceptingApprovalClient()
     client = TestClient(app)
 
     response = client.post(
@@ -91,7 +91,7 @@ def test_pending_approval_checkpoint_has_no_top_level_approval_request(app_facto
     assert response.status_code == 200
     payload = response.json()
     thread_id = f"{payload['session_key']}:{payload['request_id']}"
-    state = anyio.run(app.state.checkpoint_store.load, thread_id)
+    state = anyio.run(app.state.container.storage.checkpoint_store.load, thread_id)
 
     assert state is not None
     for field in CHECKPOINT_FORBIDDEN_CACHE_FIELDS:

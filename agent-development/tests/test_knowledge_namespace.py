@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 
+from app.agents.card_loader import AgentCardLoader
 from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.integrations.knowledge_api_client import KnowledgeAPIClient
 from app.runtime.context_builder import ContextBuilder
@@ -41,25 +43,15 @@ class NamespaceRecordingKnowledgeService(FakeKnowledgeService):
 async def test_context_builder_passes_agent_card_rag_namespaces_to_subagent_search():
     service = NamespaceRecordingKnowledgeService()
     builder = ContextBuilder(skills_root="app/skills", knowledge_service=service)
+    card = AgentCardLoader(Path("app/agents/cards")).get_agent_card("troubleshooting_agent")
+    assert card is not None
     task = SubAgentTask(
-        name="troubleshooting_agent",
+        agent_name="troubleshooting_agent",
+        agent_card_version=card.version,
         query="query",
         intent="troubleshooting",
         session_key="s1",
         original_query="query",
-        metadata={
-            "agent_card": {
-                "agent_name": "troubleshooting_agent",
-                "display_name": "Troubleshooting",
-                "description": "Troubleshooting",
-                "capabilities": ["troubleshooting"],
-                "supported_intents": ["troubleshooting"],
-                "output_schema": "text",
-                "skills": ["troubleshooting_agent.refund_failure"],
-                "rag_namespaces": ["troubleshooting"],
-                "version": "1",
-            }
-        },
     )
     parent = OrchestratorContext(
         original_query="query",
@@ -68,6 +60,6 @@ async def test_context_builder_passes_agent_card_rag_namespaces_to_subagent_sear
         session_key="s1",
     )
 
-    await builder.build_for_subagent(task=task, parent_context=parent, allowed_tools=[])
+    await builder.build_for_subagent(task=task, parent_context=parent, agent_card=card, allowed_tools=[])
 
-    assert service.last_namespaces == ["troubleshooting"]
+    assert service.last_namespaces == card.rag_namespaces

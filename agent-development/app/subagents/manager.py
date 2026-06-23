@@ -60,8 +60,8 @@ class SubAgentManager:
             raise ValueError(f"subagent not found: {name}")
         log_event(
             "subagent_selected",
-            request_id=task.metadata.get("request_id"),
-            trace_id=task.metadata.get("trace_id"),
+            request_id=task.request_id,
+            trace_id=task.trace_id,
             session_key=task.session_key,
             node="subagent_manager",
             message="Subagent selected",

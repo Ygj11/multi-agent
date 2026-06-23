@@ -19,7 +19,7 @@ class TroubleshootingAgent(BaseSubAgent):
         task: SubAgentTask,
         parent_context: OrchestratorContext,
         sub_context: SubAgentContext,
-        agent_card: AgentCard | None,
+        agent_card: AgentCard,
     ) -> SubAgentResult:
         """Fallback path for tests that instantiate the agent without ToolCallingRunner."""
         answer = "当前排查 Agent 未配置工具调用运行器，无法基于证据完成诊断。请配置对应 Skill 和工具运行器后重试。"

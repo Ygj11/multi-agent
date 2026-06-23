@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """Private tool registration bound to specific sub agents."""
 
-from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.integrations.pos_api_client import PosAPIClient
 from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.tools.handlers.mvp_agent_tool_handlers import (
@@ -342,10 +341,12 @@ def _normalize_tool_mode(name: str, value: str) -> str:
     return mode
 
 
-def _pos_client_for_mode(pos_tool_mode: str, pos_api_client):
+def _pos_client_for_mode(pos_tool_mode: str, pos_api_client: PosAPIClient | None):
     if pos_tool_mode == "mock":
         return MockPosAPIClient()
-    return pos_api_client or PosAPIClient(base_url=None, enabled=True)
+    if pos_api_client is None:
+        raise ValueError("POS_TOOL_MODE=real requires a configured PosAPIClient")
+    return pos_api_client
 
 
 def _troubleshooting_tools_for_mode(
@@ -365,7 +366,9 @@ def _troubleshooting_tools_for_mode(
             "notice_finance": notice_finance,
         }
 
-    client = troubleshooting_api_client or TroubleshootingAPIClient(BaseIntegrationHTTPClient(base_url=None))
+    if troubleshooting_api_client is None:
+        raise ValueError("TROUBLESHOOTING_TOOL_MODE=real requires a configured TroubleshootingAPIClient")
+    client = troubleshooting_api_client
     return {
         "query_task_status": build_query_task_status_tool(client),
         "query_node_status": build_query_node_status_tool(client),

@@ -1,3 +1,5 @@
+# ``supported_routes`` 与 ``private_tools`` 是严格白名单；为空时不暴露
+# 路由或工具。实体列表仅作为可选路由信号。
 agent_name: troubleshooting_agent
 display_name: Troubleshooting Agent
 description: Diagnose policy refund and endorsement aftercare production issues.
@@ -32,11 +34,8 @@ private_tools:
   - policy_suspendOrRecovery
   - notice_finance
 public_tools_allowed: true
-mcp_tools:
-  - mcp.workflow.query_refund_task
-  - mcp.logs.query_trace
-mcp_tool_scopes:
-  - mcp.workflow
+mcp_policy:
+  enabled: true
 skills:
   - troubleshooting_agent.refund_failure
   - troubleshooting_agent.endo_completion_aftercare

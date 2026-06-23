@@ -51,7 +51,7 @@ async def test_clarification_reply_inherits_pending_task_entities(app_factory):
     app = app_factory("clarification-reply.sqlite3")
     adapter = RequestAdapter()
 
-    first_state = await app.state.orchestrator.run(
+    first_state = await app.state.container.orchestrator.run(
         adapter.adapt(
             _chat_request(
                 "保全任务完成，受理号930010412672222，保单9200100000458846没有更新？",
@@ -70,7 +70,7 @@ async def test_clarification_reply_inherits_pending_task_entities(app_factory):
     }
     assert first_state["subagent_result"]["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
 
-    first_messages = await app.state.message_store.list_by_session(first_state["session_key"])
+    first_messages = await app.state.container.storage.message_store.list_by_session(first_state["session_key"])
     first_assistant_metadata = first_messages[-1]["metadata"]
     assert first_assistant_metadata["need_clarification"] is True
     assert first_assistant_metadata["clarification_source"] == "skill_required_entities"
@@ -78,7 +78,7 @@ async def test_clarification_reply_inherits_pending_task_entities(app_factory):
     assert first_assistant_metadata["entities"] == first_state["entities"]
     assert first_assistant_metadata["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
 
-    second_state = await app.state.orchestrator.run(adapter.adapt(_chat_request("001028", session_id="s-clarify")))
+    second_state = await app.state.container.orchestrator.run(adapter.adapt(_chat_request("001028", session_id="s-clarify")))
 
     assert second_state["intent"] == "troubleshooting"
     assert second_state["sub_intent"] == "endo_completion_aftercare"
@@ -92,7 +92,7 @@ async def test_clarification_reply_inherits_pending_task_entities(app_factory):
     assert "用户补充：endorseType=001028" in second_state["rewritten_query"]
     assert second_state["subagent_result"]["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
 
-    all_messages = await app.state.message_store.list_by_session(second_state["session_key"])
+    all_messages = await app.state.container.storage.message_store.list_by_session(second_state["session_key"])
     second_assistant_metadata = all_messages[-1]["metadata"]
     assert second_assistant_metadata["need_clarification"] is False
     assert second_assistant_metadata["missing_required_entities"] == []
@@ -104,32 +104,32 @@ async def test_new_strong_anchor_does_not_reuse_history_in_skill_entity_check(ap
     app = app_factory("new-anchor-no-history.sqlite3")
     adapter = RequestAdapter()
     session_key = "pingan_health:web:u001:s-new-anchor"
-    await app.state.message_store.append(
+    await app.state.container.storage.message_store.append(
         session_key=session_key,
         role="user",
         content="保单号 9200100000458846",
         metadata={"original_query": "保单号 9200100000458846"},
     )
-    await app.state.message_store.append(
+    await app.state.container.storage.message_store.append(
         session_key=session_key,
         role="assistant",
         content="已记录第一个保单。",
         metadata={"need_clarification": False, "entities": {"policy_no": "9200100000458846"}},
     )
-    await app.state.message_store.append(
+    await app.state.container.storage.message_store.append(
         session_key=session_key,
         role="user",
         content="保单号 9200100000458847",
         metadata={"original_query": "保单号 9200100000458847"},
     )
-    await app.state.message_store.append(
+    await app.state.container.storage.message_store.append(
         session_key=session_key,
         role="assistant",
         content="已记录第二个保单。",
         metadata={"need_clarification": False, "entities": {"policy_no": "9200100000458847"}},
     )
 
-    state = await app.state.orchestrator.run(
+    state = await app.state.container.orchestrator.run(
         adapter.adapt(
             _chat_request(
                 "保全任务完成，受理号930010412672222没有更新？",

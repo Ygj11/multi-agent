@@ -24,6 +24,12 @@ class FieldVisibilityRule:
 
 @dataclass(frozen=True)
 class FieldVisibilityPolicy:
+    """未声明类别默认拒绝的字段可见性策略。
+
+    空权限列表不会授予该类别权限；没有规则的类别不可见。这与路由提示不同，
+    路由提示为空只会关闭一个可选信号。
+    """
+
     privileged_roles: set[str] = field(default_factory=set)
     rules: dict[str, FieldVisibilityRule] = field(default_factory=dict)
 

@@ -22,8 +22,8 @@ private_tools:
   - query_task_status
   - query_node_status
   - query_internal_log
+requires_tool_evidence: true
 enabled: true
-is_default: false
 business_domain:
   - health_insurance_onboarding
 required_context:

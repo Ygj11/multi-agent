@@ -50,14 +50,14 @@ def test_approval_callback_is_idempotent(app_factory, real_troubleshooting_env):
         return {"success": True}
 
     app = app_factory("approval_idempotent.sqlite3")
-    app.state.tool_registry.register_private(
+    app.state.container.tool_registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_policy_update",
         tool=counted_notice_policy_update,
         is_write=True,
     )
-    app.state.llm_provider.chat = SequencedApprovalLLM().chat
-    app.state.approval_service.client = AcceptingApprovalClient()
+    app.state.container.llm_provider.chat = SequencedApprovalLLM().chat
+    app.state.container.approval_service.client = AcceptingApprovalClient()
     client = TestClient(app)
 
     pending = client.post(

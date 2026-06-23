@@ -4,6 +4,8 @@ from typing import Any
 import pytest
 
 from app.agents.card_loader import AgentCardLoader
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.llm.schemas import LLMResponse
 from app.mcp.schemas import MCPToolCapability
 from app.schemas.agent_card import AgentCard
@@ -114,7 +116,13 @@ def test_private_tool_schemas_include_descriptions_and_required_parameters():
 
 def test_troubleshooting_real_mode_registers_write_tools_as_write():
     registry = ToolRegistry()
-    register_agent_private_tools(registry, troubleshooting_tool_mode="real")
+    register_agent_private_tools(
+        registry,
+        troubleshooting_tool_mode="real",
+        troubleshooting_api_client=TroubleshootingAPIClient(
+            BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+        ),
+    )
 
     for write_tool in (
         "notice_policy_update",
@@ -124,6 +132,14 @@ def test_troubleshooting_real_mode_registers_write_tools_as_write():
         "notice_finance",
     ):
         assert registry.get_definition(write_tool).is_write is True
+
+
+def test_real_tool_modes_require_injected_real_clients():
+    with pytest.raises(ValueError, match="POS_TOOL_MODE=real requires a configured PosAPIClient"):
+        register_agent_private_tools(ToolRegistry(), pos_tool_mode="real")
+
+    with pytest.raises(ValueError, match="TROUBLESHOOTING_TOOL_MODE=real requires a configured TroubleshootingAPIClient"):
+        register_agent_private_tools(ToolRegistry(), troubleshooting_tool_mode="real")
 
 
 def test_public_knowledge_tools_have_query_schema():

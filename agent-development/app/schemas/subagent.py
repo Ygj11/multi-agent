@@ -10,11 +10,15 @@ from pydantic import BaseModel, Field
 class SubAgentTask(BaseModel):
     """主 Agent 分配给子 Agent 的结构化任务。"""
 
-    name: str
+    agent_name: str
+    agent_card_version: str
     query: str
     intent: str
     session_key: str
     original_query: str
+    request_id: str | None = None
+    trace_id: str | None = None
+    auth_context: dict[str, Any] | None = None
     entities: dict[str, Any] = Field(default_factory=dict)
     task_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

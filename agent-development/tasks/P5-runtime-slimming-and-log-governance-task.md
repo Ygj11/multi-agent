@@ -55,6 +55,8 @@ P5 可以在 P4.5 之前或之后执行，但建议在生产压测前完成。
 - P5.2 Graph Node Slimming
 - P5.4 Message Metadata And Trace Boundary
 - P5.3 Log Governance
+- P5.5 Task Model Simplification
+- P5.6 Historical Residue Cleanup
 
 关键落地结果：
 
@@ -67,6 +69,9 @@ P5 可以在 P4.5 之前或之后执行，但建议在生产压测前完成。
 - `RequestAdapter` 日志已从多条合并为一条 `request_adapted`。
 - disabled knowledge service 默认不再逐次打印 INFO。
 - LLM provider 日志支持 `request_id`、`trace_id`、`session_key` 链路字段。
+- `AgentTaskAssembler` 直接生成 `SubAgentTask`，`DispatchAgentNode` 不再执行第二次模型转换，`AgentTaskEnvelope` 已删除。
+- `SubAgentTask` 只保存 `agent_name`、`agent_card_version` 与任务字段；完整 AgentCard 不再进入 `metadata`，子 Agent 通过 `AgentCardLoader` 重新加载并校验。
+- 已删除 Skill 选择中的 `extracted_interface_name` / `interface_match` 残留，以及 `OrchestratorContext` 中未消费的 Agent discovery 字段和 `conversation_window`。
 
 ### 目标 1：瘦 runtime state
 
@@ -605,14 +610,9 @@ subagent 内部需要 AgentCard 时，从 loader 或 manager 获取。
 
 例外：如果后续业务重新明确接口名是实体，则应回到 `EntityExtractor` 统一建模，而不是在 SkillContextResolver 内写小正则。
 
-### 2. `is_default` skill 字段
+### 2. 默认 Skill 字段清理
 
-当前已明确不需要默认 skill 兜底，但 `SkillMetadata` 和 SKILL.md frontmatter 仍有 `is_default`。
-
-建议评估：
-
-- 如果没有任何代码依赖 `is_default` 做路由，则删除字段。
-- 如果为了兼容历史文件暂保留，应标记 deprecated，不进入选择逻辑。
+当前已明确不需要默认 skill 兜底，`SkillMetadata` 和 SKILL.md frontmatter 不再保留默认 skill 标记。
 
 ### 3. `available_subagents` / `agent_candidate_summaries`
 
@@ -623,7 +623,7 @@ subagent 内部需要 AgentCard 时，从 loader 或 manager 获取。
 ### 验收标准
 
 - `rg "interface_name"` 只剩业务 mock 返回或历史文档，不再参与 skill scoring。
-- `is_default` 不再参与任何 runtime 行为。
+- 不存在默认 skill 字段参与 runtime 行为。
 - 无未使用上下文字段进入 runtime schema。
 
 ## P5.7 Evidence Persistence Switch
@@ -778,7 +778,7 @@ tests/test_message_metadata_boundary.py
 
 - 删除 interface_name scoring。
 - 清理 `SkillSelectionContext.extracted_interface_name`。
-- 评估 `is_default` 字段是否删除或 deprecated。
+- 默认 skill 字段已删除，不再保留 deprecated 兼容。
 
 验收：
 

@@ -541,8 +541,8 @@ private_tools:
   - pos_query_approval_text
   - pos_submit_verify
 public_tools_allowed: false
-mcp_tools: []
-mcp_tool_scopes: []
+mcp_policy:
+  enabled: false
 skills:
   - pos_query_agent.realtime_query
 rag_namespaces: []
@@ -639,7 +639,6 @@ private_tools:
   - pos_query_approval_text
   - pos_submit_verify
 enabled: true
-is_default: false
 business_domain:
   - health_insurance_pos
 required_context: []
@@ -772,7 +771,7 @@ tests/test_pos_query_agent_card.py
 - AgentCard 声明的 private_tools 全部已注册
 - Skill.private_tools 不越权
 - `required_entities=[]`
-- `is_default=true`
+- 不依赖默认 skill 兜底
 
 ### 12.2 Tool schema 测试
 

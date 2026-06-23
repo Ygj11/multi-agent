@@ -9,13 +9,14 @@ from app.tools.registry import ToolRegistry
 from tests.fakes.mcp import FakeMCPClientManager
 
 
-def _cap():
+def _cap(raw_schema=None):
     return MCPToolCapability(
         server_name="workflow",
         original_tool_name="query_refund_task",
         registered_tool_name="mcp.workflow.query_refund_task",
         description="query refund",
         input_schema={"type": "object", "properties": {"policy_no": {"type": "string"}}},
+        raw_schema=raw_schema,
     )
 
 
@@ -30,8 +31,7 @@ def _card(allowed=True):
         output_schema="SubAgentResult",
         private_tools=[],
         public_tools_allowed=False,
-        mcp_tools=["mcp.workflow.query_refund_task"] if allowed else [],
-        mcp_tool_scopes=[],
+        mcp_policy={"enabled": allowed},
         skills=["troubleshooting_agent.refund_failure"],
         rag_namespaces=[],
         enabled=True,
@@ -39,12 +39,12 @@ def _card(allowed=True):
     )
 
 
-def _executor(tmp_path, mode="success"):
+def _executor(tmp_path, mode="success", *, raw_schema=None, unknown_mcp_tool_policy="allow"):
     registry = ToolRegistry()
-    registry.register_mcp_tools([_cap()])
+    registry.register_mcp_tools([_cap(raw_schema=raw_schema)])
     store = ToolExecutionLogStore(SQLiteDatabase(tmp_path / f"{mode}.sqlite3"))
     manager = FakeMCPClientManager(mode=mode)
-    return ToolExecutor(registry, store, manager), store, manager
+    return ToolExecutor(registry, store, manager, unknown_mcp_tool_policy=unknown_mcp_tool_policy), store, manager
 
 
 @pytest.mark.asyncio
@@ -83,6 +83,87 @@ async def test_unauthorized_mcp_tool_is_rejected_and_logged(tmp_path):
     assert result.success is False
     assert result.error == "tool_not_available_for_agent"
     assert logs[0]["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_unknown_mcp_tool_policy_deny_blocks_execution(tmp_path):
+    executor, store, manager = _executor(tmp_path, unknown_mcp_tool_policy="deny")
+
+    result = await executor.execute(
+        agent_name="troubleshooting_agent",
+        agent_card=_card(),
+        tool_name="mcp.workflow.query_refund_task",
+        arguments={},
+        session_key="s-mcp",
+    )
+
+    logs = await store.list_by_session("s-mcp")
+    assert result.success is False
+    assert result.error == "mcp_tool_policy_denied"
+    assert manager.calls == []
+    assert logs[0]["error"] == "mcp_tool_policy_denied"
+
+
+@pytest.mark.asyncio
+async def test_unknown_mcp_tool_policy_approval_requires_human_approval(tmp_path):
+    executor, _, manager = _executor(tmp_path, unknown_mcp_tool_policy="approval")
+
+    result = await executor.execute(
+        agent_name="troubleshooting_agent",
+        agent_card=_card(),
+        tool_name="mcp.workflow.query_refund_task",
+        arguments={},
+        session_key="s-mcp",
+    )
+
+    assert result.success is False
+    assert result.error == "human_approval_required"
+    assert result.needs_human_approval is True
+    assert manager.calls == []
+
+
+@pytest.mark.asyncio
+async def test_high_risk_mcp_tool_requires_human_approval(tmp_path):
+    executor, _, manager = _executor(
+        tmp_path,
+        raw_schema={"metadata": {"risk_level": "high", "operation": "read"}},
+        unknown_mcp_tool_policy="allow",
+    )
+
+    result = await executor.execute(
+        agent_name="troubleshooting_agent",
+        agent_card=_card(),
+        tool_name="mcp.workflow.query_refund_task",
+        arguments={},
+        session_key="s-mcp",
+    )
+
+    assert result.success is False
+    assert result.error == "human_approval_required"
+    assert result.needs_human_approval is True
+    assert manager.calls == []
+
+
+@pytest.mark.asyncio
+async def test_ddl_mcp_tool_requires_human_approval(tmp_path):
+    executor, _, manager = _executor(
+        tmp_path,
+        raw_schema={"metadata": {"risk_level": "low", "operation": "ddl"}},
+        unknown_mcp_tool_policy="allow",
+    )
+
+    result = await executor.execute(
+        agent_name="troubleshooting_agent",
+        agent_card=_card(),
+        tool_name="mcp.workflow.query_refund_task",
+        arguments={},
+        session_key="s-mcp",
+    )
+
+    assert result.success is False
+    assert result.error == "human_approval_required"
+    assert result.needs_human_approval is True
+    assert manager.calls == []
 
 
 @pytest.mark.parametrize(

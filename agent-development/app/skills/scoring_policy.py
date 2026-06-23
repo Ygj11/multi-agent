@@ -11,7 +11,10 @@ DEFAULT_SCORING_POLICY_PATH = Path(__file__).with_name("scoring_policy.yaml")
 
 @dataclass(frozen=True)
 class SkillScoringPolicy:
-    """Named scoring weights used by SkillRuleScorer."""
+    """Named scoring weights used by SkillRuleScorer.
+
+    YAML 按字段覆盖内置基线；未配置的权重保留基线值，而不是关闭对应打分规则。
+    """
 
     weights: dict[str, float] = field(default_factory=dict)
 
@@ -27,7 +30,6 @@ class SkillScoringPolicy:
                 "optional_entity_present": 1.0,
                 "required_context_present": 1.0,
                 "business_domain_match": 1.0,
-                "interface_match": 2.0,
                 "error_code_match": 3.0,
                 "routing_keyword_match": 4.0,
                 "routing_negative_keyword_match": -4.0,

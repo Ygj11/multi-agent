@@ -16,6 +16,7 @@ RUNTIME_METADATA_ALLOWLIST = {
     "clarification_source",
     "clarification_question",
     "missing_required_entities",
+    "missing_tool_arguments",
     "selected_agent",
     "selected_skill_id",
 }

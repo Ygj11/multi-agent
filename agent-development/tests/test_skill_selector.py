@@ -16,7 +16,6 @@ async def _select_for_troubleshooting(query: str, error_code: str | None = None)
         session_key="s",
         extracted_error_code=error_code,
         extracted_request_id="REQ_001" if "REQ_001" in query else None,
-        extracted_interface_name="submitProposal" if "submitProposal" in query else None,
     )
     return await selector.select(
         agent_name="troubleshooting_agent",

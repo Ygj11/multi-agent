@@ -14,7 +14,11 @@ DEFAULT_AGENT_ROUTING_POLICY_PATH = Path(__file__).with_name("routing_policy.yam
 
 @dataclass(frozen=True)
 class AgentRoutingPolicy:
-    """AgentCard scoring weights and route thresholds."""
+    """AgentCard scoring weights and route thresholds.
+
+    这是调优策略而非白名单：未配置的权重贡献 ``0``，未配置的阈值使用调用方
+    提供的默认值。
+    """
 
     version: str
     weights: dict[str, float]

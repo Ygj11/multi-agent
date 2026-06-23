@@ -237,7 +237,6 @@ class SkillLLMReranker:
             "routing_negative_keywords": skill.routing_negative_keywords,
             "private_tools": skill.private_tools,
             "public_tools": skill.public_tools,
-            "mcp_tools": skill.mcp_tools,
             "rule_score": score,
             "rule_reason": reason,
         }

@@ -14,8 +14,8 @@ async def test_assistant_message_metadata_keeps_business_summary_not_debug_trace
         )
     )
 
-    await app.state.orchestrator.run(inbound)
-    messages = await app.state.message_store.list_by_session(inbound.session_key)
+    await app.state.container.orchestrator.run(inbound)
+    messages = await app.state.container.storage.message_store.list_by_session(inbound.session_key)
     assistant = next(message for message in reversed(messages) if message["role"] == "assistant")
     metadata = assistant["metadata"]
 

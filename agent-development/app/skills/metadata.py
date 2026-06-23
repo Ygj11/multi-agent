@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-"""SKILL.md frontmatter parsing and validation."""
+"""SKILL.md frontmatter 的解析与校验。
+
+frontmatter 采用少量明确的空值约定：``required_entities`` 与
+``private_tools`` 必须声明，``[]`` 表示明确选择“无”；可选路由字段可省略
+或为空，此时不增加选择信号。工具可见性仍由 AgentCard 控制，不会因 Skill
+字段缺失而放开。
+"""
 
 import json
 from pathlib import Path
@@ -18,8 +24,8 @@ REQUIRED_SKILL_METADATA_FIELDS = (
     "required_entities",
     "optional_entities",
     "private_tools",
+    "requires_tool_evidence",
     "enabled",
-    "is_default",
 )
 
 
@@ -57,9 +63,8 @@ def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata:
         optional_entities=[str(item) for item in data["optional_entities"]],
         private_tools=[str(item) for item in data["private_tools"]],
         public_tools=[str(item) for item in data.get("public_tools", [])],
-        mcp_tools=[str(item) for item in data.get("mcp_tools", [])],
+        requires_tool_evidence=_as_bool(data["requires_tool_evidence"]),
         enabled=_as_bool(data["enabled"]),
-        is_default=_as_bool(data["is_default"]),
         business_domain=[str(item) for item in data.get("business_domain", [])],
         required_context=[str(item) for item in data.get("required_context", [])],
         routing_keywords=[str(item) for item in data.get("routing_keywords", [])],
@@ -69,7 +74,11 @@ def metadata_from_skill_file(path: Path, skills_root: Path) -> SkillMetadata:
 
 
 def validate_skill_frontmatter(data: dict[str, Any], path: Path) -> None:
-    """Validate the enterprise Skill metadata contract."""
+    """校验 Skill metadata 契约。
+
+    必填列表字段在 Skill 没有要求时也必须显式写 ``[]``；``sub_intents``、
+    路由关键词等可选列表可以省略，省略时不约束选择。
+    """
     if not data:
         raise ValueError(f"{path} must contain YAML frontmatter with full Skill metadata")
     missing = [field for field in REQUIRED_SKILL_METADATA_FIELDS if field not in data]

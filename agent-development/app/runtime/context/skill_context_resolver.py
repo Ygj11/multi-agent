@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from app.observability.logger import log_event
 from app.runtime.failure_codes import NO_CONFIDENT_SKILL, NO_ENABLED_SKILLS, NO_SKILL_POLICY_BLOCKED
+from app.schemas.agent_card import AgentCard
 from app.schemas.entities import EntityBag
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.skill import SkillSelectionContext, SkillSelectionResult
@@ -57,14 +58,14 @@ class SkillContextResolver:
         *,
         task: SubAgentTask,
         parent_context: OrchestratorContext,
+        agent_card: AgentCard,
     ) -> SkillResolution:
         selection_context = self.build_selection_context(task=task, parent_context=parent_context)
-        """获得候选的 skills"""
-        candidates = self.build_candidates(task=task)
+        candidates = self.build_candidates(task=task, agent_card=agent_card)
 
         """Select the best skill from candidates using metadata only, without loading skill bodies."""
         selection = await self.skill_selector.select(
-            agent_name=task.name,
+            agent_name=task.agent_name,
             context=selection_context,
             candidates=candidates,
         )
@@ -99,13 +100,13 @@ class SkillContextResolver:
         task.metadata["clarification_question"] = entity_check.clarification_question
         log_event(
             "skill_content_loaded",
-            request_id=task.metadata.get("request_id"),
-            trace_id=task.metadata.get("trace_id"),
+            request_id=task.request_id,
+            trace_id=task.trace_id,
             session_key=task.session_key,
             node="context_builder",
             message="Selected skill content loaded",
             data={
-                "agent_name": task.name,
+                "agent_name": task.agent_name,
                 "selected_skill_id": selection.selected_skill_id,
                 "score": selection.score,
                 "reason": selection.reason,
@@ -129,12 +130,12 @@ class SkillContextResolver:
             task.metadata["clarification_question"] = None
             log_event(
                 "skill_generic_dev_execution",
-                request_id=task.metadata.get("request_id"),
-                trace_id=task.metadata.get("trace_id"),
+                request_id=task.request_id,
+                trace_id=task.trace_id,
                 session_key=task.session_key,
                 node="context_builder",
                 message="No confident skill match; generic execution allowed for local development",
-                data={"agent_name": task.name, "reason": selection.reason, "no_skill_policy": self.no_skill_policy},
+                data={"agent_name": task.agent_name, "reason": selection.reason, "no_skill_policy": self.no_skill_policy},
             )
             return SkillResolution(selection=selection, skill_content=self.generic_skill_content, entity_check=None)
 
@@ -149,13 +150,13 @@ class SkillContextResolver:
         task.metadata["clarification_question"] = question
         log_event(
             "skill_no_match_blocked",
-            request_id=task.metadata.get("request_id"),
-            trace_id=task.metadata.get("trace_id"),
+            request_id=task.request_id,
+            trace_id=task.trace_id,
             session_key=task.session_key,
             node="context_builder",
             message="No confident skill match; blocked by no-skill policy",
             data={
-                "agent_name": task.name,
+                "agent_name": task.agent_name,
                 "reason": selection.reason,
                 "no_skill_policy": self.no_skill_policy,
                 "fallback_reason": reason or NO_SKILL_POLICY_BLOCKED,
@@ -163,21 +164,19 @@ class SkillContextResolver:
         )
         return SkillResolution(selection=selection, skill_content="", entity_check=None)
 
-    def build_candidates(self, *, task: SubAgentTask):
-        agent_card_data = task.metadata.get("agent_card")
-        allowed_skill_ids = set(agent_card_data.get("skills", [])) if isinstance(agent_card_data, dict) else set()
-        candidates = self.skill_catalog.list_skills(task.name)
-        if allowed_skill_ids:
-            candidates = [candidate for candidate in candidates if candidate.skill_id in allowed_skill_ids]
+    def build_candidates(self, *, task: SubAgentTask, agent_card: AgentCard):
+        allowed_skill_ids = set(agent_card.skills)
+        candidates = self.skill_catalog.list_skills(task.agent_name)
+        candidates = [candidate for candidate in candidates if candidate.skill_id in allowed_skill_ids]
         log_event(
             "skill_candidates_built",
-            request_id=task.metadata.get("request_id"),
-            trace_id=task.metadata.get("trace_id"),
+            request_id=task.request_id,
+            trace_id=task.trace_id,
             session_key=task.session_key,
             node="context_builder",
             message="Skill candidates built for subagent",
             data={
-                "agent_name": task.name,
+                "agent_name": task.agent_name,
                 "candidate_count": len(candidates),
                 "skill_ids": [item.skill_id for item in candidates],
             },
@@ -198,7 +197,7 @@ class SkillContextResolver:
         )
         entities = entity_bag.to_compact_dict()
         return SkillSelectionContext(
-            agent_name=task.name,
+            agent_name=task.agent_name,
             intent=task.intent,
             sub_intent=parent_context.sub_intent,
             original_query=task.original_query,
@@ -209,11 +208,10 @@ class SkillContextResolver:
             short_summary=parent_context.short_summary,
             recent_messages_summary=recent_summary[:2000],
             lightweight_knowledge_hints=parent_context.lightweight_knowledge_hints,
-            request_id=task.metadata.get("request_id"),
-            trace_id=task.metadata.get("trace_id"),
+            request_id=task.request_id,
+            trace_id=task.trace_id,
             extracted_error_code=self._entity_value(entities, "error_code"),
             extracted_request_id=self._entity_value(entities, "request_id"),
-            extracted_interface_name=self._entity_value(entities, "interface_name"),
         )
 
     @staticmethod

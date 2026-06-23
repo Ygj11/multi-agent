@@ -1,9 +1,9 @@
 from pathlib import Path
 
+from app.agents.card_loader import AgentCardLoader
 from app.llm.schemas import LLMResponse
 from app.mcp.schemas import MCPToolCapability
 from app.runtime.context_builder import ContextBuilder
-from app.schemas.agent_card import AgentCard
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.subagent import SubAgentTask
 from app.skills.catalog import SkillCatalog
@@ -31,26 +31,6 @@ class FakeLLM:
         return LLMResponse(content="MCP refund task checked.", has_tool_calls=False)
 
 
-def _card():
-    return AgentCard(
-        agent_name="troubleshooting_agent",
-        display_name="Troubleshooting",
-        description="test",
-        capabilities=["test"],
-        supported_intents=["troubleshooting"],
-        required_entities=[],
-        output_schema="SubAgentResult",
-        private_tools=[],
-        public_tools_allowed=False,
-        mcp_tools=["mcp.workflow.query_refund_task"],
-        mcp_tool_scopes=[],
-        skills=["troubleshooting_agent.refund_failure"],
-        rag_namespaces=[],
-        enabled=True,
-        version="1",
-    )
-
-
 async def test_subagent_loop_can_call_authorized_mcp_tool():
     registry = ToolRegistry()
     registry.register_mcp_tools(
@@ -75,17 +55,25 @@ async def test_subagent_loop_can_call_authorized_mcp_tool():
         skill_catalog=SkillCatalog(skills_root),
         skill_selector=SkillSelector(),
     )
-    agent = TroubleshootingAgent(context_builder=context_builder, tool_executor=executor, tool_calling_runner=runner)
-    card = _card()
+    card_loader = AgentCardLoader(Path("app/agents/cards"))
+    card = card_loader.get_agent_card("troubleshooting_agent")
+    assert card is not None
+    agent = TroubleshootingAgent(
+        context_builder=context_builder,
+        agent_card_loader=card_loader,
+        tool_executor=executor,
+        tool_calling_runner=runner,
+    )
     task = SubAgentTask(
-        name="troubleshooting_agent",
+        agent_name="troubleshooting_agent",
+        agent_card_version=card.version,
         query="保单9201344266为什么退保没有成功",
         intent="troubleshooting",
         session_key="s-agent-mcp",
         original_query="保单9201344266为什么退保没有成功",
         entities={"policy_no": "9201344266"},
         task_id="task-1",
-        metadata={"request_id": "req-1", "agent_card": card.model_dump()},
+        request_id="req-1",
     )
     parent_context = OrchestratorContext(
         original_query=task.original_query,
@@ -95,7 +83,6 @@ async def test_subagent_loop_can_call_authorized_mcp_tool():
         session_key=task.session_key,
         recent_messages=[],
         short_summary=None,
-        available_subagents=["troubleshooting_agent"],
         lightweight_knowledge_hints=[],
     )
 

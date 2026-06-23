@@ -29,6 +29,8 @@ class IntentDefinition(BaseModel):
     display_name: str
     description: str
     examples: list[str] = Field(default_factory=list)
+    # 严格白名单：未配置或空映射表示该 intent 没有合法 sub_intent，
+    # 绝不表示可以接受任意 sub_intent。
     sub_intents: dict[str, SubIntentDefinition] = Field(default_factory=dict)
 
     @model_validator(mode="after")

@@ -52,14 +52,14 @@ def test_approval_callback_approved_executes_tool_and_saves_result(app_factory, 
         return {"success": True, "apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType}
 
     app = app_factory("approval_approved.sqlite3")
-    app.state.tool_registry.register_private(
+    app.state.container.tool_registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_policy_update",
         tool=counted_notice_policy_update,
         is_write=True,
     )
-    app.state.llm_provider.chat = SequencedApprovalLLM().chat
-    app.state.approval_service.client = AcceptingApprovalClient()
+    app.state.container.llm_provider.chat = SequencedApprovalLLM().chat
+    app.state.container.approval_service.client = AcceptingApprovalClient()
     client = TestClient(app)
 
     pending = client.post(
@@ -99,7 +99,7 @@ def test_approval_callback_approved_executes_tool_and_saves_result(app_factory, 
     assert query.json()["final_answer"] == "Policy status update completed after approval."
 
     async def _messages():
-        return await app.state.message_store.list_by_session("tenant:web:u1:s1")
+        return await app.state.container.storage.message_store.list_by_session("tenant:web:u1:s1")
 
     messages = anyio.run(_messages)
     assert any(message["role"] == "assistant" and message["content"] == "Policy status update completed after approval." for message in messages)

@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field, model_validator
 
 DEFAULT_TOOL_CONTRACTS_PATH = Path(__file__).with_name("tool_contracts.yaml")
 DataClassification = Literal["public", "internal", "confidential", "sensitive"]
+ToolOperation = Literal["read", "write", "notify", "execute", "search", "delete", "ddl"]
+RiskLevel = Literal["low", "medium", "high"]
 
 
 class RetryPolicy(BaseModel):
@@ -30,7 +32,12 @@ class RetryPolicy(BaseModel):
 
 
 class ToolContract(BaseModel):
-    """Minimal execution contract attached to a ToolDefinition."""
+    """Minimal execution contract attached to a ToolDefinition.
+
+    ``result_schema`` 和 ``approval_policy_id`` 均为可选附加约束：未配置
+    结果 Schema 时跳过结果结构校验；未配置审批策略时，不会覆盖写操作或
+    风险等级已有的审批判断。超时和数据分级属于有默认值的策略参数。
+    """
 
     tool_name: str
     timeout_ms: int = 10000
@@ -39,6 +46,8 @@ class ToolContract(BaseModel):
     approval_policy_id: str | None = None
     idempotency_key_fields: list[str] = Field(default_factory=list)
     data_classification: DataClassification = "internal"
+    operation: ToolOperation | None = None
+    risk_level: RiskLevel | None = None
 
     @model_validator(mode="after")
     def validate_contract(self) -> "ToolContract":
@@ -98,4 +107,3 @@ class ToolContractCatalog(BaseModel):
         if self.mcp_default is None:
             return None
         return self.mcp_default.model_copy(update={"tool_name": tool_name})
-

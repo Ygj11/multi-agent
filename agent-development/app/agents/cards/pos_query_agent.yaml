@@ -1,3 +1,5 @@
+# ``supported_routes`` 与 ``private_tools`` 是严格白名单；为空时不暴露
+# 路由或工具。实体列表仅作为可选路由信号。
 agent_name: pos_query_agent
 display_name: 保全实时查询智能体
 description: 负责健康险保全实时接口查询，包括可做保全项、退保试算详情、保全保单标准查询、批文查询和退保提交校验。
@@ -37,8 +39,8 @@ private_tools:
   - pos_query_approval_text
   - pos_submit_verify
 public_tools_allowed: false
-mcp_tools: []
-mcp_tool_scopes: []
+mcp_policy:
+  enabled: false
 skills:
   - pos_query_agent.realtime_query
 rag_namespaces: []

@@ -1,4 +1,8 @@
+# Query Rewrite 的“上下文引用判断策略”。它不负责意图识别，而是帮助系统判断：
+# 当前这句话是一个新请求，还是在引用上一轮？需要继承哪个历史实体？是否应该要求用户澄清？
+# 当前代码会把它加载成 QueryContextReferencePolicy，然后在 Query Rewrite 的规则路径里使用。
 version: "1.0.0"
+# 明确引用历史上下文的词
 explicit_reference_signals:
   - 这个
   - 那个
@@ -10,6 +14,7 @@ explicit_reference_signals:
   - 它
   - 还是这个
   - 刚才那个
+# 可能是追问，但单独看并不能确定，所以叫 weak，也就是弱信号
 weak_follow_up_signals:
   - 为什么
   - 谁的问题
@@ -18,15 +23,18 @@ weak_follow_up_signals:
   - 状态呢
   - 有没有更新
   - 查一下
+# 明确指向一个业务对象的“强锚点实体”
 strong_anchor_entity_types:
   - policy_no
   - apply_seq
   - request_id
   - task_id
   - claim_no
+# 实体类型的别名映射
 entity_type_aliases:
   policyNo: policy_no
   applySeq: apply_seq
+# 序号引用词到候选下标的映射
 ordinal_targets:
   第一个: 0
   第一: 0
@@ -36,4 +44,5 @@ ordinal_targets:
   第二: 1
   2个: 1
   第2个: 1
+# 没有 strong anchor，并且当前 EntityBag 完全为空，并且去掉首尾空格后长度 ≤ 16
 short_query_without_anchor_max_len: 16

@@ -101,6 +101,14 @@ class ToolExecutionPipeline:
         if verification_error is not None:
             return verification_error
 
+        mcp_policy_error = self.executor._mcp_policy_denial(
+            definition=definition,
+            agent_name=context.agent_name,
+            tool_name=context.tool_name,
+        )
+        if mcp_policy_error is not None:
+            return mcp_policy_error
+
         if self.approval_guard.requires_approval(definition, context.tool_name):
             return self.approval_guard.build_result(
                 agent_name=context.agent_name,

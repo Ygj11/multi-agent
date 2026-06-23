@@ -22,4 +22,5 @@ class ToolArgumentGuard:
             allowed=True,
             success=False,
             error=f"missing_required_argument:{','.join(missing)}",
+            missing_required_arguments=missing,
         )

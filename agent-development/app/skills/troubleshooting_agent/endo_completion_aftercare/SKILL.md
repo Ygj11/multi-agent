@@ -33,8 +33,8 @@ private_tools:
   - notice_period_update
   - policy_suspendOrRecovery
   - notice_finance
+requires_tool_evidence: true
 enabled: true
-is_default: false
 business_domain:
   - health_insurance_endorsement
 required_context:

@@ -102,14 +102,14 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory, real_trou
         return {"success": True, "apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType}
 
     app = app_factory("approval_chain.sqlite3")
-    app.state.tool_registry.register_private(
+    app.state.container.tool_registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_policy_update",
         tool=counted_notice_policy_update,
         is_write=True,
     )
-    app.state.llm_provider.chat = ChainedWriteLLM().chat
-    app.state.approval_service.client = AcceptingApprovalClient()
+    app.state.container.llm_provider.chat = ChainedWriteLLM().chat
+    app.state.container.approval_service.client = AcceptingApprovalClient()
     client = TestClient(app)
 
     pending_1 = client.post(
@@ -140,7 +140,7 @@ def test_approval_resume_creates_second_approval_in_graph(app_factory, real_trou
     assert calls == [{"apply_seq": "930010412672222", "policyNo": "9200100000458846", "endorseType": "001028"}]
 
     async def _get(approval_id):
-        return await app.state.approval_store.get(approval_id)
+        return await app.state.container.storage.approval_store.get(approval_id)
 
     import anyio
 
@@ -183,14 +183,14 @@ def test_approval_chain_depth_limit_requires_manual_intervention(app_factory, re
         return {"success": True, "apply_seq": apply_seq, "policyNo": policyNo, "endorseType": endorseType}
 
     app = app_factory("approval_chain_limit.sqlite3")
-    app.state.tool_registry.register_private(
+    app.state.container.tool_registry.register_private(
         agent_name="troubleshooting_agent",
         name="notice_policy_update",
         tool=counted_notice_policy_update,
         is_write=True,
     )
-    app.state.llm_provider.chat = ManyWritesLLM().chat
-    app.state.approval_service.client = AcceptingApprovalClient()
+    app.state.container.llm_provider.chat = ManyWritesLLM().chat
+    app.state.container.approval_service.client = AcceptingApprovalClient()
     client = TestClient(app)
 
     pending = client.post(
@@ -207,7 +207,7 @@ def test_approval_chain_depth_limit_requires_manual_intervention(app_factory, re
     import anyio
 
     async def _get(approval_id):
-        return await app.state.approval_store.get(approval_id)
+        return await app.state.container.storage.approval_store.get(approval_id)
 
     approval_id = pending["approval_id"]
     final_status = None

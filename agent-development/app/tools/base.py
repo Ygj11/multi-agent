@@ -13,7 +13,7 @@ from app.tools.contracts import ToolContract
 ToolCallable = Callable[..., Awaitable[Any]]
 ToolScope = Literal["public", "private", "mcp"]
 ToolSource = Literal["local", "mcp"]
-ToolOperation = Literal["read", "write", "notify", "execute", "search"]
+ToolOperation = Literal["read", "write", "notify", "execute", "search", "delete", "ddl"]
 DataClassification = Literal["public", "internal", "confidential", "sensitive"]
 
 

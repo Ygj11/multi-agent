@@ -15,16 +15,23 @@ class SkillMetadata(BaseModel):
     description: str
     agent: str
     intent: str | None = None
+    # 可选的路由细化条件：空列表不增加 sub_intent 约束。
     sub_intents: list[str] = Field(default_factory=list)
     intent_tags: list[str]
+    # 必填 frontmatter 字段。``[]`` 明确表示该 Skill 没有实体前置条件；
+    # 配置的实体会在选中后校验。
     required_entities: list[str]
+    # 仅作为可选选择信号；空列表不提供可选实体信号。
     optional_entities: list[str] = Field(default_factory=list)
+    # 必填 frontmatter 字段。配置的名称会与 AgentCard 校验；``[]`` 明确表示
+    # 此 Skill 不预期使用私有工具。
     private_tools: list[str]
     public_tools: list[str] = Field(default_factory=list)
-    mcp_tools: list[str] = Field(default_factory=list)
+    # 必填布尔值：不允许根据缺失字段猜测该安全策略。
+    requires_tool_evidence: bool
     enabled: bool
-    is_default: bool
     business_domain: list[str] = Field(default_factory=list)
+    # 仅作为可选路由信号；空列表不提供上下文信号。
     required_context: list[str] = Field(default_factory=list)
     routing_keywords: list[str] = Field(default_factory=list)
     routing_negative_keywords: list[str] = Field(default_factory=list)
@@ -71,7 +78,6 @@ class SkillSelectionContext(BaseModel):
     trace_id: str | None = None
     extracted_error_code: str | None = None
     extracted_request_id: str | None = None
-    extracted_interface_name: str | None = None
     business_domain: list[str] = Field(default_factory=lambda: ["health_insurance_onboarding"])
     extra: dict[str, Any] = Field(default_factory=dict)
 

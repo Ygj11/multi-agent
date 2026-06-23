@@ -2,11 +2,18 @@ from pathlib import Path
 
 import pytest
 
+from app.agents.card_loader import AgentCardLoader
 from app.runtime.context_builder import ContextBuilder
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.subagent import SubAgentTask
 from app.skills.catalog import SkillCatalog
 from app.skills.selector import SkillSelector
+
+
+def _troubleshooting_card():
+    card = AgentCardLoader(Path("app/agents/cards")).get_agent_card("troubleshooting_agent")
+    assert card is not None
+    return card
 
 
 async def test_context_builder_injects_only_selected_endo_skill_content():
@@ -25,17 +32,20 @@ async def test_context_builder_injects_only_selected_endo_skill_content():
         session_key="s",
     )
     task = SubAgentTask(
-        name="troubleshooting_agent",
+        agent_name="troubleshooting_agent",
+        agent_card_version="1.0.0",
         query="保全任务完成了，但是保单信息没有更新",
         intent="troubleshooting",
         session_key="s",
         original_query="保全任务完成了，但是保单信息没有更新",
-        metadata={"request_id": "req-test", "trace_id": "trace-test"},
+        request_id="req-test",
+        trace_id="trace-test",
     )
 
     context = await builder.build_for_subagent(
         task=task,
         parent_context=parent_context,
+        agent_card=_troubleshooting_card(),
         allowed_tools=["query_internal_log", "rag_search_tool"],
     )
 
@@ -60,17 +70,20 @@ async def test_context_builder_clarifies_when_no_confident_skill_match_by_defaul
         session_key="s",
     )
     task = SubAgentTask(
-        name="troubleshooting_agent",
+        agent_name="troubleshooting_agent",
+        agent_card_version="1.0.0",
         query="帮我看看这个问题怎么处理",
         intent="troubleshooting",
         session_key="s",
         original_query="帮我看看这个问题怎么处理",
-        metadata={"request_id": "req-test", "trace_id": "trace-test"},
+        request_id="req-test",
+        trace_id="trace-test",
     )
 
     context = await builder.build_for_subagent(
         task=task,
         parent_context=parent_context,
+        agent_card=_troubleshooting_card(),
         allowed_tools=["query_internal_log", "rag_search_tool"],
     )
 
@@ -101,17 +114,20 @@ async def test_context_builder_generic_execution_requires_local_dev_policy():
         session_key="s",
     )
     task = SubAgentTask(
-        name="troubleshooting_agent",
+        agent_name="troubleshooting_agent",
+        agent_card_version="1.0.0",
         query="帮我看看这个问题怎么处理",
         intent="troubleshooting",
         session_key="s",
         original_query="帮我看看这个问题怎么处理",
-        metadata={"request_id": "req-test", "trace_id": "trace-test"},
+        request_id="req-test",
+        trace_id="trace-test",
     )
 
     context = await builder.build_for_subagent(
         task=task,
         parent_context=parent_context,
+        agent_card=_troubleshooting_card(),
         allowed_tools=["query_internal_log", "rag_search_tool"],
     )
 
@@ -156,18 +172,21 @@ async def test_context_builder_loads_only_selected_skill_body(monkeypatch):
         entities={"apply_seq": "APPLY_POLICY_UPDATE_FAIL", "policy_no": "P001", "endorseType": "退保"},
     )
     task = SubAgentTask(
-        name="troubleshooting_agent",
+        agent_name="troubleshooting_agent",
+        agent_card_version="1.0.0",
         query=parent_context.rewritten_query,
         intent="troubleshooting",
         session_key="s",
         original_query=parent_context.original_query,
         entities={"apply_seq": "APPLY_POLICY_UPDATE_FAIL", "policy_no": "P001", "endorseType": "退保"},
-        metadata={"request_id": "req-test", "trace_id": "trace-test"},
+        request_id="req-test",
+        trace_id="trace-test",
     )
 
     context = await builder.build_for_subagent(
         task=task,
         parent_context=parent_context,
+        agent_card=_troubleshooting_card(),
         allowed_tools=["query_endo_task_record"],
     )
 

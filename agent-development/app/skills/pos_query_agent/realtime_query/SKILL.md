@@ -42,8 +42,8 @@ private_tools:
   - pos_query_policy_standard
   - pos_query_approval_text
   - pos_submit_verify
+requires_tool_evidence: true
 enabled: true
-is_default: false
 business_domain:
   - health_insurance_pos
 required_context: []

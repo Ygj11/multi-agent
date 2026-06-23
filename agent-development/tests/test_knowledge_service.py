@@ -27,7 +27,6 @@ async def test_context_builder_uses_lightweight_knowledge_hints():
         session_key="pingan_health:web:u001:s001",
         recent_messages=[],
         short_summary=None,
-        available_subagents=["troubleshooting_agent"],
     )
 
     assert context.lightweight_knowledge_hints

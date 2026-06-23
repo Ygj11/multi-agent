@@ -16,12 +16,9 @@ class OrchestratorContext(BaseModel):
     sub_intent: str | None = None
     entities: dict[str, Any] = Field(default_factory=dict)
     entity_bag: dict[str, Any] = Field(default_factory=dict)
-    conversation_window: dict[str, Any] = Field(default_factory=dict)
     session_key: str
     recent_messages: list[dict[str, Any]] = Field(default_factory=list)
     short_summary: str | None = None
-    available_subagents: list[str] = Field(default_factory=list)
-    agent_candidate_summaries: list[dict[str, Any]] = Field(default_factory=list)
     lightweight_knowledge_hints: list[str] = Field(default_factory=list)
     auth_context: dict[str, Any] | None = None
 

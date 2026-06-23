@@ -4,57 +4,37 @@ from __future__ import annotations
 
 from time import perf_counter
 from typing import Any
-from urllib.parse import urljoin
 
-import httpx
-
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.observability.logger import log_event, preview_text
 
 
 class PosAPIClient:
-    """Thin async HTTP client for POS preservation APIs."""
+    """POS 领域 Client，复用统一 HTTP 传输层并保留 POS 结果契约。"""
 
-    def __init__(self, *, base_url: str | None, timeout: float = 10.0, enabled: bool = True) -> None:
-        self.base_url = (base_url or "").rstrip("/")
-        self.timeout = timeout
-        self.enabled = enabled
+    def __init__(self, http_client: BaseIntegrationHTTPClient) -> None:
+        self.http = http_client
 
     async def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         """POST JSON to one POS endpoint and return a normalized result dict."""
         started = perf_counter()
-        url = self._url(path)
-        if not self.enabled:
+        if not self.http.base_url:
             return self._result(
                 success=False,
                 path=path,
-                url=url,
-                payload=payload,
-                error="pos_api_disabled",
-                started=started,
-            )
-        if not url:
-            return self._result(
-                success=False,
-                path=path,
-                url=url,
+                url="",
                 payload=payload,
                 error="pos_api_base_url_missing",
                 started=started,
             )
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(url, json=payload)
-            response.raise_for_status()
-            try:
-                body: Any = response.json()
-            except ValueError:
-                body = {"text": response.text}
+            response = await self.http.post_json_response(path, payload=payload)
             return self._result(
                 success=True,
                 path=path,
-                url=url,
+                url=response.url,
                 payload=payload,
-                response=body,
+                response=response.body,
                 status_code=response.status_code,
                 started=started,
             )
@@ -62,7 +42,7 @@ class PosAPIClient:
             return self._result(
                 success=False,
                 path=path,
-                url=url,
+                url=self._url(path),
                 payload=payload,
                 error=str(exc),
                 started=started,
@@ -71,9 +51,9 @@ class PosAPIClient:
     def _url(self, path: str) -> str:
         if path.startswith(("http://", "https://")):
             return path
-        if not self.base_url:
+        if not self.http.base_url:
             return ""
-        return urljoin(f"{self.base_url}/", path.lstrip("/"))
+        return f"{self.http.base_url}/{path.lstrip('/')}"
 
     @staticmethod
     def _result(

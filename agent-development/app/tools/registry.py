@@ -15,11 +15,7 @@ from app.tools.result_schemas import RESULT_SCHEMA_REGISTRY
 
 
 class ToolRegistry:
-    """Registers public tools and agent-private tools.
-
-    The old `register/get/list_tools` methods remain for compatibility with
-    existing tests and adapters.
-    """
+    """Registers public, agent-private, and MCP tools."""
 
     def __init__(self, contract_catalog: ToolContractCatalog | None = None) -> None:
         self._tools: dict[str, ToolDefinition] = {}
@@ -27,10 +23,6 @@ class ToolRegistry:
         self._public_tools: set[str] = set()
         self._mcp_tools: set[str] = set()
         self.contract_catalog = contract_catalog or ToolContractCatalog.load()
-
-    def register(self, name: str, tool: ToolCallable) -> None:
-        """Compatibility API: register a public tool."""
-        self.register_public(name=name, tool=tool)
 
     def register_public(
         self,
@@ -67,39 +59,6 @@ class ToolRegistry:
             idempotency_required=idempotency_required,
         ))
         self._public_tools.add(name)
-
-    def register_public_tool(
-        self,
-        name: str,
-        tool: ToolCallable,
-        description: str = "",
-        is_write: bool = False,
-        parameters: dict[str, Any] | None = None,
-        required_scopes: list[str] | None = None,
-        resource_type: str | None = None,
-        resource_id_arg: str | None = None,
-        operation: str = "read",
-        data_domains: list[str] | None = None,
-        risk_level: str = "low",
-        precondition_id: str | None = None,
-        idempotency_required: bool = False,
-    ) -> None:
-        """New API alias for registering a public tool."""
-        self.register_public(
-            name=name,
-            tool=tool,
-            description=description,
-            is_write=is_write,
-            parameters=parameters,
-            required_scopes=required_scopes,
-            resource_type=resource_type,
-            resource_id_arg=resource_id_arg,
-            operation=operation,
-            data_domains=data_domains,
-            risk_level=risk_level,
-            precondition_id=precondition_id,
-            idempotency_required=idempotency_required,
-        )
 
     def register_private(
         self,
@@ -140,46 +99,6 @@ class ToolRegistry:
         ))
         self._private_tools_by_agent.setdefault(agent_name, set()).add(name)
 
-    def register_agent_tool(
-        self,
-        agent_name: str,
-        tool_name: str,
-        tool: ToolCallable,
-        description: str = "",
-        is_write: bool = False,
-        parameters: dict[str, Any] | None = None,
-        required_scopes: list[str] | None = None,
-        resource_type: str | None = None,
-        resource_id_arg: str | None = None,
-        operation: str = "read",
-        data_domains: list[str] | None = None,
-        risk_level: str = "low",
-        precondition_id: str | None = None,
-        idempotency_required: bool = False,
-    ) -> None:
-        """New API alias for registering an agent-private tool."""
-        self.register_private(
-            agent_name=agent_name,
-            name=tool_name,
-            tool=tool,
-            description=description,
-            is_write=is_write,
-            parameters=parameters,
-            required_scopes=required_scopes,
-            resource_type=resource_type,
-            resource_id_arg=resource_id_arg,
-            operation=operation,
-            data_domains=data_domains,
-            risk_level=risk_level,
-            precondition_id=precondition_id,
-            idempotency_required=idempotency_required,
-        )
-
-    def get(self, name: str) -> ToolCallable | None:
-        """Compatibility API: return the callable only."""
-        definition = self._tools.get(name)
-        return definition.callable if definition else None
-
     def get_definition(self, name: str) -> ToolDefinition | None:
         """Return full tool metadata."""
         return self._tools.get(name)
@@ -187,6 +106,7 @@ class ToolRegistry:
     def register_mcp_tools(self, mcp_tools: list[MCPToolCapability]) -> None:
         """Register MCP tools discovered at startup or refresh."""
         for capability in mcp_tools:
+            mcp_policy = _mcp_policy_metadata(capability)
             self._tools[capability.registered_tool_name] = self._with_contract(ToolDefinition(
                 name=capability.registered_tool_name,
                 callable=_mcp_placeholder,
@@ -201,22 +121,12 @@ class ToolRegistry:
                     "server_name": capability.server_name,
                     "original_tool_name": capability.original_tool_name,
                     "raw_schema": capability.raw_schema,
+                    **mcp_policy,
                 },
-                operation="execute",
-                risk_level="medium",
+                operation=mcp_policy.get("operation") or "execute",
+                risk_level=mcp_policy.get("risk_level") or "low",
             ))
             self._mcp_tools.add(capability.registered_tool_name)
-
-    def list_mcp_tools(self) -> list[str]:
-        return sorted(name for name in self._mcp_tools if name in self._tools)
-
-    def get_mcp_tool(self, registered_tool_name: str) -> ToolDefinition | None:
-        definition = self._tools.get(registered_tool_name)
-        return definition if definition and definition.source == "mcp" else None
-
-    def get_tool(self, tool_name: str) -> ToolCallable | None:
-        """Return a tool callable by name."""
-        return self.get(tool_name)
 
     def list_tools(self) -> list[str]:
         """List all registered tool names."""
@@ -226,13 +136,9 @@ class ToolRegistry:
         """List public tool names."""
         return sorted(self._public_tools)
 
-    def list_agent_private_tools(self, agent_name: str) -> list[str]:
+    def list_private_tools(self, agent_name: str) -> list[str]:
         """List private tool names for one agent."""
         return sorted(self._private_tools_by_agent.get(agent_name, set()))
-
-    def list_private_tools(self, agent_name: str) -> list[str]:
-        """New API alias for listing agent-private tools."""
-        return self.list_agent_private_tools(agent_name)
 
     def list_available_tools_for_agent(
         self,
@@ -241,7 +147,7 @@ class ToolRegistry:
         principal: Principal | dict[str, Any] | None = None,
         authorization_service: AuthorizationService | None = None,
     ) -> list[str]:
-        """Return tools allowed by AgentCard.private_tools/public_tools_allowed."""
+        """返回当前 Agent 可见且可用的工具名列表，不包含 LLM function schema。"""
         private_names = set(card.private_tools if card else self._private_tools_by_agent.get(agent_name, set()))
         tools = {name for name in private_names if name in self._tools}
         if card and card.public_tools_allowed:
@@ -249,9 +155,8 @@ class ToolRegistry:
         elif card is None:
             tools.update(self._public_tools)
         if card:
-            tools.update(name for name in card.mcp_tools if self._is_enabled_mcp_tool(name))
-            for scope in card.mcp_tool_scopes:
-                tools.update(name for name in self._mcp_tools if name.startswith(scope) and self._is_enabled_mcp_tool(name))
+            if card.mcp_policy.enabled:
+                tools.update(name for name in self._mcp_tools if self._is_enabled_mcp_tool(name))
         visible = sorted(name for name in tools if self._tools.get(name, None) is not None and self._tools[name].enabled)
         if authorization_service is None:
             return visible
@@ -263,17 +168,13 @@ class ToolRegistry:
                 allowed.append(name)
         return allowed
 
-    def list_tool_names_for_agent(self, agent_card: AgentCard) -> list[str]:
-        """Return visible tool names for an AgentCard."""
-        return self.list_available_tools_for_agent(agent_card.agent_name, agent_card)
-
     def list_tools_for_agent(
         self,
         agent_card: AgentCard,
         principal: Principal | dict[str, Any] | None = None,
         authorization_service: AuthorizationService | None = None,
     ) -> list[dict[str, Any]]:
-        """Return OpenAI-compatible tool schemas visible to one AgentCard."""
+        """返回给 LLM function calling 使用的完整工具 schema 列表。"""
         schemas: list[dict[str, Any]] = []
         for name in self.list_available_tools_for_agent(
             agent_card.agent_name,
@@ -362,10 +263,8 @@ class ToolRegistry:
             return True
         if card.public_tools_allowed and tool_name in self._public_tools:
             return True
-        if self._is_enabled_mcp_tool(tool_name) and tool_name in card.mcp_tools:
-            return True
         if self._is_enabled_mcp_tool(tool_name):
-            return any(tool_name.startswith(scope) for scope in card.mcp_tool_scopes)
+            return bool(card.mcp_policy.enabled)
         return False
 
     def _is_enabled_mcp_tool(self, name: str) -> bool:
@@ -377,11 +276,22 @@ class ToolRegistry:
         if contract is None:
             return definition
         data_classification = contract.data_classification
+        metadata = dict(definition.metadata)
+        explicit_contract = definition.name in self.contract_catalog.explicit_tool_names()
+        metadata["contract_source"] = "explicit" if explicit_contract else "mcp_default" if definition.source == "mcp" else "default"
+        metadata["contract_operation_defined"] = bool(getattr(contract, "operation", None))
+        metadata["contract_risk_level_defined"] = bool(getattr(contract, "risk_level", None))
+        updates: dict[str, Any] = {
+            "contract": contract,
+            "data_classification": data_classification,
+            "metadata": metadata,
+        }
+        if contract.operation:
+            updates["operation"] = contract.operation
+        if contract.risk_level:
+            updates["risk_level"] = contract.risk_level
         return definition.model_copy(
-            update={
-                "contract": contract,
-                "data_classification": data_classification,
-            }
+            update=updates
         )
 
     @staticmethod
@@ -414,6 +324,57 @@ class ToolRegistry:
 async def _mcp_placeholder(**kwargs: Any) -> None:
     """Never called directly; ToolExecutor dispatches source=mcp to MCPClientManager."""
     raise RuntimeError("mcp tools must be executed through MCPClientManager")
+
+
+def _mcp_policy_metadata(capability: MCPToolCapability) -> dict[str, Any]:
+    """Extract optional risk/operation hints from an MCP tool declaration."""
+    raw = capability.raw_schema if isinstance(capability.raw_schema, dict) else {}
+    metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    operation = _normalize_mcp_operation(metadata.get("operation") or raw.get("operation"))
+    risk_level = _normalize_mcp_risk_level(metadata.get("risk_level") or metadata.get("risk") or raw.get("risk_level") or raw.get("risk"))
+    return {
+        "operation": operation,
+        "risk_level": risk_level,
+        "mcp_operation_defined": operation is not None,
+        "mcp_risk_level_defined": risk_level is not None,
+    }
+
+
+def _normalize_mcp_operation(value: Any) -> str | None:
+    if value is None:
+        return None
+    item = str(value).strip().lower()
+    aliases = {
+        "select": "read",
+        "query": "read",
+        "get": "read",
+        "list": "read",
+        "create": "write",
+        "update": "write",
+        "modify": "write",
+        "remove": "delete",
+        "drop": "ddl",
+        "alter": "ddl",
+        "truncate": "ddl",
+    }
+    item = aliases.get(item, item)
+    return item if item in {"read", "write", "notify", "execute", "search", "delete", "ddl"} else None
+
+
+def _normalize_mcp_risk_level(value: Any) -> str | None:
+    if value is None:
+        return None
+    item = str(value).strip().lower()
+    aliases = {
+        "critical": "high",
+        "danger": "high",
+        "dangerous": "high",
+        "moderate": "medium",
+        "normal": "medium",
+        "safe": "low",
+    }
+    item = aliases.get(item, item)
+    return item if item in {"low", "medium", "high"} else None
 
 
 def normalize_tool_parameters(parameters: dict[str, Any] | None) -> dict[str, Any]:

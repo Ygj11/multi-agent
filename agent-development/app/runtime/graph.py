@@ -275,11 +275,9 @@ class AgentGraphFactory:
             sub_intent=state.get("sub_intent"),
             entities=state.get("entities", {}),
             entity_bag=state.get("entity_bag", {}),
-            conversation_window=state.get("conversation_window", {}),
             session_key=state["session_key"],
             recent_messages=state.get("recent_messages", []),
             short_summary=state.get("short_summary"),
-            available_subagents=self.subagent_manager.list_agents(),
             auth_context=state.get("auth_context"),
         )
         self._log_node_exit(state, "build_orchestrator_context")

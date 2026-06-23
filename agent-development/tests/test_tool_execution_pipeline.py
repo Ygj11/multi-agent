@@ -5,6 +5,8 @@ import pytest
 from app.agents.card_loader import AgentCardLoader
 from app.auth.authorization_service import AuthorizationService
 from app.auth.principal import Principal
+from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.tools.agent_tools import register_agent_private_tools
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
@@ -12,7 +14,13 @@ from app.tools.registry import ToolRegistry
 
 def _registry() -> ToolRegistry:
     registry = ToolRegistry()
-    register_agent_private_tools(registry, troubleshooting_tool_mode="real")
+    register_agent_private_tools(
+        registry,
+        troubleshooting_tool_mode="real",
+        troubleshooting_api_client=TroubleshootingAPIClient(
+            BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+        ),
+    )
     return registry
 
 

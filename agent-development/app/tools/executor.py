@@ -21,6 +21,7 @@ from app.schemas.tool import ToolResult
 from app.tools.error_codes import (
     MCP_SERVER_UNAVAILABLE,
     MCP_TOOL_ERROR,
+    MCP_TOOL_POLICY_DENIED,
     MCP_TOOL_TIMEOUT,
     TOOL_EXECUTION_EXCEPTION,
     TOOL_RESULT_SCHEMA_INVALID,
@@ -48,6 +49,7 @@ class ToolExecutor:
         resource_access_service: ResourceAccessService | None = None,
         verification_service: VerificationService | None = None,
         evidence_store: EvidenceStore | None = None,
+        unknown_mcp_tool_policy: str = "allow",
     ) -> None:
         self.registry = registry
         self.log_store = log_store
@@ -58,6 +60,7 @@ class ToolExecutor:
         self.resource_access_service = resource_access_service
         self.verification_service = verification_service
         self.evidence_store = evidence_store
+        self.unknown_mcp_tool_policy = self._normalize_unknown_mcp_tool_policy(unknown_mcp_tool_policy)
 
     async def execute(
         self,
@@ -164,6 +167,7 @@ class ToolExecutor:
                 allowed=True,
                 success=False,
                 error=f"missing_required_argument:{','.join(missing_arguments)}",
+                missing_required_arguments=missing_arguments,
                 approval_id=approval_id,
             )
             await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf, approval_id=approval_id)
@@ -523,13 +527,55 @@ class ToolExecutor:
                 return operation
         return "write"
 
-    @classmethod
-    def _requires_approval(cls, definition, tool_name: str) -> bool:
+    def _mcp_policy_denial(self, *, definition, agent_name: str, tool_name: str) -> ToolResult | None:
+        if getattr(definition, "source", None) != "mcp":
+            return None
+        if self._mcp_unknown_policy_action(definition) != "deny":
+            return None
+        return ToolResult(
+            name=tool_name,
+            agent_name=agent_name,
+            allowed=False,
+            success=False,
+            error=MCP_TOOL_POLICY_DENIED,
+            result={"policy": self.unknown_mcp_tool_policy, "reason": "unknown_mcp_tool_policy"},
+        )
+
+    def _requires_approval(self, definition, tool_name: str) -> bool:
         contract = getattr(definition, "contract", None)
         if getattr(contract, "approval_policy_id", None):
             return True
         operation = str(getattr(definition, "operation", "") or "").lower()
-        return bool(getattr(definition, "is_write", False)) or operation in {"write", "notify"}
+        risk_level = str(getattr(definition, "risk_level", "") or "").lower()
+        if getattr(definition, "source", None) == "mcp" and self._mcp_unknown_policy_action(definition) == "approval":
+            return True
+        return bool(getattr(definition, "is_write", False)) or operation in {"write", "notify", "delete", "ddl"} or risk_level == "high"
+
+    def _mcp_unknown_policy_action(self, definition) -> str:
+        if getattr(definition, "source", None) != "mcp":
+            return "allow"
+        if self._mcp_has_explicit_execution_policy(definition):
+            return "allow"
+        return self.unknown_mcp_tool_policy
+
+    @staticmethod
+    def _mcp_has_explicit_execution_policy(definition) -> bool:
+        contract = getattr(definition, "contract", None)
+        metadata = getattr(definition, "metadata", None) or {}
+        return bool(
+            metadata.get("mcp_operation_defined")
+            or metadata.get("mcp_risk_level_defined")
+            or metadata.get("contract_operation_defined")
+            or metadata.get("contract_risk_level_defined")
+            or getattr(contract, "approval_policy_id", None)
+        )
+
+    @staticmethod
+    def _normalize_unknown_mcp_tool_policy(value: str) -> str:
+        policy = (value or "allow").strip().lower()
+        if policy not in {"allow", "approval", "deny"}:
+            raise ValueError("UNKNOWN_MCP_TOOL_POLICY must be one of: allow, approval, deny")
+        return policy
 
     @classmethod
     def _validate_approved_tool_request(
