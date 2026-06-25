@@ -8,7 +8,11 @@ from pydantic import BaseModel, Field
 
 
 class SubAgentTask(BaseModel):
-    """主 Agent 分配给子 Agent 的结构化任务。"""
+    """主 Agent 分配给子 Agent 的结构化任务。
+
+    任务只携带 selected agent 的引用、查询、意图、实体和身份上下文；
+    完整 AgentCard、Skill 内容和工具 schema 由子 Agent 运行时重新加载。
+    """
 
     agent_name: str
     agent_card_version: str
@@ -25,7 +29,7 @@ class SubAgentTask(BaseModel):
 
 
 class SubAgentResult(BaseModel):
-    """子 Agent 返回给主 Agent 的结构化结果。"""
+    """子 Agent 返回给主 Graph 的结构化结果。"""
 
     name: str | None = None
     agent_name: str | None = None

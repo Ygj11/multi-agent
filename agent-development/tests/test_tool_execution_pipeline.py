@@ -6,6 +6,7 @@ from app.agents.card_loader import AgentCardLoader
 from app.auth.authorization_service import AuthorizationService
 from app.auth.principal import Principal
 from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.clients import IntegrationClients
 from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.tools.agent_tools import register_agent_private_tools
 from app.tools.executor import ToolExecutor
@@ -17,8 +18,10 @@ def _registry() -> ToolRegistry:
     register_agent_private_tools(
         registry,
         troubleshooting_tool_mode="real",
-        troubleshooting_api_client=TroubleshootingAPIClient(
-            BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+        integration_clients=IntegrationClients(
+            troubleshooting=TroubleshootingAPIClient(
+                BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+            )
         ),
     )
     return registry

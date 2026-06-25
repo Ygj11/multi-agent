@@ -82,7 +82,7 @@ mcp_policy:
 | 手动刷新 capability cache | `MCPClientManager.refresh_capabilities()`；当前不会自动同步清理/重注册 ToolRegistry 中已消失工具。 |
 | 调用 MCP 工具 | `ToolExecutor._invoke_definition()` 按 `source == "mcp"` 转给 manager。 |
 | server 可用状态 | `MCPCapabilityRegistry` / `MCPServerStatus`。 |
-| shutdown | 当前 manager 没有 close 协议；`AppContainer.shutdown()` 仅是生命周期状态收敛。 |
+| shutdown | `MCPClient` 定义 `close()`；`MCPClientManager.shutdown()` 逐个关闭已创建的 client，`AppContainer.shutdown()` 负责调用。HTTP client 用 `AsyncClientLifecycle` 管理惰性创建、并发借用和关闭；外部注入的 client 默认不转移关闭权。新增 transport 也必须实现同一关闭协议。 |
 
 如果要实现定时刷新或断线重连，需要单独设计“registry 删除旧工具、ToolRegistry 同步、运行中 Agent 的可见性一致性”，不要只在后台调用 `refresh_capabilities()`。
 

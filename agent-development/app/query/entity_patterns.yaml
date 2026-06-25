@@ -1,11 +1,20 @@
 version: "1.0.0"
 
+# 本文件是 EntityExtractor 的唯一规则实体抽取配置。
+# Query Rewrite 会用它抽取当前轮、短摘要和最近消息中的确定性实体候选。
+# Intent Recognition、SkillContextResolver 不应再维护另一套私有正则。
+# regex 用于从整段用户文本中提取实体，通常包含上下文、捕获组或边界条件。
+# value_regex 用于校验已经独立出来的实体值，例如 LLM、历史 metadata 的候选值；
+# 它不负责从原文提取，因此应匹配完整值本身，而不是“保单号 + 值”这样的上下文文本。
+# 未配置 value_regex 的实体类型，只校验候选值非空；已配置则按完整值白名单校验。
 patterns:
   - entity_type: request_id
     description: 请求流水号，以 req 开头，例如 REQ_001、req-20240501-0001
     regex:
       - "(?<![A-Za-z0-9])REQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+)(?![A-Za-z0-9])"
       - "(?:请求流水号|请求号|request[_-]?id|requestId)[:：=]?\\s*(REQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+))(?![A-Za-z0-9])"
+    value_regex:
+      - "^REQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+)$"
     normalized_type: string
     sensitive: false
     confidence: 0.95
@@ -16,6 +25,8 @@ patterns:
       - "\\bE\\d{3,6}\\b"
       - "\\bERR[_-]?\\d{3,6}\\b"
       - "\\bERROR[_-]?\\d{3,6}\\b"
+    value_regex:
+      - "^(?:E|ERR[_-]?|ERROR[_-]?)\\d{3,6}$"
     normalized_type: string
     sensitive: false
     confidence: 0.9
@@ -25,6 +36,8 @@ patterns:
     regex:
       - "(?:受理号|申请号|apply[_-]?seq|applySeq)[:：=]?\\s*(930\\d{12})(?!\\d)"
       - "(?<!\\d)930\\d{12}(?!\\d)"
+    value_regex:
+      - "^930\\d{12}$"
     normalized_type: string
     sensitive: false
     confidence: 0.95
@@ -34,6 +47,8 @@ patterns:
     regex:
       - "(?:保单号|保单|policy[_-]?no|policyNo)[:：=]?\\s*(920\\d{13})(?!\\d)"
       - "(?<!\\d)920\\d{13}(?!\\d)"
+    value_regex:
+      - "^920\\d{13}$"
     normalized_type: string
     sensitive: false
     confidence: 0.95
@@ -43,6 +58,8 @@ patterns:
     regex:
       - "(?:保全项|保全类型|endorseType)[:：=]?\\s*(00\\d{4})(?!\\d)"
       - "(?<!\\d)00\\d{4}(?!\\d)"
+    value_regex:
+      - "^00\\d{4}$"
     normalized_type: string
     sensitive: false
     confidence: 0.9
@@ -51,6 +68,8 @@ patterns:
     description: 客户号，例如 customerNo、customer_no
     regex:
       - "(?:客户号|customer[_-]?no|customerNo)[:：=]?\\s*([A-Za-z0-9_-]+)"
+    value_regex:
+      - "^[A-Za-z0-9_-]+$"
     normalized_type: string
     sensitive: false
     confidence: 0.9
@@ -59,6 +78,8 @@ patterns:
     description: 支付方式，例如 payMode=Y
     regex:
       - "(?:支付方式|payMode)[:：=]?\\s*([A-Za-z0-9_-]+)"
+    value_regex:
+      - "^[A-Za-z0-9_-]+$"
     normalized_type: string
     sensitive: false
     confidence: 0.85
@@ -67,6 +88,8 @@ patterns:
     description: 操作人，例如 operatorId
     regex:
       - "(?:操作人|operatorId|operator_id)[:：=]?\\s*([A-Za-z0-9_-]+)"
+    value_regex:
+      - "^[A-Za-z0-9_-]+$"
     normalized_type: string
     sensitive: false
     confidence: 0.85
@@ -75,6 +98,8 @@ patterns:
     description: 受理日期毫秒时间戳
     regex:
       - "(?:受理日期|applyDate)[:：=]?\\s*(\\d{10,13})"
+    value_regex:
+      - "^\\d{10,13}$"
     normalized_type: string
     sensitive: false
     confidence: 0.8
@@ -83,6 +108,8 @@ patterns:
     description: 退保日期毫秒时间戳
     regex:
       - "(?:退保日期|surDate)[:：=]?\\s*(\\d{10,13})"
+    value_regex:
+      - "^\\d{10,13}$"
     normalized_type: string
     sensitive: false
     confidence: 0.8
@@ -91,6 +118,8 @@ patterns:
     description: 提交校验受理日期毫秒时间戳
     regex:
       - "(?:受理日期|acceptDate)[:：=]?\\s*(\\d{10,13})"
+    value_regex:
+      - "^\\d{10,13}$"
     normalized_type: string
     sensitive: false
     confidence: 0.8
@@ -100,6 +129,8 @@ patterns:
     regex:
       - "\\bCLM[_-]?[A-Za-z0-9_-]+\\b"
       - "\\bCLAIM[_-]?[A-Za-z0-9_-]+\\b"
+    value_regex:
+      - "^(?:CLM|CLAIM)[_-]?[A-Za-z0-9_-]+$"
     normalized_type: string
     sensitive: false
     confidence: 0.9
@@ -109,6 +140,8 @@ patterns:
     regex:
       - "(?:产品编码|产品代码|product[_-]?code|productCode)[:：=]?\\s*(PM[A-Za-z0-9_-]{1,30})(?![A-Za-z0-9])"
       - "(?<![A-Za-z0-9])PM[A-Za-z0-9_-]{1,30}(?![A-Za-z0-9])"
+    value_regex:
+      - "^PM[A-Za-z0-9_-]{1,30}$"
     normalized_type: string
     sensitive: false
     confidence: 0.85
@@ -118,6 +151,8 @@ patterns:
     regex:
       - "(?:险种编码|险种代码|plan[_-]?code|planCode)[:：=]?\\s*(H[A-Za-z0-9_-]{1,30})(?![A-Za-z0-9])"
       - "(?<![A-Za-z0-9])H[A-Za-z0-9_-]{1,30}(?![A-Za-z0-9])"
+    value_regex:
+      - "^H[A-Za-z0-9_-]{1,30}$"
     normalized_type: string
     sensitive: false
     confidence: 0.85
@@ -126,6 +161,8 @@ patterns:
     description: 中国大陆手机号
     regex:
       - "(?<!\\d)1[3-9]\\d{9}(?!\\d)"
+    value_regex:
+      - "^1[3-9]\\d{9}$"
     normalized_type: string
     sensitive: true
     confidence: 0.95
@@ -134,6 +171,8 @@ patterns:
     description: 中国大陆居民身份证号
     regex:
       - "(?<![A-Za-z0-9])[1-9]\\d{5}(?:18|19|20)\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\d{3}[0-9Xx](?![A-Za-z0-9])"
+    value_regex:
+      - "^[1-9]\\d{5}(?:18|19|20)\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\d{3}[0-9X]$"
     normalized_type: string
     sensitive: true
     confidence: 0.95

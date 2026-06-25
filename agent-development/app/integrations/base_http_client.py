@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-"""真实外部 API HTTP client 基类示例。"""
+"""真实外部 API 的共享 HTTP 传输层。"""
 
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+from app.runtime.async_client_lifecycle import AsyncClientLifecycle
 
 
 SENSITIVE_KEYS = {"secret", "token", "password", "api_key", "authorization"}
@@ -25,7 +27,11 @@ class IntegrationHTTPResponse:
 
 
 class BaseIntegrationHTTPClient:
-    """轻量 httpx client 示例，默认不被主流程启用。"""
+    """为一个长期领域 Client 复用 httpx 连接池。
+
+    该传输层不在请求间修改共享 client 的全局 headers/cookies；用户级身份、
+    request_id 和 trace_id 都通过单次请求参数传入，避免并发请求串身份。
+    """
 
     def __init__(
         self,
@@ -34,15 +40,21 @@ class BaseIntegrationHTTPClient:
         api_token: str | None = None,
         timeout: float = 10.0,
         client: httpx.AsyncClient | None = None,
+        owns_client: bool = False,
     ) -> None:
         # TODO: 替换真实 base_url、鉴权方式、字段映射、重试、熔断、审计与脱敏策略。
         self.base_url = (base_url or "").rstrip("/")
         self.api_token = api_token
         self.timeout = timeout
-        self._client = client
+        self._client_lifecycle = AsyncClientLifecycle(
+            factory=lambda: httpx.AsyncClient(timeout=self.timeout),
+            close_client=lambda value: value.aclose(),
+            client=client,
+            owns_client=owns_client,
+        )
 
     def build_headers(self, request_id: str | None = None, trace_id: str | None = None) -> dict[str, str]:
-        """构造透传 request_id / trace_id 的 headers。"""
+        """为单次请求构造 headers，不修改共享 AsyncClient 状态。"""
         headers = {"Content-Type": "application/json"}
         if self.api_token:
             headers["Authorization"] = f"Bearer {self.api_token}"
@@ -112,9 +124,8 @@ class BaseIntegrationHTTPClient:
         )
 
     async def close(self) -> None:
-        """关闭内部 client。"""
-        if self._client is not None:
-            await self._client.aclose()
+        """关闭自有连接池；外部注入的共享 client 仍由外部 Owner 关闭。"""
+        await self._client_lifecycle.close()
 
     async def request_json(
         self,
@@ -131,17 +142,16 @@ class BaseIntegrationHTTPClient:
         if not self.base_url:
             raise IntegrationAPIError("Integration base_url is not configured; real API calls are disabled by default.")
         url = path if path.startswith(("http://", "https://")) else f"{self.base_url}/{path.lstrip('/')}"
-        client = self._client or httpx.AsyncClient(timeout=timeout or self.timeout)
-        should_close = self._client is None
         try:
-            response = await client.request(
-                method,
-                url,
-                params=params,
-                json=json_payload,
-                headers=self.build_headers(request_id=request_id, trace_id=trace_id),
-                timeout=timeout or self.timeout,
-            )
+            async with self._client_lifecycle.lease() as client:
+                response = await client.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json_payload,
+                    headers=self.build_headers(request_id=request_id, trace_id=trace_id),
+                    timeout=timeout or self.timeout,
+                )
             response.raise_for_status()
             try:
                 data: Any = response.json()
@@ -155,9 +165,10 @@ class BaseIntegrationHTTPClient:
         except httpx.HTTPError as exc:
             safe_payload = self.mask_sensitive(json_payload or params or {})
             raise IntegrationAPIError(f"Integration API request failed: {exc}; payload={safe_payload}") from exc
-        finally:
-            if should_close:
-                await client.aclose()
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """仅供测试断言当前 client；生产请求通过 lease() 借用。"""
+        return await self._client_lifecycle.get_client_for_testing()
 
     @staticmethod
     def _require_object_body(body: Any) -> dict[str, Any]:

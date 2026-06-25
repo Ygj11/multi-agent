@@ -1,4 +1,8 @@
 ---
+# Skill frontmatter 是 metadata：SkillSelector 先用它筛选候选，只有选中后才加载下方完整 SOP。
+# intent/sub_intents 必须引用 intent_taxonomy.yaml；private_tools 必须包含在对应 AgentCard.private_tools 中。
+# required_entities 选中后由 RequiredEntityChecker 基于 resolved EntityBag 校验；缺失或歧义时澄清。
+# requires_tool_evidence=true 表示最终回答必须有成功工具结果支撑，否则转澄清，不能自由生成业务结论。
 skill_id: troubleshooting_agent.endo_completion_aftercare
 name: 保全任务完成后异常处理
 description: 处理保全任务完成后保单信息未更新、保单未解锁、未发起退费、未发短信等问题，通过 apply_seq 查询任务节点状态，并根据 9/10/11 节点状态和 response_body 触发对应通知或恢复工具。

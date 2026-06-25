@@ -1,9 +1,15 @@
 version: "1.0.0"
+# ToolContract 是注册工具的静态治理补丁，不负责注册或执行工具。
+# defaults 会合并到每个显式 tools 条目；具体工具条目可以覆盖默认值。
+# 未配置 result_schema / approval_policy_id / operation / risk_level 时，不施加该项额外约束。
 defaults:
   timeout_ms: 10000
   retry:
     max_attempts: 1
   data_classification: internal
+# mcp_default 只作用于 source=mcp 且没有显式 tools 契约的 MCP 工具。
+# 如果 MCP 工具自身和 contract 都没有声明 operation/risk_level，
+# ToolExecutor 会按 UNKNOWN_MCP_TOOL_POLICY 决定 allow / approval / deny。
 mcp_default:
   timeout_ms: 10000
   retry:
@@ -11,6 +17,7 @@ mcp_default:
   result_schema: AnyDictResult
   data_classification: internal
 tools:
+  # tools 下的 key 必须是已注册工具名；prod strict 校验会阻断未知或缺契约工具。
   rag_search_tool:
     timeout_ms: 5000
     result_schema: TextResult

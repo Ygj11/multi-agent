@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Authorization services for agent, tool, and resource access."""
+"""Agent、Tool 和资源访问的确定性授权服务。"""
 
 from typing import Any
 
@@ -20,17 +20,11 @@ class AuthorizationDecision(BaseModel):
 
 
 class AuthorizationService:
-    """Deterministic service-side authorization checks.
+    """服务端确定性授权检查。
 
-    This service handles coarse access decisions that should not be delegated to
-    the LLM:
-
-    - agent access: whether the principal may use a selected AgentCard.
-    - tool access: whether the principal has the scopes required by a tool.
-
-    Resource ownership and organization-level restrictions are handled by
-    `ResourceAccessService` so the same tool can return different outcomes for
-    different principals without duplicating tool definitions.
+    授权判断不能交给 LLM：Agent 入口权限、工具 scope 权限和资源归属都必须
+    由代码根据可信 Principal 与配置策略判断。资源级组织/数据边界由
+    ResourceAccessService 处理，避免复制工具定义。
     """
 
     def check_agent_access(self, *, principal: Principal | None, agent_card: AgentCard) -> AuthorizationDecision:

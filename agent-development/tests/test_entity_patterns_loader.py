@@ -15,6 +15,9 @@ def test_entity_patterns_loader_reads_project_yaml():
     assert "plan_code" in by_type
     assert by_type["phone_number"].sensitive is True
     assert by_type["error_code"].confidence == 0.9
+    assert by_type["policy_no"].value_regex
+    assert by_type["policy_no"].value_regex[0].fullmatch("9200100000458846")
+    assert not by_type["policy_no"].value_regex[0].fullmatch("P001")
 
 
 def test_entity_patterns_loader_missing_required_field_fails(tmp_path):
@@ -49,4 +52,24 @@ patterns:
     )
 
     with pytest.raises(ValueError, match="invalid regex"):
+        EntityPatternLoader(path).load()
+
+
+def test_entity_patterns_loader_invalid_value_regex_fails(tmp_path):
+    path = tmp_path / "entity_patterns.yaml"
+    path.write_text(
+        """
+version: "1.0.0"
+patterns:
+  - entity_type: broken
+    description: broken value regex
+    regex:
+      - "BROKEN"
+    value_regex:
+      - "["
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid value_regex"):
         EntityPatternLoader(path).load()

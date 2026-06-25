@@ -3,6 +3,7 @@ import pytest
 from app.bootstrap.tools import register_admin_restricted_tools
 from app.config.settings import Settings
 from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.clients import IntegrationClients
 from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.mcp.schemas import MCPToolCapability
 from app.tools.agent_tools import register_agent_private_tools
@@ -22,8 +23,10 @@ def _full_registry() -> ToolRegistry:
     register_agent_private_tools(
         registry,
         troubleshooting_tool_mode="real",
-        troubleshooting_api_client=TroubleshootingAPIClient(
-            BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+        integration_clients=IntegrationClients(
+            troubleshooting=TroubleshootingAPIClient(
+                BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+            )
         ),
     )
     register_admin_restricted_tools(registry, Settings())

@@ -34,10 +34,10 @@ app/main.py:create_app()
 | Internal provider | `app/llm/internal_provider.py`；没有 base URL 时按 provider 实现走本地 deterministic fallback。 |
 | OpenSDK compatible provider | `app/llm/opensdk_provider.py`；通过 `ENABLE_OPENSDK_LLM` 与 OpenAI-compatible env 配置。 |
 | Knowledge service | `app/knowledge/factory.py`；默认 disabled，可由 settings 启用外部 API。 |
-| POS / troubleshooting API | `app/integrations/*_api_client.py`，由 Container 按 `*_TOOL_MODE=mock|real` 构建。 |
+| POS / troubleshooting API | `app/integrations/*_api_client.py`，由 Container 按 `*_TOOL_MODE=mock|real` 构建，并聚合为只读 `app/integrations/clients.py:IntegrationClients`。 |
 | MCP | [06-mcp-integration.md](06-mcp-integration.md)。 |
 
-新 client 需要先定义可测试接口与 failure semantics，再由 Container 注入；不要在 Tool handler 或 Graph node 内临时 new HTTP client。
+新 client 需要先定义可测试接口与 failure semantics，再由 Container 注入；不要在 Tool handler 或 Graph node 内临时 new HTTP client。真实领域 client 增加字段时，同步更新 `IntegrationClients`、`_build_integration_clients()`、使用它的工具注册逻辑与测试；不要回到为 `register_agent_private_tools()` 增加单个 client 参数。长期 HTTP/SDK client 使用 `app/runtime/async_client_lifecycle.py:AsyncClientLifecycle`：组件自建的 client 由组件关闭，外部注入 client 默认仍归调用方所有，只有 `owns_client=True` 才转移关闭权。网络请求通过 `lease()` 在锁外执行，shutdown 会阻止新借用并等待进行中的借用归还。`AppContainer` 是单次生命周期对象，关闭或启动失败后应重新构建，不支持原地 restart。
 
 ## 3. SQLite、消息、记忆与 checkpoint
 

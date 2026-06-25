@@ -6,7 +6,11 @@ from app.schemas.tool import ToolResult
 
 
 class ToolArgumentGuard:
-    """Validate required arguments from ToolDefinition parameters."""
+    """校验 ToolDefinition 参数 schema 中声明的必填参数。
+
+    缺参不会直接抛异常中断 Graph，而是返回 ToolResult observation 给 LLM。
+    对需要工具事实的 Skill，BaseSubAgent 会在最终结果阶段防止无证据回答。
+    """
 
     def __init__(self, registry) -> None:
         self.registry = registry

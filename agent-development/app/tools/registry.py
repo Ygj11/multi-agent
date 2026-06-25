@@ -15,7 +15,11 @@ from app.tools.result_schemas import RESULT_SCHEMA_REGISTRY
 
 
 class ToolRegistry:
-    """Registers public, agent-private, and MCP tools."""
+    """注册 public、agent-private 与 MCP 工具。
+
+    Registry 维护“工具定义”和“Agent 可见性”，并向 LLM 暴露 function schema。
+    它不执行工具，也不替代 ToolExecutor 的权限、审批和验证检查。
+    """
 
     def __init__(self, contract_catalog: ToolContractCatalog | None = None) -> None:
         self._tools: dict[str, ToolDefinition] = {}
@@ -104,7 +108,11 @@ class ToolRegistry:
         return self._tools.get(name)
 
     def register_mcp_tools(self, mcp_tools: list[MCPToolCapability]) -> None:
-        """Register MCP tools discovered at startup or refresh."""
+        """注册启动/刷新时发现的 MCP 工具。
+
+        MCP 工具是否对某个 Agent 可见由 AgentCard.mcp_policy.enabled 控制；
+        未知 MCP 工具的风险处理仍在 ToolExecutor 中按 UNKNOWN_MCP_TOOL_POLICY 判断。
+        """
         for capability in mcp_tools:
             mcp_policy = _mcp_policy_metadata(capability)
             self._tools[capability.registered_tool_name] = self._with_contract(ToolDefinition(
@@ -131,6 +139,27 @@ class ToolRegistry:
     def list_tools(self) -> list[str]:
         """List all registered tool names."""
         return sorted(self._tools)
+
+    async def close(self) -> None:
+        """关闭注册工具持有的可关闭资源。"""
+        errors: list[str] = []
+        closed_callables: set[int] = set()
+        for name, definition in self._tools.items():
+            callable_id = id(definition.callable)
+            if callable_id in closed_callables:
+                continue
+            closed_callables.add(callable_id)
+            close = getattr(definition.callable, "close", None)
+            if not callable(close):
+                continue
+            try:
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:
+                errors.append(f"{name}: {exc}")
+        if errors:
+            raise RuntimeError("tool resource close failed: " + "; ".join(errors))
 
     def list_public_tools(self) -> list[str]:
         """List public tool names."""
@@ -207,6 +236,11 @@ class ToolRegistry:
         }
 
     def _parameters_from_signature(self, definition: ToolDefinition) -> dict[str, Any]:
+        """从 Python 函数签名推断最小 JSON Schema。
+
+        该推断只能得到参数名、基础类型和 required，无法生成业务 description。
+        生产工具应优先显式提供 parameters，避免 LLM 看到过于贫瘠的 schema。
+        """
         properties: dict[str, Any] = {}
         required: list[str] = []
         try:
@@ -272,6 +306,12 @@ class ToolRegistry:
         return bool(definition and definition.source == "mcp" and definition.enabled)
 
     def _with_contract(self, definition: ToolDefinition) -> ToolDefinition:
+        """把静态 ToolContract 投影到运行时 ToolDefinition。
+
+        ToolContract 是治理补丁：它可以覆盖 operation、risk_level、
+        data_classification 等安全字段，并附加 result_schema/timeout 等约束。
+        这里返回新对象而不原地修改，避免注册阶段共享引用被意外污染。
+        """
         contract = self.contract_catalog.contract_for(definition.name, source=definition.source)
         if contract is None:
             return definition

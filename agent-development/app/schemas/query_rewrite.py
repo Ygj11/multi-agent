@@ -10,7 +10,11 @@ from app.schemas.entities import EntityBag
 
 
 class QueryRewriteResult(BaseModel):
-    """Query rewrite output with dynamic entities and clarification state."""
+    """Query Rewrite 的输出协议。
+
+    为兼容旧调用保留 `entities` 字段，但它必须由 `entity_bag` 派生。
+    调用方不应把 `entities` 当成可独立修改的第二份实体状态。
+    """
 
     original_query: str
     rewritten_query: str
@@ -32,7 +36,7 @@ class QueryRewriteResult(BaseModel):
     decision_trace: dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
-        """Keep compact entities as a derived compatibility view of entity_bag."""
+        """保证 compact entities 始终是 entity_bag 的派生兼容视图。"""
         if not self.entity_bag:
             return
         self.entities = EntityBag(**self.entity_bag).to_compact_dict()

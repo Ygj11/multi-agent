@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-"""Composable verification service.
+"""可组合的 Verification 服务。
 
-Verification is the broad policy engine for runtime checks that need pluggable
-verifiers. The current main path uses it for:
+Verification 处理需要可插拔 verifier 的运行时策略检查。当前主路径使用：
 
-- `pre_tool`: optional verifier checks before a tool call executes.
-- `pre_answer`: final outbound verification, including compliance redaction.
+- `pre_tool`：工具执行前的可选策略检查；
+- `pre_answer`：最终外发前验证，包括合规脱敏/patch。
 
-Authorization remains separate and deterministic; verification can inspect
-answers, evidence, tool calls, and policy-specific metadata.
+Authorization 仍然独立且确定性地判断“能不能做”；Verification 判断工具或答案
+是否满足外发/执行前策略。当前 patch/block 能力以注册 verifier 的真实行为为准。
 """
 
 from app.verification.base import BaseVerifier
@@ -17,7 +16,7 @@ from app.verification.schemas import VerificationInput, VerificationResult
 
 
 class VerificationService:
-    """Runs registered verifiers for one stage and aggregates their result."""
+    """执行某一阶段的所有 verifier，并聚合最终动作。"""
 
     def __init__(self, verifiers: list[BaseVerifier] | None = None) -> None:
         self.verifiers = verifiers or []

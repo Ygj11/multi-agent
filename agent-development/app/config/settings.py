@@ -62,7 +62,9 @@ def load_project_dotenv(dotenv_path: Path | None = None) -> None:
 @dataclass(frozen=True)
 class Settings:
     """Runtime settings with safe local defaults."""
-    """系统环境变量 > .env > settings.py 默认值"""
+    # 配置优先级：系统环境变量 > 项目 .env > Settings 默认值。
+    # 生产建议组合：APP_ENV=prod、AUTH_MODE=required、
+    # ALLOW_REQUEST_BODY_IDENTITY_FALLBACK=false，避免请求体自证身份。
     project_root: Path = PROJECT_ROOT
     app_env: str = "local"
 

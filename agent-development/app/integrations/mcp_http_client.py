@@ -13,6 +13,10 @@ class MCPHTTPClient:
     def __init__(self, http_client: BaseIntegrationHTTPClient) -> None:
         self.http = http_client
 
+    async def close(self) -> None:
+        """释放 MCP gateway HTTP 连接池。"""
+        await self.http.close()
+
     async def list_tools(self, request_id: str | None = None, trace_id: str | None = None) -> list[dict[str, Any]]:
         # TODO: 按真实 MCP 协议映射 list_tools、鉴权和 tool schema。
         data = await self.http.get_json("/mcp/tools", request_id=request_id, trace_id=trace_id)

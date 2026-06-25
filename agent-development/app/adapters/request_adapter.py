@@ -11,7 +11,12 @@ from app.schemas.message import ChatRequest, InboundMessage
 
 
 class RequestAdapter:
-    """Convert HTTP chat requests into Agent runtime messages."""
+    """将 HTTP ChatRequest 转为运行时 InboundMessage。
+
+    可信身份来自 FastAPI dependency 解析出的 Principal。body fallback 只是本地
+    开发兼容能力；关闭 ALLOW_REQUEST_BODY_IDENTITY_FALLBACK 后，必须提供可信
+    Principal，不能用请求体里的 tenant/user 自证身份。
+    """
 
     def adapt(self, request: ChatRequest, principal: Principal | None = None) -> InboundMessage:
         """Extract the last user message and build request/session identifiers."""

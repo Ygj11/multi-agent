@@ -1,4 +1,5 @@
 from app.llm.schemas import LLMResponse
+from app.integrations.clients import IntegrationClients
 from app.schemas.agent_card import AgentCard
 from app.subagents.tool_calling_runner import ToolCallingRunner
 from app.tools.agent_tools import register_agent_private_tools
@@ -79,7 +80,7 @@ async def test_endo_aftercare_tool_calling_loop_policy_update_requires_approval(
     register_agent_private_tools(
         registry,
         troubleshooting_tool_mode="real",
-        troubleshooting_api_client=FakeTroubleshootingAPIClient(),
+        integration_clients=IntegrationClients(troubleshooting=FakeTroubleshootingAPIClient()),
     )
     llm = SequencedLLM(
         [

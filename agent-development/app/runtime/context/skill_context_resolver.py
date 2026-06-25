@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Skill context resolution for sub-agent execution."""
+"""子 Agent 执行前的 Skill 上下文解析。"""
 
 from dataclasses import dataclass
 
@@ -19,7 +19,7 @@ from app.skills.selector import SkillSelector
 
 @dataclass
 class SkillResolution:
-    """Resolved skill context details for one sub-agent task."""
+    """一次子 Agent 任务解析出的 Skill、内容与实体检查结果。"""
 
     selection: SkillSelectionResult
     skill_content: str
@@ -27,7 +27,11 @@ class SkillResolution:
 
 
 class SkillContextResolver:
-    """Selects skill metadata, loads only the selected body, and checks entities."""
+    """选择 Skill metadata，加载唯一选中的 Skill 正文，并检查必填实体。
+
+    本类不重新选择 Agent，也不维护私有实体正则。实体从父级 resolved
+    EntityBag/compact entities 读取，缺失或歧义时返回澄清。
+    """
 
     generic_skill_content = (
         "No specific Skill matched confidently. Use the AgentCard, user query, "
@@ -63,7 +67,7 @@ class SkillContextResolver:
         selection_context = self.build_selection_context(task=task, parent_context=parent_context)
         candidates = self.build_candidates(task=task, agent_card=agent_card)
 
-        """Select the best skill from candidates using metadata only, without loading skill bodies."""
+        # 先只用 metadata 选择 Skill，避免把所有 SKILL.md 内容塞进 LLM 上下文。
         selection = await self.skill_selector.select(
             agent_name=task.agent_name,
             context=selection_context,
@@ -76,7 +80,7 @@ class SkillContextResolver:
         if selection.selected_skill_id is None or selection.selected_skill_metadata is None:
             return self._resolve_no_skill(task=task, selection=selection)
 
-        """Load the selected skill content and check required entities."""
+        # 只有选中 Skill 后才加载完整内容；随后基于 resolved EntityBag 检查必填实体。
         loaded_skill = self.skill_loader.load(selection.selected_skill_id)
 
         entity_bag = EntityBag(**parent_context.entity_bag) if parent_context.entity_bag else EntityBag.from_compact_dict(
@@ -115,6 +119,8 @@ class SkillContextResolver:
         return SkillResolution(selection=selection, skill_content=loaded_skill.content, entity_check=entity_check)
 
     def _resolve_no_skill(self, *, task: SubAgentTask, selection: SkillSelectionResult) -> SkillResolution:
+        # 默认 no-skill 策略是澄清/阻断，不进入泛化 LLM 执行。
+        # generic_dev_only 只允许 local 环境显式打开，用于本地调试未配置 Skill 的场景。
         reason = selection.fallback_reason or (NO_ENABLED_SKILLS if selection.selection_source == "none" else NO_CONFIDENT_SKILL)
         task.metadata["selected_skill_id"] = None
         task.metadata["selected_skill_metadata"] = None
@@ -165,6 +171,7 @@ class SkillContextResolver:
         return SkillResolution(selection=selection, skill_content="", entity_check=None)
 
     def build_candidates(self, *, task: SubAgentTask, agent_card: AgentCard):
+        # Skill 候选必须同时属于当前 Agent，并且出现在 AgentCard.skills 白名单中。
         allowed_skill_ids = set(agent_card.skills)
         candidates = self.skill_catalog.list_skills(task.agent_name)
         candidates = [candidate for candidate in candidates if candidate.skill_id in allowed_skill_ids]
@@ -195,6 +202,7 @@ class SkillContextResolver:
             source="rule",
             confidence=0.9,
         )
+        # SkillSelectionContext 使用 compact entities 做打分，同时保留 entity_bag 供后续校验。
         entities = entity_bag.to_compact_dict()
         return SkillSelectionContext(
             agent_name=task.agent_name,

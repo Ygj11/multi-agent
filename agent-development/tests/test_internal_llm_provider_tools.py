@@ -99,3 +99,38 @@ async def test_http_error_returns_error(monkeypatch):
     assert response.finish_reason == "error"
     assert "internal_llm_http_500" in response.error
 
+
+@pytest.mark.asyncio
+async def test_internal_llm_provider_reuses_one_pool_and_closes_it(monkeypatch):
+    created = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}
+
+    class FakeClient:
+        is_closed = False
+
+        def __init__(self, *args, **kwargs):
+            self.calls = []
+            created.append(self)
+
+        async def post(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return FakeResponse()
+
+        async def aclose(self):
+            self.is_closed = True
+
+    monkeypatch.setattr("app.llm.internal_provider.httpx.AsyncClient", FakeClient)
+    provider = _provider()
+
+    assert (await provider.chat([{"role": "user", "content": "hi"}])).content == "done"
+    assert (await provider.chat([{"role": "user", "content": "again"}])).content == "done"
+    assert len(created) == 1
+    assert len(created[0].calls) == 2
+
+    await provider.close()
+    assert created[0].is_closed is True

@@ -11,7 +11,12 @@ from app.schemas.message import InboundMessage
 
 
 class AgentOrchestrator:
-    """包装已编译的 LangGraph，隐藏 thread_id 配置细节。"""
+    """包装已编译的 LangGraph，隐藏 thread_id 与 checkpoint 细节。
+
+    Orchestrator 是运行时入口，不做节点编排，也不直接读写业务存储。
+    普通请求从 InboundMessage 构造初始 State；审批恢复请求从 ApprovalStore
+    保存的 resume_state 重建 State，再重新进入 Graph 的恢复分支。
+    """
 
     def __init__(self, graph, checkpoint_store: SQLiteCheckpointStore | None = None) -> None:
         """注入已编译的 LangGraph runnable 和项目内 checkpoint store。"""
@@ -19,7 +24,7 @@ class AgentOrchestrator:
         self.checkpoint_store = checkpoint_store
 
     async def run(self, inbound: InboundMessage) -> AgentGraphState:
-        """Use a per-request thread_id to run the graph and save the final state snapshot."""
+        """执行一次普通请求，并在结束后保存最终状态快照。"""
         thread_id = self._thread_id(inbound.session_key, inbound.request_id)
         initial_state: AgentGraphState = {
             "request_id": inbound.request_id,
@@ -42,7 +47,12 @@ class AgentOrchestrator:
         return state
 
     async def resume_after_approval(self, approval_request: ApprovalRequest) -> AgentGraphState:
-        """Resume the graph thread after the external approval callback approves one tool."""
+        """审批通过后恢复 Graph。
+
+        当前实现不是 LangGraph 原生 interrupt/resume。中断时由 ApprovalStore
+        保存必要的 resume_state、pending_messages、pending_tools 和 pending_tool_call；
+        回调通过这些持久化内容重建 State，并从 route_entry 的恢复分支继续执行。
+        """
         thread_id = approval_request.thread_id or self._thread_id(
             approval_request.session_key or "",
             approval_request.request_id or approval_request.approval_id,

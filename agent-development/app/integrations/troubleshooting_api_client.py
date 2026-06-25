@@ -13,6 +13,10 @@ class TroubleshootingAPIClient:
     def __init__(self, http_client: BaseIntegrationHTTPClient) -> None:
         self.http = http_client
 
+    async def close(self) -> None:
+        """释放排障 API 的 HTTP 连接池。"""
+        await self.http.close()
+
     async def query_task_status(self, request_id: str | None) -> dict[str, Any]:
         return await self.http.get_json(f"/workflow/tasks/{request_id}/status")
 

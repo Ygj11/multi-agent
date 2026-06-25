@@ -19,7 +19,7 @@ class EvalFakeProvider:
                 "is_follow_up": True,
                 "rewritten_query": "保单 9200100000458846 保全完成后未更新，用户补充 endorseType=001028",
                 "rewrite_type": "clarification_reply",
-                "entities": {"policy_no": "9200100000458846", "endorseType": "001028"},
+                "entities": {"endorseType": "001028"},
                 "inherited_entities": {"policy_no": "9200100000458846"},
                 "missing_required_entities": [],
                 "need_clarification": False,

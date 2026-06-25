@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-"""Runtime application container bootstrap.
+"""运行时应用容器装配。
 
-The container is the composition root for the Agent runtime. It builds concrete
-runtime objects and owns process-level startup/shutdown boundaries, while inner
-components still receive explicit dependencies instead of the whole container.
+Container 是 Agent runtime 的组合根：负责构建具体对象，并管理进程级
+startup/shutdown 生命周期。内部业务组件仍然接收显式依赖，不能依赖整个
+container，避免退化成 Service Locator。
 """
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from app.bootstrap.tools import register_admin_restricted_tools
 from app.bootstrap.verification import build_verification_service
 from app.config.settings import Settings
 from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.clients import IntegrationClients
 from app.integrations.pos_api_client import PosAPIClient
 from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.knowledge.factory import build_knowledge_service
@@ -52,7 +55,11 @@ from app.tools.registry import ToolRegistry
 
 @dataclass(slots=True)
 class AppContainer:
-    """Top-level runtime dependency container and lifecycle boundary."""
+    """顶层运行时依赖容器与生命周期边界。
+
+    每个 FastAPI/Uvicorn worker 应拥有自己的 AppContainer 和连接池。
+    关闭后不支持原地重启；需要重新 build 一个新的 container。
+    """
 
     settings: Settings
     storage: StorageBundle
@@ -60,8 +67,7 @@ class AppContainer:
     short_memory: ShortTermMemoryManager
     langgraph_checkpointer: Any
     knowledge_service: Any
-    pos_api_client: PosAPIClient | None
-    troubleshooting_api_client: TroubleshootingAPIClient | None
+    integration_clients: IntegrationClients
     mcp_capability_registry: MCPCapabilityRegistry
     mcp_client_manager: MCPClientManager
     intent_taxonomy_loader: IntentTaxonomyLoader
@@ -80,45 +86,94 @@ class AppContainer:
     graph: Any
     orchestrator: AgentOrchestrator
     _started: bool = False
+    _closed: bool = False
+    _lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     @property
     def started(self) -> bool:
         """Whether process-level async resources have completed startup."""
         return self._started
 
+    @property
+    def closed(self) -> bool:
+        """Container 是否已经永久结束生命周期。关闭后应新建 Container，而非原地重启。"""
+        return self._closed
+
     async def startup(self) -> None:
         """Initialize enabled external resources and dynamic capabilities once."""
-        if self._started:
-            return
-        if self.settings.enable_mcp_client:
-            await self.mcp_client_manager.initialize()
-            self.tool_registry.register_mcp_tools(self.mcp_capability_registry.list_tools())
-            contract_errors = self.tool_registry.validate_contracts(strict=self.settings.app_env == "prod")
-            log_event(
-                "mcp_capabilities_registered",
-                node="app_startup",
-                message="MCP capabilities registered into ToolRegistry",
-                data={
-                    "tool_count": len(self.mcp_capability_registry.list_tools()),
-                    "servers": [status.model_dump() for status in self.mcp_client_manager.get_server_statuses()],
-                    "contract_errors": contract_errors,
-                },
-            )
-        self._started = True
+        async with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("AppContainer is closed; build a new container before startup")
+            if self._started:
+                return
+            try:
+                if self.settings.enable_mcp_client:
+                    await self.mcp_client_manager.initialize()
+                    self.tool_registry.register_mcp_tools(self.mcp_capability_registry.list_tools())
+                    contract_errors = self.tool_registry.validate_contracts(strict=self.settings.app_env == "prod")
+                    log_event(
+                        "mcp_capabilities_registered",
+                        node="app_startup",
+                        message="MCP capabilities registered into ToolRegistry",
+                        data={
+                            "tool_count": len(self.mcp_capability_registry.list_tools()),
+                            "servers": [status.model_dump() for status in self.mcp_client_manager.get_server_statuses()],
+                            "contract_errors": contract_errors,
+                        },
+                    )
+            except Exception:
+                await self._shutdown_resources()
+                self._closed = True
+                raise
+            self._started = True
 
     async def shutdown(self) -> None:
-        """Release process-level async resources when supported.
+        """释放进程级 HTTP 连接池与 MCP client，关闭失败不阻断其余资源。"""
+        async with self._lifecycle_lock:
+            if self._closed:
+                return
+            await self._shutdown_resources()
+            self._started = False
+            self._closed = True
 
-        Current MCP clients do not expose a close/shutdown protocol, so this is a
-        lifecycle boundary and state reset for now.
-        """
-        if not self._started:
+    async def _shutdown_resources(self) -> None:
+        """按依赖逆序释放已构造资源，可被 startup 半失败路径复用。"""
+        await self._close_resource("tool_registry", self.tool_registry)
+        await self._close_resource("approval_system_client", self.approval_service.client)
+        await self._close_resource("mcp_client_manager", self.mcp_client_manager, method_name="shutdown")
+        await self._close_resource("troubleshooting_api_client", self.integration_clients.troubleshooting)
+        await self._close_resource("pos_api_client", self.integration_clients.pos)
+        await self._close_resource("knowledge_service", self.knowledge_service)
+        await self._close_resource("llm_provider", self.llm_provider)
+
+    @staticmethod
+    async def _close_resource(name: str, resource: Any, *, method_name: str = "close") -> None:
+        """兼容可选依赖和异步关闭方法，单个失败只记录告警。"""
+        if resource is None:
             return
-        self._started = False
+        close = getattr(resource, method_name, None)
+        if not callable(close):
+            return
+        try:
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            log_event(
+                "runtime_resource_close_failed",
+                level="WARNING",
+                node="app_shutdown",
+                message="Runtime resource close failed",
+                data={"resource": name, "error": str(exc)},
+            )
 
 
 def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = None) -> AppContainer:
-    """Build the Agent runtime with deterministic local initialization."""
+    """同步构建 Agent runtime。
+
+    这里允许本地确定性初始化：加载 YAML/Skill/AgentCard、构建 SQLite store、
+    注册本地工具、装配 Graph。需要网络或 await 的 MCP 能力发现放在 startup。
+    """
     validate_real_tool_configuration(settings)
     storage = build_storage(settings, sqlite_db_path)
     db = storage.db
@@ -126,8 +181,7 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
     short_memory = ShortTermMemoryManager(db=db, llm_provider=llm_provider)
     langgraph_checkpointer = build_checkpointer(settings)
     knowledge_service = build_knowledge_service(settings)
-    pos_api_client = _build_pos_api_client(settings)
-    troubleshooting_api_client = _build_troubleshooting_api_client(settings)
+    integration_clients = _build_integration_clients(settings)
     mcp_capability_registry = MCPCapabilityRegistry()
     mcp_client_manager = MCPClientManager(settings=settings, capability_registry=mcp_capability_registry)
     intent_taxonomy_loader = IntentTaxonomyLoader()
@@ -137,15 +191,18 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
     tool_registry = ToolRegistry()
     authorization_service = AuthorizationService()
     resource_access_service = ResourceAccessService()
+
+    # 注册工具只建立运行时 ToolDefinition 与可见性关系，不执行任何外部工具。
     register_public_tools(tool_registry, knowledge_service)
     register_agent_private_tools(
         tool_registry,
-        pos_api_client=pos_api_client,
+        integration_clients=integration_clients,
         pos_tool_mode=settings.pos_tool_mode,
         troubleshooting_tool_mode=settings.troubleshooting_tool_mode,
-        troubleshooting_api_client=troubleshooting_api_client,
     )
     register_admin_restricted_tools(tool_registry, settings)
+
+    # contract 校验属于启动期治理：prod 环境严格失败，非 prod 只记录告警。
     _log_contract_warnings(tool_registry, settings)
 
     verification_service = build_verification_service(llm_provider)
@@ -178,6 +235,8 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
         callback_url=settings.approval_callback_url,
     )
 
+    # 启动期静态校验三者关系：taxonomy 定义合法意图，AgentCard 声明覆盖范围，
+    # Skill 声明自身服务的 intent/sub_intent 与私有工具。
     app_root = Path(__file__).resolve().parents[1]
     skills_root = app_root / "skills"
     skill_catalog = SkillCatalog(skills_root=skills_root)
@@ -189,6 +248,7 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
     )
     skill_catalog.validate_with_intent_taxonomy(intent_taxonomy)
     agent_card_loader.validate_with_skill_catalog(skill_catalog)
+
     context_builder = ContextBuilder(
         skills_root=skills_root,
         knowledge_service=knowledge_service,
@@ -242,8 +302,7 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
         short_memory=short_memory,
         langgraph_checkpointer=langgraph_checkpointer,
         knowledge_service=knowledge_service,
-        pos_api_client=pos_api_client,
-        troubleshooting_api_client=troubleshooting_api_client,
+        integration_clients=integration_clients,
         mcp_capability_registry=mcp_capability_registry,
         mcp_client_manager=mcp_client_manager,
         intent_taxonomy_loader=intent_taxonomy_loader,
@@ -272,28 +331,26 @@ def validate_real_tool_configuration(settings: Settings) -> None:
         raise ValueError("TROUBLESHOOTING_TOOL_MODE=real requires TROUBLESHOOTING_API_BASE_URL.")
 
 
-def _build_pos_api_client(settings: Settings) -> PosAPIClient | None:
-    """仅在 POS real 模式构造真实领域 Client。"""
-    if settings.pos_tool_mode != "real":
-        return None
-    return PosAPIClient(
-        BaseIntegrationHTTPClient(
-            base_url=settings.pos_api_base_url,
-            timeout=settings.pos_api_timeout,
+def _build_integration_clients(settings: Settings) -> IntegrationClients:
+    """按工具模式构建真实领域 client，并作为只读集合注入运行时。"""
+    pos = None
+    if settings.pos_tool_mode == "real":
+        pos = PosAPIClient(
+            BaseIntegrationHTTPClient(
+                base_url=settings.pos_api_base_url,
+                timeout=settings.pos_api_timeout,
+            )
         )
-    )
 
-
-def _build_troubleshooting_api_client(settings: Settings) -> TroubleshootingAPIClient | None:
-    """仅在 troubleshooting real 模式构造真实领域 Client。"""
-    if settings.troubleshooting_tool_mode != "real":
-        return None
-    return TroubleshootingAPIClient(
-        BaseIntegrationHTTPClient(
-            base_url=settings.troubleshooting_api_base_url,
-            timeout=settings.troubleshooting_api_timeout,
+    troubleshooting = None
+    if settings.troubleshooting_tool_mode == "real":
+        troubleshooting = TroubleshootingAPIClient(
+            BaseIntegrationHTTPClient(
+                base_url=settings.troubleshooting_api_base_url,
+                timeout=settings.troubleshooting_api_timeout,
+            )
         )
-    )
+    return IntegrationClients(pos=pos, troubleshooting=troubleshooting)
 
 
 def _log_contract_warnings(tool_registry: ToolRegistry, settings: Settings) -> None:

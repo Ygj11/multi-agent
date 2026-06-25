@@ -57,6 +57,17 @@ def test_multiple_candidates_clarify():
     assert result.missing_required_entities == ["policy_no"]
 
 
+def test_required_entity_accepts_current_batch_value_list():
+    result = RequiredEntityChecker().check(
+        skill=_skill("troubleshooting_agent.refund_failure"),
+        entities={"policy_no": ["9200100000458846", "9200100000458847"]},
+        entity_bag=EntityBag(),
+    )
+
+    assert result.need_clarification is False
+    assert result.entities["policy_no"] == ["9200100000458846", "9200100000458847"]
+
+
 def test_endo_completion_aftercare_requires_apply_seq_policy_no_and_endorse_type():
     result = RequiredEntityChecker().check(
         skill=_skill("troubleshooting_agent.endo_completion_aftercare"),

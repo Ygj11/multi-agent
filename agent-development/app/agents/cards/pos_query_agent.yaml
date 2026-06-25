@@ -1,5 +1,11 @@
-# ``supported_routes`` 与 ``private_tools`` 是严格白名单；为空时不暴露
-# 路由或工具。实体列表仅作为可选路由信号。
+# 内部 AgentCard：供 MainGraph 做 AgentSelection、工具可见性、Skill 候选过滤和访问治理。
+# supported_routes 是严格路由白名单，必须引用 intent_taxonomy.yaml 中的 intent/sub_intent。
+# capabilities 只作为语义描述和打分信号，不等同于可执行工具。
+# private_tools 是本 Agent 可见的私有本地工具白名单；为空时不暴露私有工具。
+# public_tools_allowed=false 表示公共工具不对该 Agent 暴露。
+# mcp_policy.enabled=false 表示该 Agent 不接收启动时发现的 MCP 工具。
+# skills 是该 Agent 可选 Skill 白名单；Skill frontmatter 仍会在启动期校验 intent/sub_intents/private_tools 是否匹配。
+# required_entities / optional_entities 仅参与 AgentSelection 打分；Skill 选中后还会校验 Skill.required_entities。
 agent_name: pos_query_agent
 display_name: 保全实时查询智能体
 description: 负责健康险保全实时接口查询，包括可做保全项、退保试算详情、保全保单标准查询、批文查询和退保提交校验。

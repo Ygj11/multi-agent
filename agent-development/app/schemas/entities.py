@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Dynamic entity containers shared by query understanding and routing."""
+"""问题理解与路由共享的动态实体容器。"""
 
 from typing import Any, Literal
 
@@ -11,7 +11,7 @@ EntitySource = Literal["current_query", "recent_turn", "summary", "llm", "rule",
 
 
 class EntityMention(BaseModel):
-    """One extracted entity mention from a query, summary, turn, LLM, or tool result."""
+    """一次实体提及，保留来源、置信度和 metadata，供 Resolver 做覆盖判断。"""
 
     type: str
     value: str
@@ -29,11 +29,10 @@ class EntityMention(BaseModel):
 
 
 class EntityBag(BaseModel):
-    """Dynamic entity map keyed by entity type.
+    """按实体类型分组的 canonical 动态实体集合。
 
-    Entity types such as policy_no, request_id, claim_no, hospital_name, or
-    document_type are dynamic keys inside `entities`; they are not fixed fields
-    on ConversationWindow.
+    `policy_no`、`request_id` 等类型是动态 key，不强行固定成巨大 schema。
+    Graph 内部以 EntityBag 为事实源；compact dict 只是兼容视图。
     """
 
     entities: dict[str, list[EntityMention]] = Field(default_factory=dict)
@@ -77,7 +76,7 @@ class EntityBag(BaseModel):
         return values
 
     def to_compact_dict(self) -> dict[str, Any]:
-        """Return a compact dynamic dict for state, AgentCard scoring, and prompts."""
+        """生成 compact entities，供 state 兼容、AgentCard 打分和 prompt 使用。"""
         compact: dict[str, Any] = {}
         for entity_type in sorted(self.entities):
             values = self.get_values(entity_type)
@@ -120,7 +119,11 @@ class EntityBag(BaseModel):
 
 
 class ConversationWindow(BaseModel):
-    """Current conversation memory view for query understanding."""
+    """Query Rewrite / Intent 阶段使用的会话窗口。
+
+    它是问题理解视图，不是全局 memory 对象；后续子 Agent 只接收经过改写和
+    实体解析后的上下文，避免在每个阶段重复做历史继承判断。
+    """
 
     session_key: str
     summary: str | None = None

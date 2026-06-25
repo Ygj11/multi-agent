@@ -11,7 +11,11 @@ from app.skills.metadata import metadata_from_skill_file
 
 
 class SkillCatalog:
-    """扫描和缓存 skill metadata，并按需加载完整 SKILL.md。"""
+    """扫描和缓存 Skill metadata，并按需加载完整 SKILL.md。
+
+    Catalog 的默认扫描只解析 frontmatter，用于路由和静态校验。完整 SOP 内容
+    只有在 SkillSelector 选中后才加载，避免所有业务步骤同时暴露给 LLM。
+    """
 
     def __init__(self, skills_root: Path) -> None:
         """保存 skill 根目录。"""
@@ -82,7 +86,7 @@ class SkillCatalog:
         return SkillContent(metadata=metadata, content=content)
 
     def validate_with_intent_taxonomy(self, taxonomy: IntentTaxonomy) -> None:
-        """Validate explicit skill intent bindings against the global taxonomy."""
+        """校验 Skill 显式绑定的 intent/sub_intent 是否存在于 taxonomy。"""
         errors: list[str] = []
         for skill in self.scan(force_reload=True):
             if skill.intent is None:

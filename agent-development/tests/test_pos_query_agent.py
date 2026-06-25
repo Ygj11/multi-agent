@@ -10,6 +10,7 @@ from app.agents.card_loader import AgentCardLoader
 from app.agents.selection import AgentSelectionNode
 from app.auth.principal import AuthContext, Principal
 from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.clients import IntegrationClients
 from app.integrations.pos_api_client import PosAPIClient
 from app.llm.schemas import LLMResponse
 from app.query.intent_recognition_node import IntentRecognitionNode
@@ -53,7 +54,7 @@ def _pos_registry(fake_client: FakePosAPIClient | None = None) -> ToolRegistry:
     register_agent_private_tools(
         registry,
         pos_tool_mode="real",
-        pos_api_client=fake_client or FakePosAPIClient(),
+        integration_clients=IntegrationClients(pos=fake_client or FakePosAPIClient()),
     )
     return registry
 

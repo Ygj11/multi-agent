@@ -9,6 +9,7 @@ from app.config.settings import Settings, get_settings
 from app.llm.model_config import get_llm_model
 from app.llm.schemas import LLMResponse
 from app.observability.logger import log_event, preview_text
+from app.runtime.async_client_lifecycle import AsyncClientLifecycle, AsyncClientLifecycleClosedError
 
 try:
     from openai import AsyncOpenAI
@@ -19,16 +20,41 @@ except ImportError:  # pragma: no cover - optional dependency path
 class OpenSDKLLMProvider:
     """Calls an OpenAI-compatible endpoint through the SDK."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        client: Any | None = None,
+        *,
+        owns_client: bool = False,
+    ) -> None:
         self.settings = settings or get_settings()
-        self.client = None
-        if not self.settings.enable_opensdk_llm and not self.settings.enable_real_llm:
+        enabled = client is not None or self.settings.enable_opensdk_llm or self.settings.enable_real_llm
+        self._client_lifecycle: AsyncClientLifecycle[Any] | None = None
+        if not enabled:
             return
+        if client is None:
+            if AsyncOpenAI is None:
+                raise RuntimeError("ENABLE_OPENSDK_LLM=true but the openai package is not installed")
+            if not self.settings.openai_api_key:
+                raise RuntimeError("ENABLE_OPENSDK_LLM=true but OPENAI_API_KEY is not configured")
+        self._client_lifecycle = AsyncClientLifecycle(
+            factory=self._build_client,
+            close_client=lambda value: value.close(),
+            client=client,
+            owns_client=owns_client,
+        )
+
+    @property
+    def client(self) -> Any | None:
+        """当前 SDK client，仅供诊断或测试读取。"""
+        if self._client_lifecycle is None:
+            return None
+        return self._client_lifecycle.client
+
+    def _build_client(self) -> Any:
         if AsyncOpenAI is None:
-            raise RuntimeError("ENABLE_OPENSDK_LLM=true but the openai package is not installed")
-        if not self.settings.openai_api_key:
-            raise RuntimeError("ENABLE_OPENSDK_LLM=true but OPENAI_API_KEY is not configured")
-        self.client = AsyncOpenAI(
+            raise RuntimeError("OpenAI SDK is not available")
+        return AsyncOpenAI(
             api_key=self.settings.openai_api_key,
             base_url=self.settings.openai_base_url,
             timeout=self.settings.openai_timeout,
@@ -42,6 +68,11 @@ class OpenSDKLLMProvider:
             if scene_model != self.settings.internal_llm_model:
                 return scene_model
         return self.settings.openai_model
+
+    async def close(self) -> None:
+        """关闭自有 SDK client；外部注入的共享 client 仍由调用方关闭。"""
+        if self._client_lifecycle is not None:
+            await self._client_lifecycle.close()
 
     async def chat(
         self,
@@ -58,7 +89,7 @@ class OpenSDKLLMProvider:
     ) -> LLMResponse:
         started = perf_counter()
         actual_model = self.get_llm_model(scene=scene, explicit_model=model)
-        if self.client is None:
+        if self._client_lifecycle is None:
             return LLMResponse(
                 content=None,
                 finish_reason="error",
@@ -76,7 +107,8 @@ class OpenSDKLLMProvider:
         if tools:
             kwargs["tools"] = tools
         try:
-            response = await self.client.chat.completions.create(**kwargs)
+            async with self._client_lifecycle.lease() as client:
+                response = await client.chat.completions.create(**kwargs)
             choice = response.choices[0]
             message = choice.message
             tool_calls = [call.model_dump() for call in (message.tool_calls or [])]
@@ -87,6 +119,15 @@ class OpenSDKLLMProvider:
                 reasoning_content=getattr(message, "reasoning_content", None),
                 finish_reason=choice.finish_reason or "stop",
                 raw_response=response.model_dump(),
+                model=actual_model,
+                request_id=request_id,
+                latency_ms=int((perf_counter() - started) * 1000),
+            )
+        except AsyncClientLifecycleClosedError:
+            result = LLMResponse(
+                content=None,
+                finish_reason="error",
+                error="opensdk_llm_closed",
                 model=actual_model,
                 request_id=request_id,
                 latency_ms=int((perf_counter() - started) * 1000),

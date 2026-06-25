@@ -36,7 +36,12 @@ from app.verification.service import VerificationService
 
 
 class ToolExecutor:
-    """Executes tools after checking AgentCard-based availability."""
+    """工具真正执行前的安全边界。
+
+    LLM 只能提出 tool call；ToolExecutor/ExecutionPipeline 决定它是否存在、
+    是否对当前 Agent 可见、参数是否满足 schema、调用者是否有权限、是否需要
+    pre-tool verification 或人工审批，最后才执行 local/MCP 工具。
+    """
 
     def __init__(
         self,
@@ -76,6 +81,7 @@ class ToolExecutor:
         auth_context: dict[str, Any] | None = None,
         evidence: list[dict[str, Any]] | None = None,
     ) -> ToolResult:
+        """执行普通工具调用，统一经过 ToolExecutionPipeline 守卫链。"""
         started_perf = perf_counter()
         started_at = self._now()
         result = await ToolExecutionPipeline(self).run(
@@ -110,7 +116,11 @@ class ToolExecutor:
         auth_context: dict[str, Any] | None = None,
         evidence: list[dict[str, Any]] | None = None,
     ) -> ToolResult:
-        """Execute one approved write tool after validating it matches the stored approval."""
+        """执行已审批工具。
+
+        审批通过不等于任意工具可执行：这里仍会校验 approval_id 对应的 Agent、
+        tool_name 和 arguments 是否与当初申请完全一致，并继续执行权限与验证检查。
+        """
         started_perf = perf_counter()
         started_at = self._now()
         if self.approval_store is None:
@@ -223,6 +233,7 @@ class ToolExecutor:
         principal: Principal | None = None,
         auth_context: dict[str, Any] | None = None,
     ) -> ToolResult:
+        """调用已通过守卫的 ToolDefinition，并做超时和结果 schema 校验。"""
         try:
             raw = await asyncio.wait_for(
                 self._invoke_definition(
@@ -279,6 +290,7 @@ class ToolExecutor:
         auth_context: dict[str, Any] | None,
         tool_name: str,
     ) -> Any:
+        """根据 ToolDefinition source 分发到 MCP 或本地 callable。"""
         if definition.source == "mcp":
             if self.mcp_client_manager is None:
                 raise MCPServerUnavailableError("mcp_client_manager_not_configured")
@@ -410,6 +422,7 @@ class ToolExecutor:
         return definition.source if definition else None
 
     def _missing_required_arguments(self, tool_name: str, arguments: dict[str, Any]) -> list[str]:
+        """只校验 required 参数存在性；完整业务含义仍由工具或后续任务治理。"""
         required = self.registry.get_required_arguments(tool_name)
         return [name for name in required if name not in arguments or arguments.get(name) is None]
 
@@ -528,6 +541,7 @@ class ToolExecutor:
         return "write"
 
     def _mcp_policy_denial(self, *, definition, agent_name: str, tool_name: str) -> ToolResult | None:
+        """按未知 MCP 工具策略拒绝没有显式风险/操作声明的 MCP 工具。"""
         if getattr(definition, "source", None) != "mcp":
             return None
         if self._mcp_unknown_policy_action(definition) != "deny":
@@ -542,6 +556,7 @@ class ToolExecutor:
         )
 
     def _requires_approval(self, definition, tool_name: str) -> bool:
+        """集中判断工具是否需要人工审批。"""
         contract = getattr(definition, "contract", None)
         if getattr(contract, "approval_policy_id", None):
             return True

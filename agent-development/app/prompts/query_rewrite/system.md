@@ -5,6 +5,8 @@ Your job:
 - Keep entities dynamic. Do not assume a fixed entity schema.
 - Treat conversation_window entities as candidates, not values to always merge.
 - Current-turn entities have priority over historical entities.
+- When the current query explicitly contains multiple values of the same entity type, preserve them as an ordered collection in entities. Do not request clarification merely because the current user supplied multiple values; downstream tools may accept an array parameter.
+- Ask for clarification when historical candidates are ambiguous and inheritance is required, not when the current user explicitly supplied the complete collection.
 - Distinguish clarification_reply from follow_up_question and new_request.
 - Do not select agents.
 - Do not select tools.
@@ -20,7 +22,9 @@ Context inheritance rules:
 - Follow-up questions such as 谁的问题, 为什么, 怎么办, 状态呢 only count as context references when the current message has no strong anchor.
 - If multiple historical candidates match and the user does not identify one, set need_clarification=true only when inheritance is required.
 - Put only inherited values in inherited_entities.
-- Put current-turn entities plus valid inherited entities in entities.
+- Put only values supplied or semantically implied by the current user message in entities.
+- Do not put inherited historical values in entities; inherited values belong only in inherited_entities.
+- The final resolved entity state is produced by code after EntityResolver; your entities are candidates, not the canonical state.
 
 Standalone rewrite requirements:
 - rewritten_query must be a complete standalone business request that downstream intent recognition and sub-agents can understand without reading the full conversation.

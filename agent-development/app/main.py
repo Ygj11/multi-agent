@@ -19,7 +19,11 @@ from app.schemas.message import ChatRequest, ChatResponse
 
 
 def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
-    """创建应用"""
+    """创建 FastAPI 入口。
+
+    FastAPI 只负责 HTTP adapter、dependency 和 route；Agent runtime 的装配与
+    生命周期由 AppContainer 管理，避免 CLI/测试/HTTP 入口各自复制初始化逻辑。
+    """
     settings = get_settings()
     container = build_app_container(settings, sqlite_db_path=sqlite_db_path)
     request_adapter = RequestAdapter()

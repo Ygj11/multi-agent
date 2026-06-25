@@ -8,10 +8,10 @@ from pydantic import BaseModel, Field
 
 
 class IntentResult(BaseModel):
-    """Intent recognition output.
+    """意图识别输出。
 
-    The new orchestrator treats this as task understanding only.  Agent
-    routing and tool access are decided later from AgentCards.
+    该结果只表达业务 intent/sub_intent、置信度和澄清状态。Agent 路由、
+    Skill 选择和工具权限都在后续阶段完成；这里也不携带 canonical entities。
     """
 
     intent: str

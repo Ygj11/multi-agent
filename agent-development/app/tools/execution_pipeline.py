@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-"""Execution pipeline for normal tool calls.
+"""普通工具调用的执行流水线。
 
-The pipeline keeps the public ToolExecutor API stable while making the guard
-order explicit and testable.
+Pipeline 把 ToolExecutor 的守卫顺序显式化，便于测试和审查。这里不做 LLM
+推理，只处理一次已经归一化的 tool call。
 """
 
 from dataclasses import dataclass
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class ToolExecutionContext:
+    """一次工具调用进入守卫链所需的上下文。"""
+
     agent_name: str
     tool_name: str
     arguments: dict[str, Any]
@@ -38,7 +40,7 @@ class ToolExecutionContext:
 
 
 class ToolExecutionPipeline:
-    """Run normal tool calls through ordered enterprise guards."""
+    """按固定顺序执行企业级工具守卫。"""
 
     def __init__(self, executor: ToolExecutor) -> None:
         self.executor = executor
@@ -49,7 +51,7 @@ class ToolExecutionPipeline:
         self.approval_guard = ToolApprovalGuard(executor)
 
     async def run(self, context: ToolExecutionContext) -> ToolResult:
-        """Tool existence check and Agent visibility check"""
+        # 1. 工具必须存在，并且对当前 AgentCard 可见。
         definition, exists_error = self.availability_guard.check_exists(
             agent_name=context.agent_name,
             tool_name=context.tool_name,
@@ -65,8 +67,8 @@ class ToolExecutionPipeline:
         if visibility_error is not None:
             return visibility_error
 
-        """LLM 可以提出工具调用，但系统必须先检查它给的参数是否满足工具执行契约；
-        不满足就把缺参错误作为 tool observation 返回给 LLM，让 LLM 有机会补参数或向用户澄清。"""
+        # 2. LLM 可以提出工具调用，但系统必须先检查参数是否满足工具执行契约；
+        # 不满足就把缺参错误作为 tool observation 返回给 LLM，让 LLM 有机会补参数或向用户澄清。
         missing_error = self.argument_guard.check_required(
             agent_name=context.agent_name,
             tool_name=context.tool_name,
@@ -75,9 +77,8 @@ class ToolExecutionPipeline:
         if missing_error is not None:
             return missing_error
 
-        """Pre-tool Authorization Check"""
+        # 3. 执行前权限检查：scope/resource 权限由确定性代码判断，不交给 LLM。
         principal_obj = self.executor._coerce_principal(context.principal)
-        """in fact: use ToolExecutor._authorize"""
         auth_error = await self.authorization_guard.check(
             definition=definition,
             principal=principal_obj,
@@ -87,6 +88,7 @@ class ToolExecutionPipeline:
         if auth_error is not None:
             return auth_error
 
+        # 4. pre-tool verification 可根据当前工具、参数和证据做额外策略检查。
         verification_error = await self.verification_guard.check(
             agent_name=context.agent_name,
             tool_name=context.tool_name,
@@ -101,6 +103,7 @@ class ToolExecutionPipeline:
         if verification_error is not None:
             return verification_error
 
+        # 5. MCP 工具如果没有显式风险/操作声明，按 UNKNOWN_MCP_TOOL_POLICY 处理。
         mcp_policy_error = self.executor._mcp_policy_denial(
             definition=definition,
             agent_name=context.agent_name,
@@ -109,6 +112,7 @@ class ToolExecutionPipeline:
         if mcp_policy_error is not None:
             return mcp_policy_error
 
+        # 6. 写操作、高风险操作或明确审批策略命中时，返回 pending approval，不执行工具。
         if self.approval_guard.requires_approval(definition, context.tool_name):
             return self.approval_guard.build_result(
                 agent_name=context.agent_name,
@@ -122,6 +126,7 @@ class ToolExecutionPipeline:
                 trace_id=context.trace_id,
             )
 
+        # 7. 所有守卫通过后才真正调用本地 callable 或 MCP server。
         return await self.executor._execute_definition(
             definition=definition,
             agent_name=context.agent_name,

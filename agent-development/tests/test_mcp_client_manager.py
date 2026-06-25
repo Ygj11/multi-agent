@@ -64,3 +64,44 @@ async def test_unknown_registered_tool_name_returns_error():
 
     with pytest.raises(MCPToolError):
         await manager.call_tool("mcp.workflow.unknown", {})
+
+
+@pytest.mark.asyncio
+async def test_shutdown_closes_all_created_clients_once():
+    clients = {}
+
+    def factory(config):
+        client = FakeMCPClient(config)
+        clients[config.server_name] = client
+        return client
+
+    manager = MCPClientManager(settings=Settings(), server_configs=[_config()], client_factory=factory)
+    await manager.initialize()
+
+    await manager.shutdown()
+    await manager.shutdown()
+
+    assert clients["workflow"].close_calls == 1
+    assert manager.clients == {}
+
+
+@pytest.mark.asyncio
+async def test_each_mcp_server_gets_a_distinct_client_instance():
+    created = []
+
+    def factory(config):
+        client = FakeMCPClient(config)
+        created.append(client)
+        return client
+
+    manager = MCPClientManager(
+        settings=Settings(),
+        server_configs=[_config("workflow", "mcp.workflow"), _config("audit", "mcp.audit")],
+        client_factory=factory,
+    )
+
+    await manager.initialize()
+
+    assert len(created) == 2
+    assert manager.clients["workflow"] is not manager.clients["audit"]
+    await manager.shutdown()

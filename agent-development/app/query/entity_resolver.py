@@ -1,21 +1,23 @@
 from __future__ import annotations
 
-"""Canonical entity resolution for query understanding.
+"""查询理解阶段的 canonical 实体解析服务。
 
-entity_bag is the canonical internal entity state.
-entities is only a derived compatibility view built from entity_bag.to_compact_dict().
+`entity_bag` 是内部唯一事实源，保留来源、置信度、turn_id、敏感标记和
+继承/纠正等 metadata。`entities` 只是 `entity_bag.to_compact_dict()` 生成的
+兼容投影，供 Agent/Skill 打分、prompt 和 API 兼容使用，不能作为另一份状态
+独立维护。
 """
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.query.entity_extractor import EntityTypeRegistry, default_entity_type_registry
 from app.schemas.entities import EntityBag, EntityMention
 
 
 @dataclass(frozen=True)
 class EntityConflict:
-    """One unresolved conflict for an entity type."""
+    """某一实体类型下无法静默选择的冲突候选。"""
 
     entity_type: str
     values: list[str]
@@ -25,7 +27,7 @@ class EntityConflict:
 
 @dataclass(frozen=True)
 class EntityResolutionResult:
-    """Resolved canonical bag plus clarification metadata."""
+    """解析后的 canonical EntityBag，以及可能需要澄清的冲突信息。"""
 
     entity_bag: EntityBag
     conflicts: list[EntityConflict] = field(default_factory=list)
@@ -34,8 +36,14 @@ class EntityResolutionResult:
 
 
 class EntityResolver:
-    """Resolve aliases, merge mentions, and apply one entity overwrite policy."""
+    """实体解析与规范化。
 
+    Resolver 集中维护实体 alias、值校验、覆盖优先级和冲突策略。调用方不能
+    使用 `{**old_entities, **new_entities}` 自行覆盖实体，否则会绕过当前轮优先、
+    LLM 低置信过滤、历史唯一继承和多候选澄清这些安全约束。
+    """
+
+    # 别名归一化 (Alias Normalization)
     _ALIASES = {
         "policyno": "policy_no",
         "policy_no": "policy_no",
@@ -74,6 +82,8 @@ class EntityResolver:
         "idno": "id_card",
         "id_no": "id_card",
     }
+
+    # 来源优先级管理 (Source Priority)
     _SOURCE_PRIORITY = {
         "current_query": 100,
         "rule": 90,
@@ -82,22 +92,13 @@ class EntityResolver:
         "summary": 40,
         "tool_result": 30,
     }
-    _LLM_MIN_CONFIDENCE = 0.75
-    _FORMAT_PATTERNS = {
-        "policy_no": re.compile(r"^920\d{13}$", re.IGNORECASE),
-        "apply_seq": re.compile(r"^930\d{12}$", re.IGNORECASE),
-        "endorseType": re.compile(r"^00\d{4}$", re.IGNORECASE),
-        "request_id": re.compile(r"^REQ(?:[_-]?[0-9][A-Za-z0-9_-]*|[_-][A-Za-z0-9_-]+)$", re.IGNORECASE),
-        "error_code": re.compile(r"^(?:E|ERR[_-]?|ERROR[_-]?)\d{3,6}$", re.IGNORECASE),
-        "claim_no": re.compile(r"^(?:CLM|CLAIM)[_-]?[A-Za-z0-9_-]+$", re.IGNORECASE),
-        "product_code": re.compile(r"^PM[A-Za-z0-9_-]{1,30}$", re.IGNORECASE),
-        "plan_code": re.compile(r"^H[A-Za-z0-9_-]{1,30}$", re.IGNORECASE),
-        "phone_number": re.compile(r"^1[3-9]\d{9}$"),
-        "id_card": re.compile(
-            r"^[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[0-9X]$",
-            re.IGNORECASE,
-        ),
-    }
+
+    # LLM 实体只是候选，低于该置信度不进入 canonical entity_bag。
+    _LLM_MIN_CONFIDENCE = 0.6
+
+    def __init__(self, entity_type_registry: EntityTypeRegistry | None = None) -> None:
+        """使用实体 YAML 注册表校验候选值，避免格式规则在代码中重复维护。"""
+        self.entity_type_registry = entity_type_registry or default_entity_type_registry()
 
     def resolve(
         self,
@@ -105,12 +106,36 @@ class EntityResolver:
         base_bag: EntityBag,
         candidate_bag: EntityBag,
         stage: str,
+        parallel_current_entity_types: set[str] | None = None,
     ) -> EntityResolutionResult:
-        """Merge two bags and return the resolved canonical entity state."""
+        """
+        1. 别名归一化：policyNo -> policy_no，applySeq -> apply_seq
+        2. 规范化值：REQ、错误码、产品/险种编码、身份证等转大写
+        3. 丢弃否定值、低置信 LLM 值、value_regex 不合法的值
+        4. 按实体类型分组；同类型同值去重
+        5. 按来源优先级选择，或保留当前轮明确的多值集合
+        6. 无法安全选择时返回 conflicts 与 clarification_question
+
+
+
+        情况	Resolver 行为	                                                                                是否澄清
+        同类型同值多处出现	去重，保留优先级/置信度更高的一条	                                                         否
+        当前用户明确输入多个同类值	保留为有序集合，metadata 标记 collection_semantics=explicit_current_values	         否
+        历史或其他候选同优先级出现多个不同值	生成 EntityConflict	                                                     是
+
+        “不是 A，是 B”属于更正，不属于多值集合：否定的 A 被丢弃，correction=true 的 B 被保留。
+        """
         normalized = EntityBag()
+        # 1. 分别规范化 base_bag 和 candidate_bag
         self._extend(normalized, self.normalize_bag(base_bag, stage=stage))
         self._extend(normalized, self.normalize_bag(candidate_bag, stage=stage))
-        resolved, conflicts = self._select_by_type(normalized)
+
+        # 同一当前轮中明确给出的多个值表示用户请求的对象集合，不是历史引用歧义。
+        parallel_types = {
+            self.canonical_type(entity_type)
+            for entity_type in (parallel_current_entity_types or set())
+        }
+        resolved, conflicts = self._select_by_type(normalized, parallel_current_entity_types=parallel_types)
         clarification_question = self._clarification_question(conflicts)
         return EntityResolutionResult(
             entity_bag=resolved,
@@ -120,7 +145,7 @@ class EntityResolver:
         )
 
     def normalize_bag(self, bag: EntityBag, *, stage: str) -> EntityBag:
-        """Normalize entity aliases and drop invalid low-quality candidates."""
+        """统一 alias、规范化值，并丢弃低质量候选。"""
         normalized = EntityBag()
         for mentions in bag.entities.values():
             for mention in mentions:
@@ -151,11 +176,23 @@ class EntityResolver:
 
     @classmethod
     def compact_from_bag(cls, bag: EntityBag) -> dict[str, Any]:
-        """Build the compact compatibility view from canonical entity_bag."""
+        """从 canonical entity_bag 生成兼容 compact entities。"""
         resolver = cls()
         return resolver.normalize_bag(bag, stage="compact_projection").to_compact_dict()
 
-    def _select_by_type(self, bag: EntityBag) -> tuple[EntityBag, list[EntityConflict]]:
+    # 冲突检测与解决 (Conflict Resolution)
+    def _select_by_type(
+        self,
+        bag: EntityBag,
+        *,
+        parallel_current_entity_types: set[str],
+    ) -> tuple[EntityBag, list[EntityConflict]]:
+        """按实体类型去重、择优，并区分当前轮集合与未决冲突。
+        两种情况：
+        1、冲突：同一类型有多个不同值，需要用户澄清
+
+        2、当前轮多值集合：用户在同一轮中明确提供了多个值（如多个保单号），这些值应该全部保留
+        """
         resolved = EntityBag()
         conflicts: list[EntityConflict] = []
         for entity_type in sorted(bag.entities):
@@ -178,9 +215,31 @@ class EntityResolver:
             top_candidates = [mention for mention in ranked if self._priority(mention) == top_priority]
             correction_candidates = [mention for mention in top_candidates if mention.metadata.get("correction")]
             if correction_candidates:
+                # 用户修正的值优先
                 top_candidates = correction_candidates
             top_values = self._distinct_values(top_candidates)
             if len(top_values) > 1:
+                if self._is_explicit_current_collection(
+                    entity_type=entity_type,
+                    mentions=top_candidates,
+                    parallel_current_entity_types=parallel_current_entity_types,
+                ):
+                    # 集合顺序应与用户在当前文本中的出现顺序一致，而不是优先级排序顺序。
+                    for mention in sorted(
+                        top_candidates,
+                        key=lambda item: int(item.metadata.get("span_start", -1) or -1),
+                    ):
+                        resolved.add(
+                            mention.model_copy(
+                                update={
+                                    "metadata": {
+                                        **mention.metadata,
+                                        "collection_semantics": "explicit_current_values",
+                                    }
+                                }
+                            )
+                        )
+                    continue
                 conflicts.append(
                     EntityConflict(
                         entity_type=entity_type,
@@ -195,7 +254,22 @@ class EntityResolver:
             resolved.add(ranked[0])
         return resolved, conflicts
 
+    @staticmethod
+    def _is_explicit_current_collection(
+        *,
+        entity_type: str,
+        mentions: list[EntityMention],
+        parallel_current_entity_types: set[str],
+    ) -> bool:
+        """仅允许当前轮明确输入的同类多值作为并行对象集合保留。"""
+        return (
+            entity_type in parallel_current_entity_types
+            and bool(mentions)
+            and all(mention.source == "current_query" for mention in mentions)
+        )
+
     def _best_mentions_by_value(self, mentions: list[EntityMention]) -> dict[str, EntityMention]:
+        # 同值去重，只保留优先级/置信度更高的那条
         grouped: dict[str, EntityMention] = {}
         for mention in mentions:
             value = mention.effective_value
@@ -233,10 +307,7 @@ class EntityResolver:
             return False
         if mention.source == "llm" and mention.confidence < self._LLM_MIN_CONFIDENCE:
             return False
-        pattern = self._FORMAT_PATTERNS.get(mention.type)
-        if pattern is None:
-            return bool(mention.effective_value)
-        return bool(pattern.fullmatch(mention.effective_value))
+        return self.entity_type_registry.accepts(mention.type, mention.effective_value)
 
     @staticmethod
     def _normalize_value(entity_type: str, value: str) -> str:
@@ -254,7 +325,11 @@ class EntityResolver:
 
 
 def build_entity_state_updates(entity_bag: EntityBag) -> dict[str, Any]:
-    """Return synchronized graph updates for canonical entity_bag and compact entities."""
+    """生成 Graph 实体字段的唯一同步更新入口。
+
+    任何节点只要改变实体，都必须同时写 `entity_bag` 与由其派生的 `entities`。
+    这样可以避免 state 中出现两份版本不同的实体状态。
+    """
     canonical_bag = EntityResolver().normalize_bag(entity_bag, stage="state_update")
     return {
         "entity_bag": canonical_bag.model_dump(),

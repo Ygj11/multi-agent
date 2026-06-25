@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""Intent recognition with LLM JSON primary path and entity-aware fallback."""
+"""意图识别节点。
+
+本节点只负责识别系统允许的 intent/sub_intent，并给出置信度、澄清与降级原因。
+canonical 实体状态已经在 Query Rewrite 阶段完成，LLM 即使返回实体相关内容，
+也不能在这里写回 `entity_bag`。
+"""
 
 from typing import Any
 
@@ -29,7 +34,7 @@ from app.schemas.intent import IntentResult
 
 
 class IntentRecognitionNode:
-    """Recognize business intent without choosing tools."""
+    """识别业务意图，不选择 Agent、Skill 或工具。"""
 
     def __init__(
         self,
@@ -59,7 +64,7 @@ class IntentRecognitionNode:
         trace_id: str | None = None,
         session_key: str | None = None,
     ) -> IntentResult:
-        """Classify intent and sub_intent; never select tools."""
+        """分类 intent/sub_intent；实体只读，工具和 Agent 后续再选。"""
         resolved_bag = self._resolved_bag(entity_bag=entity_bag, current_entities=current_entities)
         entities = resolved_bag.to_compact_dict()
         window = self._window(conversation_window, short_summary, recent_messages, resolved_bag)
@@ -183,6 +188,8 @@ class IntentRecognitionNode:
                 extra=parse_trace,
             )
         intent = output.intent or "unknown"
+        # LLM 输出只能在 taxonomy 白名单内选择意图；非法 intent 触发降级，
+        # 不允许模型临时发明新业务意图进入主路由。
         if not self._is_allowed_intent(intent, allowed_intents):
             return None, LLMAttempt(
                 llm_status=LLM_STATUS_INVALID_OUTPUT,
@@ -194,6 +201,8 @@ class IntentRecognitionNode:
         need_clarification = output.need_clarification or confidence < 0.35
         sub_intent_raw = output.sub_intent
         sub_intent = self._validated_sub_intent(sub_intent_raw, intent, candidate_sub_intents)
+        # sub_intent 同样按 taxonomy 分组白名单校验。未配置子意图时表示没有合法子意图，
+        # 不是“允许任意 sub_intent”。
         invalid_sub_intent = sub_intent_raw not in (None, "") and sub_intent is None
         if sub_intent_raw not in (None, "") and sub_intent is None:
             need_clarification = True if confidence < 0.75 else need_clarification
@@ -296,6 +305,8 @@ class IntentRecognitionNode:
         entity_bag: dict[str, Any] | None,
         current_entities: dict[str, Any] | None,
     ) -> EntityBag:
+        # 兼容旧调用：如果上游只给 compact entities，则临时转成 EntityBag 读取。
+        # 这是只读兼容路径，不能把转换结果作为新的 canonical entity_bag 写回 Graph。
         if entity_bag:
             try:
                 return self.entity_resolver.normalize_bag(EntityBag(**entity_bag), stage="intent_recognition_read")

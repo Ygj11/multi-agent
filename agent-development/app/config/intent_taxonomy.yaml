@@ -1,5 +1,9 @@
-# ``sub_intents`` 是严格白名单。省略它（或写成 ``{}``）表示父 intent
-# 没有合法 sub_intent，绝不表示可以接受任意值。
+# intent_taxonomy.yaml 是系统级意图值域。
+# IntentRecognition 的 LLM 和规则 fallback 只能选择这里定义的 intent/sub_intent。
+# AgentCard.supported_routes 与 Skill frontmatter.intent/sub_intents 必须引用这里的合法值。
+# display_name / description / examples 会进入意图识别提示词，辅助 LLM 理解业务语义。
+# sub_intents 是严格白名单；省略它（或写成 {}）表示父 intent 没有合法 sub_intent，
+# 绝不表示可以接受任意值。
 intents:
   troubleshooting:
     display_name: 问题排查

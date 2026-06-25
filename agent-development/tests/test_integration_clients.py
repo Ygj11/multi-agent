@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 
 import pytest
@@ -24,6 +25,105 @@ def test_base_http_client_passes_trace_headers_and_masks_sensitive_values():
         "password": "***",
         "nested": {"token": "***"},
     }
+
+
+@pytest.mark.asyncio
+async def test_base_http_client_reuses_one_pool_and_closes_it(monkeypatch):
+    created = []
+
+    class FakeResponse:
+        status_code = 200
+        url = "https://example.test/items"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"success": True}
+
+    class FakeAsyncClient:
+        is_closed = False
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.calls = []
+            created.append(self)
+
+        async def request(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return FakeResponse()
+
+        async def aclose(self):
+            self.is_closed = True
+
+    monkeypatch.setattr("app.integrations.base_http_client.httpx.AsyncClient", FakeAsyncClient)
+    client = BaseIntegrationHTTPClient(base_url="https://example.test", timeout=2.0)
+
+    assert await client.get_json("/items") == {"success": True}
+    assert await client.get_json("/items") == {"success": True}
+
+    assert len(created) == 1
+    assert len(created[0].calls) == 2
+    await client.close()
+    assert created[0].is_closed is True
+
+
+@pytest.mark.asyncio
+async def test_base_http_client_keeps_request_headers_isolated_under_concurrency(monkeypatch):
+    captured_headers = []
+
+    class FakeResponse:
+        status_code = 200
+        url = "https://example.test/items"
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"success": True}
+
+    class FakeAsyncClient:
+        is_closed = False
+
+        def __init__(self, **kwargs):
+            pass
+
+        async def request(self, *args, **kwargs):
+            captured_headers.append(dict(kwargs["headers"]))
+            return FakeResponse()
+
+        async def aclose(self):
+            self.is_closed = True
+
+    monkeypatch.setattr("app.integrations.base_http_client.httpx.AsyncClient", FakeAsyncClient)
+    client = BaseIntegrationHTTPClient(base_url="https://example.test")
+
+    await asyncio.gather(
+        client.get_json("/items", request_id="req-a", trace_id="trace-a"),
+        client.get_json("/items", request_id="req-b", trace_id="trace-b"),
+    )
+
+    assert {headers["X-Request-Id"] for headers in captured_headers} == {"req-a", "req-b"}
+    assert {headers["X-Trace-Id"] for headers in captured_headers} == {"trace-a", "trace-b"}
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_base_http_client_does_not_close_external_injected_client():
+    class FakeAsyncClient:
+        is_closed = False
+        close_calls = 0
+
+        async def aclose(self):
+            self.close_calls += 1
+            self.is_closed = True
+
+    external = FakeAsyncClient()
+    client = BaseIntegrationHTTPClient(base_url="https://example.test", client=external)
+
+    await client.close()
+
+    assert external.close_calls == 0
 
 
 @pytest.mark.asyncio

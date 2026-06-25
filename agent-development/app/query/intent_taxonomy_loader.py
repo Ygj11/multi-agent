@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-"""Load and expose the global intent taxonomy."""
+"""加载系统级意图 taxonomy。
+
+Taxonomy 定义“系统认识哪些业务意图值”，不是 AgentCard，也不是 Skill。
+AgentCard 和 Skill 必须引用这里的合法值，避免 LLM 或配置临时创造未治理 route。
+"""
 
 from pathlib import Path
 from typing import Any

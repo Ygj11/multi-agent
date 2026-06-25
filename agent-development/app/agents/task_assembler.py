@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Build canonical sub-agent tasks from orchestrator state."""
+"""从主上下文组装子 Agent 任务协议。"""
 
 from typing import Any
 from uuid import uuid4
@@ -11,7 +11,11 @@ from app.schemas.subagent import SubAgentTask
 
 
 class AgentTaskAssembler:
-    """Assemble the compact protocol handed from the main agent to a sub agent."""
+    """把主 Agent 已确定的路由结果封装成 SubAgentTask。
+
+    该类只做协议组装，不做复杂规划、不重新选择 Agent、不读取 Skill 内容。
+    主/子 Agent 之间通过这个稳定任务对象解耦。
+    """
 
     def assemble(
         self,

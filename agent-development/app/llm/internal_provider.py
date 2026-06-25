@@ -17,14 +17,27 @@ from app.config.settings import Settings, get_settings
 from app.llm.model_config import get_llm_model
 from app.llm.schemas import LLMResponse
 from app.observability.logger import log_event, preview_text
+from app.runtime.async_client_lifecycle import AsyncClientLifecycle
 
 
 class InternalLLMProvider:
     """Calls the internal LLM HTTP endpoint and returns normalized responses."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        client: httpx.AsyncClient | None = None,
+        *,
+        owns_client: bool = False,
+    ) -> None:
         self.settings = settings or get_settings()
         self.base_url = self.settings.internal_llm_api_url
+        self._client_lifecycle = AsyncClientLifecycle(
+            factory=lambda: httpx.AsyncClient(timeout=self.settings.internal_llm_timeout),
+            close_client=lambda value: value.aclose(),
+            client=client,
+            owns_client=owns_client,
+        )
 
     def get_llm_model(self, scene: str | None = None, explicit_model: str | None = None) -> str:
         return get_llm_model(self.settings, scene=scene, explicit_model=explicit_model)
@@ -63,7 +76,7 @@ class InternalLLMProvider:
             max_tokens=max_tokens,
         )
         try:
-            async with httpx.AsyncClient(timeout=self.settings.internal_llm_timeout) as client:
+            async with self._client_lifecycle.lease() as client:
                 resp = await client.post(
                     self.base_url,
                     headers={"Content-Type": "application/json"},
@@ -96,6 +109,14 @@ class InternalLLMProvider:
             )
             self._log(scene, response, trace_id=trace_id, session_key=session_key)
             return response
+
+    async def close(self) -> None:
+        """关闭自有 LLM 连接池；外部注入 client 仍由调用方关闭。"""
+        await self._client_lifecycle.close()
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """仅供测试断言当前 client；生产请求通过 lease() 借用。"""
+        return await self._client_lifecycle.get_client_for_testing()
 
     def _build_payload(
         self,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""AgentCard schemas used by orchestrator-side discovery and selection."""
+"""主流程发现和选择子 Agent 使用的内部 AgentCard schema。"""
 
 from typing import Any, Literal
 
@@ -41,7 +41,11 @@ class MCPPolicy(BaseModel):
 
 
 class AgentCard(BaseModel):
-    """Structured description of a sub agent discoverable by the main agent."""
+    """主 Agent 可发现的子 Agent 能力与治理声明。
+
+    这是内部路由卡，不等同于对外服务发现协议。运行时会用它做 route 白名单、
+    工具可见性、Skill 绑定、RAG namespace 和访问策略控制。
+    """
 
     agent_name: str
     display_name: str
@@ -103,7 +107,7 @@ class AgentCard(BaseModel):
 
 
 class AgentCandidate(BaseModel):
-    """A scored candidate produced from AgentCard matching."""
+    """AgentCard 匹配产生的带分候选。"""
 
     agent_name: str
     card: AgentCard
@@ -114,7 +118,7 @@ class AgentCandidate(BaseModel):
 
 
 class AgentSelectionResult(BaseModel):
-    """Final selection decision used by the orchestrator."""
+    """主 Graph 使用的 Agent 最终选择结果。"""
 
     selected_agent: str
     confidence: float

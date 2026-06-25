@@ -54,14 +54,22 @@ class SkillMetadata(BaseModel):
 
 
 class SkillContent(BaseModel):
-    """选中 skill 后才加载的完整 SKILL.md 内容。"""
+    """选中 Skill 后才加载的完整 SKILL.md 内容。
+
+    Skill 内容是业务 SOP，会进入子 Agent prompt；未入选的 Skill 只暴露
+    metadata 给选择器，避免把所有 SOP 一次性塞给 LLM。
+    """
 
     metadata: SkillMetadata
     content: str
 
 
 class SkillSelectionContext(BaseModel):
-    """SkillSelector 使用的最小必要上下文。"""
+    """SkillSelector 使用的最小必要上下文。
+
+    这里来自 OrchestratorContext + SubAgentTask，是“在已选 Agent 内选择 Skill”
+    的上下文，不承担 Agent 路由职责。
+    """
 
     agent_name: str
     intent: str

@@ -15,6 +15,10 @@ class PosAPIClient:
     def __init__(self, http_client: BaseIntegrationHTTPClient) -> None:
         self.http = http_client
 
+    async def close(self) -> None:
+        """释放 POS HTTP 连接池。"""
+        await self.http.close()
+
     async def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         """POST JSON to one POS endpoint and return a normalized result dict."""
         started = perf_counter()

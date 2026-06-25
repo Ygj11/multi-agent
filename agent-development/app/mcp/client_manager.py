@@ -17,9 +17,15 @@ from app.observability.logger import log_event
 
 ClientFactory = Callable[[MCPServerConfig], MCPClient]
 
-
 class MCPClientManager:
-    """Creates MCP clients, refreshes capabilities, and routes tool calls."""
+    """创建 MCP client、刷新能力并路由 MCP 工具调用。
+
+    MCP 链路：
+    Settings 配置 server -> initialize/list_tools 发现能力 ->
+    MCPCapabilityRegistry 缓存 -> AppContainer 注册到 ToolRegistry ->
+    AgentCard.mcp_policy.enabled 决定 Agent 是否可见 -> LLM 提出 tool call ->
+    ToolExecutor 守卫通过后 -> MCPClientManager.call_tool 调远程 server。
+    """
 
     def __init__(
         self,
@@ -34,49 +40,82 @@ class MCPClientManager:
         self.server_configs = server_configs if server_configs is not None else parse_mcp_server_configs(settings.mcp_servers_json)
         self.client_factory = client_factory or self._default_client_factory
         self.clients: dict[str, MCPClient] = {}
+        self._lifecycle_lock = asyncio.Lock()
+        self._initialized = False
+        self._closed = False
 
     async def initialize(self) -> None:
         """Initialize enabled servers and discover tools without failing app startup."""
-        for config in self.server_configs:
-            if not config.enabled:
-                continue
-            try:
-                client = self.client_factory(config)
-                self.clients[config.server_name] = client
-                await client.initialize()
-                tools = await client.list_tools()
-                self.capability_registry.upsert_tools(config.server_name, tools)
-                log_event(
-                    "mcp_server_initialized",
-                    node="mcp_client_manager",
-                    message="MCP server initialized",
-                    data={"server_name": config.server_name, "tool_count": len(tools)},
-                )
-            except Exception as exc:
-                self.capability_registry.mark_server_unavailable(config.server_name, str(exc))
-                log_event(
-                    "mcp_server_unavailable",
-                    level="WARNING",
-                    node="mcp_client_manager",
-                    message="MCP server unavailable during initialize",
-                    data={"server_name": config.server_name, "error": str(exc)},
-                )
-
-    async def refresh_capabilities(self) -> None:
-        """Refresh capabilities. Failed servers keep previous tool cache."""
-        for config in self.server_configs:
-            if not config.enabled:
-                continue
-            client = self.clients.get(config.server_name)
-            try:
-                if client is None:
+        async with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("MCPClientManager is closed")
+            if self._initialized:
+                return
+            for config in self.server_configs:
+                if not config.enabled:
+                    continue
+                try:
                     client = self.client_factory(config)
                     self.clients[config.server_name] = client
                     await client.initialize()
-                tools = await client.list_tools()
-                self.capability_registry.upsert_tools(config.server_name, tools)
+                    tools = await client.list_tools()
+                    self.capability_registry.upsert_tools(config.server_name, tools)
+                    log_event(
+                        "mcp_server_initialized",
+                        node="mcp_client_manager",
+                        message="MCP server initialized",
+                        data={"server_name": config.server_name, "tool_count": len(tools)},
+                    )
+                except Exception as exc:
+                    self.capability_registry.mark_server_unavailable(config.server_name, str(exc))
+                    log_event(
+                        "mcp_server_unavailable",
+                        level="WARNING",
+                        node="mcp_client_manager",
+                        message="MCP server unavailable during initialize",
+                        data={"server_name": config.server_name, "error": str(exc)},
+                    )
+            self._initialized = True
+
+    async def refresh_capabilities(self) -> None:
+        """Refresh capabilities. Failed servers keep previous tool cache."""
+        async with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("MCPClientManager is closed")
+            for config in self.server_configs:
+                if not config.enabled:
+                    continue
+                client = self.clients.get(config.server_name)
+                try:
+                    if client is None:
+                        client = self.client_factory(config)
+                        self.clients[config.server_name] = client
+                        await client.initialize()
+                    tools = await client.list_tools()
+                    self.capability_registry.upsert_tools(config.server_name, tools)
+                except Exception as exc:
+                    self.capability_registry.mark_server_unavailable(config.server_name, str(exc))
+
+    async def shutdown(self) -> None:
+        """关闭所有已创建的 MCP client，不让单个关闭失败阻断其余资源释放。"""
+        async with self._lifecycle_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._initialized = False
+            clients = list(self.clients.items())
+            self.clients.clear()
+        for server_name, client in clients:
+            try:
+                await client.close()
             except Exception as exc:
-                self.capability_registry.mark_server_unavailable(config.server_name, str(exc))
+                log_event(
+                    "mcp_client_close_failed",
+                    level="WARNING",
+                    node="mcp_client_manager",
+                    message="MCP client close failed",
+                    data={"server_name": server_name, "error": str(exc)},
+                )
 
     async def call_tool(self, registered_tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Route a registered MCP tool call to its owning server."""
@@ -118,4 +157,3 @@ def parse_mcp_server_configs(raw: str | None) -> list[MCPServerConfig]:
     if not isinstance(data, list):
         raise ValueError("MCP_SERVERS_JSON must be a JSON array")
     return [MCPServerConfig(**item) for item in data]
-

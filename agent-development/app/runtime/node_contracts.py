@@ -16,7 +16,11 @@ from app.runtime import failure_codes
 
 
 class NodeContract(BaseModel):
-    """Input/output/route contract for a graph node."""
+    """Graph 节点的静态输入输出契约。
+
+    该契约用于架构检查和测试快照，帮助发现节点悄悄扩大 State 的情况。
+    它不参与业务执行，也不会在 LangGraph 运行时自动阻断节点。
+    """
 
     node_name: str
     required_inputs: list[str]
@@ -233,5 +237,5 @@ def validate_node_contracts() -> list[str]:
 
 
 def contract_snapshot() -> dict[str, dict[str, Any]]:
-    """Serializable node contract snapshot for debugging/tests."""
+    """生成可序列化快照，供测试和架构审查比较。"""
     return {name: contract.model_dump() for name, contract in NODE_CONTRACTS.items()}

@@ -20,7 +20,11 @@ class RequiredEntityCheckResult:
 
 
 class RequiredEntityChecker:
-    """Check Skill.required_entities against dynamic EntityBag."""
+    """基于 resolved EntityBag 检查 Skill.required_entities。
+
+    这里不做新的正则抽取，也不从任意文本里猜实体。compact entities 为空时，
+    只允许从 EntityBag 中唯一高置信值补齐；多值歧义或缺失都转澄清。
+    """
 
     DISPLAY_NAMES = {
         "apply_seq": "保全受理号 apply_seq",

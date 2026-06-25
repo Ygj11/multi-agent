@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Human approval workflow service."""
+"""人工审批工作流服务。"""
 
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -23,7 +23,12 @@ from app.verification.service import VerificationService
 
 
 class ApprovalService:
-    """Creates approvals, submits them externally, and resumes approved flows."""
+    """创建审批、提交外部审批系统，并在审批通过后恢复流程。
+
+    当前恢复机制依赖 ApprovalStore 保存 resume_state 与 pending tool loop 数据，
+    不是 LangGraph 原生 interrupt。审批记录是外部审批台账，checkpoint 是 Graph
+    状态快照，两者职责不同。
+    """
 
     def __init__(
         self,
@@ -78,6 +83,7 @@ class ApprovalService:
         pending_tools: list[dict[str, Any]],
         pending_tool_call: dict[str, Any],
     ) -> ApprovalRequest:
+        """持久化一次待审批工具调用及恢复所需状态。"""
         approval_id = f"approval_{uuid4().hex}"
         root_id = root_approval_id or approval_id
         resume_state_payload = {

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""AgentCard loading and rule-based matching."""
+"""AgentCard 加载、校验和规则候选召回。
+
+AgentCard 是子 Agent 的内部能力与治理声明：它说明该 Agent 支持哪些 route、
+可见哪些工具、绑定哪些 Skill、使用哪些 namespace。它不是对外 Public
+AgentCard，也不直接执行任务。
+"""
 
 from pathlib import Path
 from typing import Any
@@ -15,7 +20,7 @@ from app.skills.catalog import SkillCatalog
 
 
 class AgentCardLoader:
-    """Loads AgentCards and exposes discovery/matching APIs."""
+    """加载 AgentCard，并提供候选匹配能力。"""
 
     def __init__(self, cards_root: Path, routing_policy: AgentRoutingPolicy | None = None) -> None:
         self.cards_root = cards_root
@@ -61,7 +66,53 @@ class AgentCardLoader:
         query: str,
         sub_intent: str | None = None,
     ) -> list[AgentCandidate]:
-        """Score cards using intent, entity, capability, keyword, and enabled signals."""
+        """
+        为给定的用户请求匹配最合适的 Agent 候选列表。
+
+        使用多维度加权评分系统，从所有可用 Agent 卡片中计算匹配分数，
+        并按分数降序返回候选列表。
+
+        Args:
+            intent: 用户意图（如 "book_flight", "check_weather"）
+            entities: 从用户查询中提取的实体字典
+            query: 原始用户查询文本
+            sub_intent: 可选的子意图，用于更精细的意图匹配
+
+        Returns:
+            按分数降序排列的 AgentCandidate 列表，分数相同则按名称排序
+
+        Scoring Strategy:
+            评分基于以下维度（权重由 routing_policy 配置）：
+
+            1. 意图匹配 (intent_match)
+               - 精确匹配: intent 在 card.supported_routes 中
+               - 关键词匹配: intent 在 card.capabilities 或 description 中
+
+            2. 子意图匹配 (sub_intent_match)
+               - sub_intent 在卡片的支持子意图列表中
+
+            3. 实体匹配
+               - required_entity_present: 每个存在的必填实体加分
+               - required_entity_missing: 每个缺失的必填实体扣分（负权重）
+               - optional_entity_present: 每个存在的可选实体加分
+
+            4. 能力关键词匹配 (capability_keyword)
+               - card.capabilities 中的词出现在 query 中
+
+            5. 查询关键词匹配 (query_keyword)
+               - query 分词后的每个 token 出现在卡片文本中
+               - 卡片文本包括: agent_name, display_name, description,
+                 capabilities, supported_intents, supported_sub_intents,
+                 supported_routes, optional_entities, rag_namespaces, examples
+
+            6. 启用状态 (enabled)
+               - card.enabled == True 时加分
+
+            Note:
+                - 所有分数累加，最终得分越高表示 Agent 越匹配
+                - 缺失必填实体会产生负分，优先选择能完整处理请求的 Agent
+                - 权重值通过 self.routing_policy.weight() 获取，可在配置中调整 -》routing_policy.yaml
+        """
         candidates: list[AgentCandidate] = []
         query_l = query.lower()
         entity_keys = {key for key, value in entities.items() if value not in (None, "", [])}
@@ -74,6 +125,8 @@ class AgentCardLoader:
             missing_entities = [name for name in card.required_entities if name not in entity_keys]
             matched_entities: list[str] = []
 
+            # supported_routes 是 Agent 级路由白名单。命中它表示“这个 Agent
+            # 声明可处理该 intent/sub_intent”，后续仍需权限、Skill 和工具校验。
             if intent in routes:
                 score += self.routing_policy.weight("intent_match")
                 reasons.append(f"intent matched: {intent}")
@@ -108,6 +161,8 @@ class AgentCardLoader:
                 reasons.append(f"optional entities matched: {optional_matches}")
 
             for capability in card.capabilities:
+                # capabilities 只是语义画像和规则加分信号，不是可执行动作。
+                # 真正可执行能力必须来自 private_tools/public_tools/MCP tools。
                 normalized = capability.replace("_", " ").lower()
                 if capability.lower() in query_l or normalized in query_l:
                     score += self.routing_policy.weight("capability_keyword")
@@ -152,7 +207,11 @@ class AgentCardLoader:
         return candidates
 
     def validate_with_skill_catalog(self, skill_catalog: SkillCatalog) -> None:
-        """Validate AgentCard declarations against SkillCatalog metadata."""
+        """校验 AgentCard 与 Skill metadata 的声明一致性。
+
+        这里保证 card.skills、supported_routes、private_tools 与 Skill frontmatter
+        不漂移；它是启动期静态治理，不参与每次请求的动态路由。
+        """
         cards = {card.agent_name: card for card in self.load_all()}
         skills = skill_catalog.scan(force_reload=True)
         skills_by_id = {skill.skill_id: skill for skill in skills}
@@ -184,7 +243,7 @@ class AgentCardLoader:
             raise ValueError("; ".join(errors))
 
     def validate_with_intent_taxonomy(self, taxonomy: IntentTaxonomy, *, require_full_coverage: bool = False) -> None:
-        """Validate AgentCard routes and examples against the global taxonomy."""
+        """校验 AgentCard route/example 是否引用合法 taxonomy 值。"""
         errors: list[str] = []
         for card in self.load_all():
             for intent, sub_intents in card.normalized_supported_routes().items():

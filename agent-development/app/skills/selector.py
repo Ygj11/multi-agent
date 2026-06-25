@@ -12,7 +12,11 @@ from app.skills.selection_policy import SkillSelectionPolicy
 
 
 class SkillSelector:
-    """Select one skill from metadata without reading skill bodies."""
+    """在已选 Agent 内选择一个 Skill。
+
+    选择器只读取 SkillMetadata，不读取 Skill 正文。规则分数足够确定时直接使用；
+    分数接近或语义复杂时才让 LLM 在候选 metadata 中 rerank。
+    """
 
     min_confident_score = 7.0
     min_llm_confidence = 0.45
@@ -51,7 +55,7 @@ class SkillSelector:
         context: SkillSelectionContext,
         candidates: list[SkillMetadata],
     ) -> SkillSelectionResult:
-        """Select the best skill from candidate metadata."""
+        """从候选 metadata 中选择最合适的 Skill。"""
         log_event(
             "skill_selection_started",
             request_id=context.request_id,

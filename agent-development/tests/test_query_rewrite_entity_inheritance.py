@@ -46,6 +46,64 @@ async def test_query_rewrite_llm_primary_path_records_prompt_manifest_trace():
     assert result.decision_trace["schema_status"] == "valid"
 
 
+async def test_llm_entities_echo_does_not_overwrite_inherited_metadata():
+    node = QueryRewriteNode(
+        llm_provider=JsonLLM(
+            {
+                "is_follow_up": True,
+                "rewritten_query": "继续处理保单 9200100000458846 的保全项 001028",
+                "rewrite_type": "clarification_reply",
+                "entities": {
+                    "policy_no": "9200100000458846",
+                    "endorseType": "001028",
+                },
+                "inherited_entities": {"policy_no": "9200100000458846"},
+                "missing_required_entities": [],
+                "need_clarification": False,
+                "clarification_question": None,
+                "confidence": 0.91,
+                "reason": "clarification reply",
+            }
+        )
+    )
+
+    result = await node.rewrite("001028")
+
+    assert result.entities == {
+        "endorseType": "001028",
+        "policy_no": "9200100000458846",
+    }
+    policy_mentions = EntityBag(**result.entity_bag).entities["policy_no"]
+    assert len(policy_mentions) == 1
+    assert policy_mentions[0].source == "recent_turn"
+    assert policy_mentions[0].metadata["inherited"] is True
+    assert result.inherited_entities == {"policy_no": "9200100000458846"}
+
+
+async def test_llm_current_entities_cannot_override_inherited_type_without_current_anchor():
+    node = QueryRewriteNode(
+        llm_provider=JsonLLM(
+            {
+                "is_follow_up": True,
+                "rewritten_query": "继续查看上一轮保单状态",
+                "rewrite_type": "contextual_follow_up",
+                "entities": {"policy_no": "9200100000458847"},
+                "inherited_entities": {"policy_no": "9200100000458846"},
+                "missing_required_entities": [],
+                "need_clarification": False,
+                "clarification_question": None,
+                "confidence": 0.89,
+                "reason": "follow up",
+            }
+        )
+    )
+
+    result = await node.rewrite("继续看一下")
+
+    assert result.entities["policy_no"] == "9200100000458846"
+    assert result.inherited_entities == {"policy_no": "9200100000458846"}
+
+
 async def test_follow_up_inherits_unique_policy_no():
     node = QueryRewriteNode(llm_provider=InvalidJsonLLM())
     result = await node.rewrite("继续查一下状态", short_summary="上一轮保单号 9200100000458846。")
@@ -65,6 +123,20 @@ async def test_multiple_policy_no_candidates_need_clarification():
 
     assert result.need_clarification is True
     assert "多个 policy_no" in result.clarification_question
+
+
+async def test_current_turn_multiple_policy_numbers_are_preserved_for_batch_query():
+    node = QueryRewriteNode(llm_provider=InvalidJsonLLM())
+
+    result = await node.rewrite("保单 9200100000458846 和 9200100000458847 的被保人是谁？")
+
+    assert result.need_clarification is False
+    assert result.rewrite_type == "new_request"
+    assert result.entities["policy_no"] == ["9200100000458846", "9200100000458847"]
+    assert EntityBag(**result.entity_bag).to_compact_dict()["policy_no"] == [
+        "9200100000458846",
+        "9200100000458847",
+    ]
 
 
 async def test_claim_no_follow_up_inherits():

@@ -5,6 +5,7 @@ import pytest
 
 from app.agents.card_loader import AgentCardLoader
 from app.integrations.base_http_client import BaseIntegrationHTTPClient
+from app.integrations.clients import IntegrationClients
 from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.llm.schemas import LLMResponse
 from app.mcp.schemas import MCPToolCapability
@@ -119,8 +120,10 @@ def test_troubleshooting_real_mode_registers_write_tools_as_write():
     register_agent_private_tools(
         registry,
         troubleshooting_tool_mode="real",
-        troubleshooting_api_client=TroubleshootingAPIClient(
-            BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+        integration_clients=IntegrationClients(
+            troubleshooting=TroubleshootingAPIClient(
+                BaseIntegrationHTTPClient(base_url="https://troubleshooting.example.test")
+            )
         ),
     )
 
@@ -179,6 +182,36 @@ def test_mcp_tools_are_exposed_as_openai_function_schema_without_internal_fields
     assert definition.original_name == "query_refund_task"
     assert definition.metadata["server_name"] == "workflow"
     assert definition.metadata["original_tool_name"] == "query_refund_task"
+
+
+def test_mcp_array_parameter_schema_is_preserved_for_batch_entity_queries():
+    capability = MCPToolCapability(
+        registered_tool_name="mcp.workflow.query_insureds",
+        description="Query insured people for multiple policies.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "policy_no": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "保单号列表。",
+                }
+            },
+            "required": ["policy_no"],
+        },
+        server_name="workflow",
+        original_tool_name="query_insureds",
+    )
+    registry = ToolRegistry()
+    registry.register_mcp_tools([capability])
+
+    schema = registry.get_tool_schema("mcp.workflow.query_insureds")
+
+    assert schema["function"]["parameters"]["properties"]["policy_no"] == {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "保单号列表。",
+    }
 
 
 def test_agent_visible_tool_schemas_are_standard_and_authorized_only():

@@ -77,3 +77,52 @@ async def test_approval_system_client_marks_submit_failed_on_http_error():
     assert result.accepted is False
     assert result.status == "submit_failed"
     assert result.error
+
+
+@pytest.mark.asyncio
+async def test_approval_system_client_reuses_one_pool_and_closes_it(monkeypatch):
+    created = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"accepted": True, "external_approval_id": "ext_1", "status": "pending"}
+
+    class FakeAsyncClient:
+        is_closed = False
+
+        def __init__(self, **kwargs):
+            self.calls = []
+            created.append(self)
+
+        async def post(self, url, *, json):
+            self.calls.append((url, json))
+            return FakeResponse()
+
+        async def aclose(self):
+            self.is_closed = True
+
+    monkeypatch.setattr("app.approval.client.httpx.AsyncClient", FakeAsyncClient)
+    client = ApprovalSystemClient(
+        settings=Settings(
+            enable_external_approval=True,
+            approval_system_url="https://approval.example.test/requests",
+        )
+    )
+    request = ApprovalRequest(
+        approval_id="approval_1",
+        agent_name="agent_a",
+        tool_name="write_tool",
+        arguments={"value": "x"},
+        reason="test",
+    )
+
+    assert (await client.submit_approval_request(request)).accepted is True
+    assert (await client.submit_approval_request(request)).accepted is True
+    assert len(created) == 1
+    assert len(created[0].calls) == 2
+
+    await client.close()
+    assert created[0].is_closed is True

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Private tool registration bound to specific sub agents."""
 
+from app.integrations.clients import IntegrationClients
 from app.integrations.pos_api_client import PosAPIClient
 from app.integrations.troubleshooting_api_client import TroubleshootingAPIClient
 from app.tools.handlers.mvp_agent_tool_handlers import (
@@ -211,17 +212,20 @@ POS_SUBMIT_VERIFY_PARAMETERS = {
 
 def register_agent_private_tools(
     registry,
-    pos_api_client: PosAPIClient | None = None,
     *,
+    integration_clients: IntegrationClients | None = None,
     pos_tool_mode: str = "mock",
     troubleshooting_tool_mode: str = "mock",
-    troubleshooting_api_client: TroubleshootingAPIClient | None = None,
 ) -> None:
     """Register private tools while keeping tool names stable across mock/real modes."""
+    integration_clients = integration_clients or IntegrationClients()
     pos_tool_mode = _normalize_tool_mode("POS_TOOL_MODE", pos_tool_mode)
     troubleshooting_tool_mode = _normalize_tool_mode("TROUBLESHOOTING_TOOL_MODE", troubleshooting_tool_mode)
-    pos_client = _pos_client_for_mode(pos_tool_mode, pos_api_client)
-    troubleshooting_tools = _troubleshooting_tools_for_mode(troubleshooting_tool_mode, troubleshooting_api_client)
+    pos_client = _pos_client_for_mode(pos_tool_mode, integration_clients.pos)
+    troubleshooting_tools = _troubleshooting_tools_for_mode(
+        troubleshooting_tool_mode,
+        integration_clients.troubleshooting,
+    )
     troubleshooting_write_is_write = troubleshooting_tool_mode == "real"
 
     registry.register_private(

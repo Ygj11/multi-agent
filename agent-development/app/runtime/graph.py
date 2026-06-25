@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-"""LangGraph StateGraph definition for the task-level orchestrator."""
+"""任务级 MainGraph 定义。
+
+本模块只编排主生命周期：会话加载、问题理解、Agent 路由、子 Agent 执行、
+审批、最终验证和消息落库。业务 SOP、工具循环和真实工具执行分别下沉到
+Skill、BaseSubAgent/ToolCallingRunner、ToolExecutor，避免 MainGraph 变成
+所有业务逻辑的聚合点。
+"""
 
 from typing import Any
 
@@ -41,7 +47,13 @@ from app.verification.service import VerificationService
 
 
 class AgentGraphFactory:
-    """Creates the LangGraph application and owns node dependencies."""
+    """创建 LangGraph 应用并持有节点依赖。
+
+    AgentGraphFactory 是 graph 层的组合器，不是业务 Service。它负责把已经
+    构建好的节点能力接到固定工作流上；节点内部如果需要复杂领域逻辑，应继续
+    委托给 QueryRewriteNode、IntentRecognitionNode、ContextBuilder、
+    DispatchAgentNode、ApprovalGraphHandler 等专门组件。
+    """
 
     def __init__(
         self,
@@ -102,7 +114,12 @@ class AgentGraphFactory:
         )
 
     def build(self):
-        """Build the real StateGraph with task-level orchestration nodes."""
+        """构建真实 StateGraph。
+
+        主干顺序是确定性的：先完成会话和语义理解，再做 Agent 路由和子 Agent
+        执行，最后统一经过审批/验证/落库。子 Agent 内部可以让 LLM 动态选择工具，
+        但外层 Graph 不把这些动态步骤摊平成节点，便于保持全局生命周期可控。
+        """
         graph = StateGraph(AgentGraphState)
         graph.add_node("route_entry", self.route_entry)
         graph.add_node("load_session", self.load_session)
@@ -219,6 +236,9 @@ class AgentGraphFactory:
             trace_id=state.get("trace_id"),
         )
         self._log_node_exit(state, "query_rewrite")
+        # 实体状态只能通过 build_entity_state_updates 同步写回：
+        # entity_bag 是 canonical state，entities 只是由它派生的兼容视图。
+        # Graph 节点不得各自用 dict merge 维护第二份实体状态。
         entity_updates = build_entity_state_updates(EntityBag(**result.entity_bag))
         return {
             "rewritten_query": result.rewritten_query,
@@ -252,6 +272,8 @@ class AgentGraphFactory:
             session_key=state.get("session_key"),
         )
         self._log_node_exit(state, "intent_recognition")
+        # IntentRecognitionNode 只返回 intent/sub_intent 与澄清信息。
+        # canonical 实体已由 query_rewrite 写入，意图识别节点不能再次修改 entity_bag。
         return {
             "intent": result.intent,
             "sub_intent": result.sub_intent,
@@ -281,6 +303,8 @@ class AgentGraphFactory:
             auth_context=state.get("auth_context"),
         )
         self._log_node_exit(state, "build_orchestrator_context")
+        # OrchestratorContext 是给后续路由和子 Agent 的结构化父上下文，
+        # 不是 Prompt 拼接字符串。后续节点应优先消费这里的字段，避免重复查库和重复解析。
         return {
             "orchestrator_context": context.model_dump(),
             "graph_path": self._append_path(state, "build_orchestrator_context"),

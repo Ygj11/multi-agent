@@ -1,4 +1,8 @@
 ---
+# Skill frontmatter 是 metadata：SkillSelector 先用它筛选候选，只有选中后才加载下方完整 SOP。
+# intent/sub_intents 必须引用 intent_taxonomy.yaml；private_tools 必须包含在对应 AgentCard.private_tools 中。
+# required_entities 选中后由 RequiredEntityChecker 基于 resolved EntityBag 校验；缺失或歧义时澄清。
+# requires_tool_evidence=true 表示最终回答必须有成功工具结果支撑，否则转澄清，不能自由生成业务结论。
 skill_id: troubleshooting_agent.refund_failure
 name: 退保失败排查
 description: 用于排查保单退保没有成功、退保任务卡住、退保回调异常等问题

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Reusable Agent loop for LLM tool calling."""
+"""可复用的 LLM 工具调用循环。"""
 
 import json
 from typing import Any, Literal
@@ -15,7 +15,7 @@ from app.tools.executor import ToolExecutor
 
 
 class ToolCallingRunResult(BaseModel):
-    """Result of a tool-calling Agent loop."""
+    """一次工具循环的结果。"""
 
     final_answer: str
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
@@ -38,7 +38,12 @@ class ToolCallingRunResult(BaseModel):
 
 
 class ToolCallingRunner:
-    """Owns the complete LLM -> tool -> observation loop."""
+    """控制完整的 LLM -> tool -> observation 循环。
+
+    Runner 只负责循环控制、失败保护和 observation 回填；它不是工具安全边界。
+    LLM 返回的 tool call 必须交给 ToolExecutor 执行存在性、可见性、参数、
+    权限、审批和验证检查。
+    """
 
     def __init__(
         self,
@@ -57,15 +62,6 @@ class ToolCallingRunner:
         self.max_same_tool_failures = max_same_tool_failures
         self.max_duplicate_tool_calls = max_duplicate_tool_calls
 
-    """
-        1. 调 LLM
-        2. 如果 LLM 返回 tool_calls
-        3. normalize tool call
-        4. 调 ToolExecutor.execute(...)
-        5. 把工具结果作为 tool message 塞回 messages
-        6. 再调 LLM
-        7. 直到 LLM 给 final answer，或触发审批/失败/循环保护
-    """
     async def run(
         self,
         *,
@@ -98,7 +94,8 @@ class ToolCallingRunner:
         tool_call_counts: dict[str, int] = {}
 
         for iteration in range(1, limit + 1):
-            """Call the LLM with the current messages and tools, and get the response, which may include tool calls."""
+            # 每一轮先把当前 messages 和可见工具 schema 交给 LLM。
+            # LLM 可以返回最终答案，也可以返回一个或多个 tool_calls。
             response = await self.llm_provider.chat(
                 messages=messages,
                 tools=tools,
@@ -184,8 +181,8 @@ class ToolCallingRunner:
                             tools=tools,
                         )
 
-                    """Execute the tool call and capture the result, including success status, errors, 
-                    and any relevant metadata."""
+                    # 归一化后的 tool_call 交给 ToolExecutor。即使 tool 名来自 LLM，
+                    # 执行前仍会重新校验 AgentCard 可见性和工具契约。
                     tool_result = await self.tool_executor.execute(
                         agent_name=agent_name,
                         tool_name=normalized.name,

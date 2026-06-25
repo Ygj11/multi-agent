@@ -32,8 +32,14 @@ class QueryRewriteLLMOutput(_StrictOutput):
     is_follow_up: bool
     rewritten_query: str
     rewrite_type: Literal["direct", "contextual_follow_up", "clarification_reply", "new_request", "clarification_required"]
-    entities: dict[str, Any] = Field(default_factory=dict)
-    inherited_entities: dict[str, Any] = Field(default_factory=dict)
+    entities: dict[str, Any] = Field(
+        default_factory=dict,
+        description="仅放当前用户消息提供或语义暗示的实体候选，不放历史继承实体。",
+    )
+    inherited_entities: dict[str, Any] = Field(
+        default_factory=dict,
+        description="仅放从历史上下文继承的实体候选。",
+    )
     missing_required_entities: list[str] = Field(default_factory=list)
     need_clarification: bool
     clarification_question: str | None = None

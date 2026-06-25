@@ -154,7 +154,7 @@ flowchart TD
 | Tool Harness | 工具注册、可见性、参数、权限、审批、执行、日志 | `app/tools/` |
 | Safety Harness | 授权、审批、最终验证、证据、状态持久化和日志 | `app/auth/`, `app/approval/`, `app/verification/`, `app/evidence/`, `app/storage/` |
 
-`AppContainer` 是当前 runtime 的 composition root。`create_app()` 读取 settings 后调用 `build_app_container()` 完成同步装配；FastAPI lifespan 只调用 `container.startup()` / `container.shutdown()`。其中 `startup()` 负责 MCP client 初始化、能力发现、MCP tool 注册和启动期 contract 校验。FastAPI `app.state` 只挂载 `container`，不再把 `orchestrator`、`tool_registry`、`message_store` 等内部组件平铺到 `app.state.xxx`。
+`AppContainer` 是当前 runtime 的 composition root。`create_app()` 读取 settings 后调用 `build_app_container()` 完成同步装配；FastAPI lifespan 只调用 `container.startup()` / `container.shutdown()`。真实领域 API client 由不可变的 `IntegrationClients` 集合装配后传给工具注册层，避免 `register_agent_private_tools()` 随领域增长不断增加单个 client 入参。`startup()` 负责 MCP client 初始化、能力发现、MCP tool 注册和启动期 contract 校验；`shutdown()` 依次释放 ToolRegistry、审批、MCP、真实业务 API、知识库和 LLM 所持有的资源。长期外部 client 通过 `AsyncClientLifecycle` 惰性创建并复用连接池；正常网络请求只借用 client，不会被锁串行化，关闭时则等待正在进行的请求归还。外部注入 client 默认不转移关闭权，只有显式 `owns_client=True` 才由组件关闭。Container 是单次生命周期对象，关闭或启动失败后必须新建 Container，不能原地 restart。FastAPI `app.state` 只挂载 `container`，不再把 `orchestrator`、`tool_registry`、`message_store` 等内部组件平铺到 `app.state.xxx`。
 
 ## 一次请求的完整调用链
 
@@ -895,7 +895,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | 分类 | 当前状态 |
 | --- | --- |
 | 已实现 | FastAPI `/api/chat`、Runtime AppContainer、LangGraph 主流程、实体解析、Query Rewrite、taxonomy-backed Intent、AgentCard 路由、Skill 延迟加载、Tool Loop、ToolExecutor 安全流水线、审批台账和 callback 恢复、pre_answer Verification、SQLite 持久化、结构化日志 |
-| 部分实现 | LangGraph checkpointer 默认内存，项目级 SQLite 只保存 compact final snapshot；审批是 callback 恢复而非原生 interrupt；Answer repair 是固定安全文案；MCP 取决于外部 server 配置；`container.shutdown()` 当前没有完整 MCP close 协议；pre_tool verification hook 存在但默认 verifier 主要是 pre_answer |
+| 部分实现 | LangGraph checkpointer 默认内存，项目级 SQLite 只保存 compact final snapshot；审批是 callback 恢复而非原生 interrupt；Answer repair 是固定安全文案；MCP 取决于外部 server 配置；当前 HTTP MCP client 已在 shutdown 关闭连接池，但 stdio/SSE 等未来 transport 仍需各自实现同一关闭协议；pre_tool verification hook 存在但默认 verifier 主要是 pre_answer |
 | 本地或测试替身 | InternalLLMProvider 未配置 URL 时有 deterministic fallback；Knowledge API 默认 disabled；POS 和 troubleshooting tools 默认 mock |
 | 未来可演进 | FAQ/direct-answer fast path、语义级 Answer Repair、完整 OpenTelemetry、生产 JWT/网关鉴权、独立 precondition engine、运行时 retry 策略、Postgres/Redis/Queue、LangGraph subgraph 化子 Agent |
 

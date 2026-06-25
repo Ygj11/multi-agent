@@ -24,3 +24,7 @@ class LLMProvider(Protocol):
         session_key: str | None = None,
     ) -> LLMResponse:
         ...
+
+    async def close(self) -> None:
+        """释放 Provider 持有的网络资源。"""
+        ...

@@ -12,6 +12,7 @@ class FakeMCPClient:
         self.config = config
         self.fail_initialize = fail_initialize
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.close_calls = 0
 
     async def initialize(self) -> None:
         if self.fail_initialize:
@@ -36,6 +37,9 @@ class FakeMCPClient:
     async def health_check(self) -> bool:
         return not self.fail_initialize
 
+    async def close(self) -> None:
+        self.close_calls += 1
+
 
 class FakeMCPClientManager:
     """Test-only manager fake for ToolExecutor and Agent loop tests."""
@@ -55,4 +59,3 @@ class FakeMCPClientManager:
         if self.mode == "error":
             raise MCPToolError("boom")
         return {"success": True, "registered_tool_name": registered_tool_name, "arguments": arguments}
-

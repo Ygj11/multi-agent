@@ -1,3 +1,6 @@
+import re
+
+from app.query.entity_extractor import EntityPattern, EntityTypeRegistry
 from app.query.entity_resolver import EntityResolver, build_entity_state_updates
 from app.schemas.entities import EntityBag, EntityMention
 
@@ -99,6 +102,44 @@ def test_multiple_same_priority_historical_candidates_need_clarification():
     assert result.need_clarification is True
     assert result.conflicts[0].entity_type == "policy_no"
     assert sorted(result.entity_bag.to_compact_dict()["policy_no"]) == ["9200100000458846", "9200100000458847"]
+
+
+def test_current_turn_multiple_values_are_preserved_as_an_explicit_collection():
+    resolver = EntityResolver()
+    result = resolver.resolve(
+        base_bag=EntityBag(),
+        candidate_bag=_bag(
+            _mention("policy_no", "9200100000458846", source="current_query"),
+            _mention("policy_no", "9200100000458847", source="current_query"),
+        ),
+        stage="test",
+        parallel_current_entity_types={"policy_no"},
+    )
+
+    assert result.need_clarification is False
+    assert result.entity_bag.to_compact_dict()["policy_no"] == ["9200100000458846", "9200100000458847"]
+    assert all(
+        mention.metadata["collection_semantics"] == "explicit_current_values"
+        for mention in result.entity_bag.entities["policy_no"]
+    )
+
+
+def test_resolver_uses_yaml_backed_registry_for_value_regex():
+    pattern = EntityPattern(
+        entity_type="policy_no",
+        description="测试保单号",
+        regex=(re.compile(r"P\d+"),),
+        value_regex=(re.compile(r"^P\d+$"),),
+    )
+    resolver = EntityResolver(entity_type_registry=EntityTypeRegistry([pattern]))
+
+    result = resolver.resolve(
+        base_bag=EntityBag(),
+        candidate_bag=_bag(_mention("policy_no", "P001", source="llm", confidence=0.85)),
+        stage="test",
+    )
+
+    assert result.entity_bag.to_compact_dict() == {"policy_no": "P001"}
 
 
 def test_summary_entity_does_not_override_recent_or_current_entity():

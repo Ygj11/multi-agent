@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Context builder for orchestrator and sub-agent execution."""
+"""主 Agent 与子 Agent 的上下文构建器。"""
 
 from pathlib import Path
 from typing import Any
@@ -18,7 +18,11 @@ from app.skills.selector import SkillSelector
 
 
 class ContextBuilder:
-    """Shared context builder independent from both the main agent and sub agents."""
+    """集中构建结构化上下文，避免后续节点重复查库和重复解析。
+
+    `build_for_orchestrator` 构建父级上下文；`build_for_subagent` 在 Agent 已选定
+    后委托 SkillContextResolver 选择 Skill，并生成子 Agent 执行上下文。
+    """
 
     def __init__(
         self,
@@ -61,6 +65,7 @@ class ContextBuilder:
     ) -> OrchestratorContext:
         compact_entities = entities or {}
         if entity_bag:
+            # entity_bag 是事实源；父上下文中的 compact entities 始终由它重新生成。
             compact_entities = EntityBag(**entity_bag).to_compact_dict()
         hints = await self.knowledge_hint_builder.build_lightweight_hints(
             query=f"{original_query} {rewritten_query}",
@@ -88,6 +93,8 @@ class ContextBuilder:
         agent_card: AgentCard,
         allowed_tools: list[str],
     ) -> SubAgentContext:
+        # 子 Agent 上下文建立在已选 Agent 之上：这里才进行 Skill 选择和 Skill 内容加载。
+        # AgentSelection 阶段不会读取完整 SKILL.md。
         resolution = await self.skill_context_resolver.resolve(
             task=task,
             parent_context=parent_context,

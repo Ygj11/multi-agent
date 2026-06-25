@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""Minimal tool contract loading and validation."""
+"""工具静态契约加载和校验。
+
+ToolContract 不注册工具，也不执行工具；它为已注册 ToolDefinition 补充
+timeout、结果 schema、数据分级、操作类型、风险等级和审批策略等治理信息。
+未配置某项可选约束时，不对该项施加额外校验。
+"""
 
 from pathlib import Path
 from typing import Literal
@@ -59,7 +64,7 @@ class ToolContract(BaseModel):
 
 
 class ToolContractCatalog(BaseModel):
-    """Loaded contract catalog with explicit tools plus MCP defaults."""
+    """已加载的工具契约目录，包含显式工具契约和 MCP 默认契约。"""
 
     version: str
     defaults: dict = Field(default_factory=dict)
@@ -93,7 +98,7 @@ class ToolContractCatalog(BaseModel):
         )
 
     def contract_for(self, tool_name: str, *, source: str | None = None) -> ToolContract | None:
-        """Return an explicit contract or the MCP default contract."""
+        """返回显式契约；MCP 工具没有显式契约时使用 mcp_default。"""
         if tool_name in self.tools:
             return self.tools[tool_name]
         if source == "mcp" or tool_name.startswith("mcp."):

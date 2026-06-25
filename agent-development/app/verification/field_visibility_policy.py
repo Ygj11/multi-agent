@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 """Configurable field visibility policy for final-answer data filtering."""
+"""
+基于 YAML 配置的字段可见性与脱敏策略。
+
+它主要回答三个问题：
+
+当前用户能不能看到某类敏感字段？
+不能看时，是进行正则脱敏，还是只发出风险警告？
+YAML 配置写错时，能否在启动或加载阶段立即报错？
+"""
 
 import re
 from dataclasses import dataclass, field

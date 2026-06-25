@@ -21,6 +21,10 @@ class KnowledgeAPIClient:
         self.http = http_client
         self.post_processor = post_processor or KnowledgeChunkPostProcessor()
 
+    async def close(self) -> None:
+        """释放知识服务 HTTP 连接池。"""
+        await self.http.close()
+
     async def search(
         self,
         query: str,

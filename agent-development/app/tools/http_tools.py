@@ -9,6 +9,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from app.observability.logger import log_event, preview_text
+from app.runtime.async_client_lifecycle import AsyncClientLifecycle
 
 
 class HTTPRequestTool:
@@ -21,11 +22,17 @@ class HTTPRequestTool:
         timeout: float = 5.0,
         client: httpx.AsyncClient | None = None,
         *,
+        owns_client: bool = False,
         enabled: bool = False,
         allowed_hosts: tuple[str, ...] = (),
     ) -> None:
         self.timeout = timeout
-        self._client = client
+        self._client_lifecycle = AsyncClientLifecycle(
+            factory=lambda: httpx.AsyncClient(timeout=self.timeout),
+            close_client=lambda value: value.aclose(),
+            client=client,
+            owns_client=owns_client,
+        )
         self.enabled = enabled
         self.allowed_hosts = set(allowed_hosts)
 
@@ -56,17 +63,16 @@ class HTTPRequestTool:
             message="HTTP tool call started",
             data={"method": normalized_method, "url": url, "params_preview": params or {}},
         )
-        client = self._client or httpx.AsyncClient(timeout=effective_timeout)
-        should_close = self._client is None
         try:
-            response = await client.request(
-                normalized_method,
-                url,
-                params=params,
-                json=json_body,
-                headers=headers,
-                timeout=effective_timeout,
-            )
+            async with self._client_lifecycle.lease() as client:
+                response = await client.request(
+                    normalized_method,
+                    url,
+                    params=params,
+                    json=json_body,
+                    headers=headers,
+                    timeout=effective_timeout,
+                )
             result = self._response_to_result(response)
             log_event(
                 "http_tool_call_finished",
@@ -89,9 +95,14 @@ class HTTPRequestTool:
                 data={"method": normalized_method, "url": url, "error": str(exc)},
             )
             return {"success": False, "error": str(exc), "status_code": None}
-        finally:
-            if should_close:
-                await client.aclose()
+
+    async def close(self) -> None:
+        """关闭自有工具连接池；外部注入 client 仍由调用方关闭。"""
+        await self._client_lifecycle.close()
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """仅供测试断言当前 client；生产请求通过 lease() 借用。"""
+        return await self._client_lifecycle.get_client_for_testing()
 
     @staticmethod
     def _response_to_result(response: httpx.Response) -> dict[str, Any]:
@@ -116,6 +127,7 @@ class MCPHTTPCallTool:
         timeout: float = 5.0,
         client: httpx.AsyncClient | None = None,
         *,
+        owns_client: bool = False,
         enabled: bool = False,
         allowed_hosts: tuple[str, ...] = (),
     ) -> None:
@@ -123,6 +135,7 @@ class MCPHTTPCallTool:
         self.http_request = HTTPRequestTool(
             timeout=timeout,
             client=client,
+            owns_client=owns_client,
             enabled=enabled,
             allowed_hosts=allowed_hosts,
         )
@@ -144,3 +157,7 @@ class MCPHTTPCallTool:
             json_body={"tool_name": tool_name, "arguments": arguments or {}},
             timeout=timeout,
         )
+
+    async def close(self) -> None:
+        """关闭内部受限 HTTP 工具的连接池。"""
+        await self.http_request.close()

@@ -41,3 +41,8 @@ def build_subagent_manager(
         ),
     )
     return manager
+# todo
+"""
+如果未来大部分 Agent 都只是同一种通用执行模板，还可以进一步注册一个 CardDrivenSubAgent，
+让 AgentCard 决定业务差异；只有确实有特殊执行流程的 Agent 才保留独立 Python 类。当前项目两个 Agent 数量不多，暂时保留显式注册是更清晰的选择。
+"""

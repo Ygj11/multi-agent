@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Base template for AgentCard-driven sub agents."""
+"""AgentCard 驱动的子 Agent 基类。"""
 
 from abc import ABC, abstractmethod
 from typing import Any
@@ -18,11 +18,11 @@ from app.subagents.tool_calling_runner import ToolCallingRunner, ToolCallingRunR
 
 
 class BaseSubAgent(ABC):
-    """Shared execution template for sub agents.
+    """子 Agent 共享执行模板。
 
-    The template centralizes AgentCard reading, skill selection/body loading via
-    ContextBuilder, available tool resolution, and common tool execution.
-    Subclasses implement only task-specific behavior in `do_run`.
+    子 Agent 是执行边界：先校验任务目标和 AgentCard 版本，再构建子 Agent
+    上下文、选择 Skill、加载已选 Skill 内容、计算可见工具，最后进入 LLM
+    tool loop。子类只负责特殊执行逻辑，不应绕过这里的 Skill 和 Tool 安全边界。
     """
 
     name: str
@@ -53,6 +53,8 @@ class BaseSubAgent(ABC):
             allowed_tools=allowed_tools,
         )
         if sub_context.need_clarification:
+            # Skill 缺失实体或 no-skill 策略要求澄清时，不进入 ToolCallingRunner。
+            # 这样可以防止 LLM 在缺少关键业务事实时直接自由发挥。
             return SubAgentResult(
                 name=self.name,
                 agent_name=self.name,
@@ -101,8 +103,8 @@ class BaseSubAgent(ABC):
             )
         if self.use_tool_calling_runner and self.tool_calling_runner is not None:
             self._log_runner_started(task)
-            """Construct the context for the LLM, including the task, skill, knowledge hints, 
-            conversation summary, and other relevant information."""
+            # 子 Agent prompt 只包含已选 Skill 内容、任务、摘要和轻量知识提示。
+            # 未选中的 Skill 内容不会进入 prompt，避免 SOP 混淆和上下文膨胀。
             messages = self.build_messages(
                 task=task,
                 parent_context=parent_context,
@@ -111,7 +113,7 @@ class BaseSubAgent(ABC):
             )
             principal = principal_dict_from_auth_context(task.auth_context)
             tool_schemas = self.get_available_tool_schemas(agent_card, principal=principal)
-            """LLM 工具循环"""
+            # LLM 可以在 tool_schemas 中选择工具，但真正执行仍由 ToolExecutor 校验。
             run_result = await self.tool_calling_runner.run(
                 agent_name=self.name,
                 messages=messages,
@@ -167,11 +169,13 @@ class BaseSubAgent(ABC):
         return agent_card
 
     def get_available_tool_names(self, agent_card: AgentCard) -> list[str]:
+        """返回 AgentCard 视角下当前 Agent 可见的工具名。"""
         if self.tool_executor is None:
             return agent_card.private_tools
         return self.tool_executor.registry.list_available_tools_for_agent(self.name, agent_card)
 
     def get_available_tool_schemas(self, agent_card: AgentCard, principal: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """返回给 LLM function calling 的工具 schema，而不是执行权限本身。"""
         if self.tool_executor is None:
             return []
         return self.tool_executor.registry.list_tools_for_agent(
@@ -294,7 +298,7 @@ class BaseSubAgent(ABC):
         run_result: ToolCallingRunResult,
         result: SubAgentResult,
     ) -> SubAgentResult:
-        """Prevent evidence-required Skills from returning an ungrounded final answer."""
+        """阻止强依赖工具事实的 Skill 返回无证据业务结论。"""
         if not self._requires_tool_evidence(sub_context) or result.needs_human_approval:
             return result
         if self._has_successful_tool_result(run_result):

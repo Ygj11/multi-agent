@@ -29,11 +29,11 @@ async def get_current_principal(
     x_user_scopes: Annotated[str | None, Header()] = None,
     x_data_permissions: Annotated[str | None, Header()] = None,
 ) -> Principal | None:
-    """Resolve the trusted principal.
+    """解析可信 Principal。
 
-    MVP supports trusted development headers. If no auth headers are present,
-    dev mode returns None so the request adapter can use the legacy body
-    identity as a local fallback.
+    当前支持受信开发 Header。没有 Header 身份时，只有在配置允许 body fallback
+    的本地开发场景才返回 None 交给 RequestAdapter 兜底；生产应配置
+    APP_ENV=prod、AUTH_MODE=required、ALLOW_REQUEST_BODY_IDENTITY_FALLBACK=false。
     """
     settings = get_settings()
     has_header_identity = bool(x_tenant_id or x_user_id or x_subject or authorization)
@@ -60,4 +60,3 @@ async def get_current_principal(
         scopes=_split_header(x_user_scopes),
         data_permissions=_split_header(x_data_permissions),
     )
-

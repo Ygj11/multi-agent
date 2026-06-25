@@ -11,8 +11,11 @@ class MCPCapabilityRegistry:
     """Caches capabilities discovered from upstream MCP servers."""
 
     def __init__(self) -> None:
+        """本地注册工具名 → MCPToolCapability  用于根据本地工具名查找远程归属。"""
         self._tools: dict[str, MCPToolCapability] = {}
+        """server_name → 该服务器拥有的工具名称集合  用于按服务器查询所有工具"""
         self._tools_by_server: dict[str, set[str]] = {}
+        """server_name → MCPServerStatus  用于保存服务器可用性和错误状态"""
         self._statuses: dict[str, MCPServerStatus] = {}
 
     def upsert_tools(self, server_name: str, tools: list[MCPToolCapability]) -> None:

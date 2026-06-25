@@ -43,6 +43,14 @@ def test_intent_recognition_prompt_contract():
     assert "Return strict JSON only" in system_prompt
 
 
+def test_query_rewrite_prompt_keeps_inherited_entities_separate():
+    system_prompt = PromptLoader().load("query_rewrite/system.md")
+
+    assert "Put only inherited values in inherited_entities" in system_prompt
+    assert "Do not put inherited historical values in entities" in system_prompt
+    assert "your entities are candidates, not the canonical state" in system_prompt
+
+
 def test_agent_and_skill_router_prompt_contracts_are_candidate_bounded():
     loader = PromptLoader()
     agent_prompt = loader.load("agent_selection/system.md")

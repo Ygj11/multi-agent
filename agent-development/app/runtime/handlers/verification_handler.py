@@ -10,7 +10,11 @@ from app.verification.service import VerificationService
 
 
 class VerificationHandler:
-    """Run final pre-answer verification through VerificationService."""
+    """在主 Graph 返回用户前统一执行 pre_answer verification。
+
+    澄清话术、审批等待话术和普通业务答案都会经过这里。若 verifier 返回 patch
+    则替换答案；block/manual 会使用固定安全话术，当前不做复杂语义重写。
+    """
 
     def __init__(self, verification_service: VerificationService | None = None) -> None:
         self.verification_service = verification_service

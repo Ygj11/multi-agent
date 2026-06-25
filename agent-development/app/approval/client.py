@@ -5,15 +5,32 @@ from __future__ import annotations
 import httpx
 
 from app.config.settings import Settings, get_settings
+from app.runtime.async_client_lifecycle import AsyncClientLifecycle
 from app.schemas.approval import ApprovalRequest, ApprovalSubmitResult
 
 
 class ApprovalSystemClient:
     """Submits approval requests to an external approval system."""
 
-    def __init__(self, settings: Settings | None = None, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        client: httpx.AsyncClient | None = None,
+        *,
+        owns_client: bool = False,
+    ) -> None:
         self.settings = settings or get_settings()
-        self.client = client
+        self._client_lifecycle = AsyncClientLifecycle(
+            factory=lambda: httpx.AsyncClient(timeout=self.settings.approval_system_timeout),
+            close_client=lambda value: value.aclose(),
+            client=client,
+            owns_client=owns_client,
+        )
+
+    @property
+    def client(self) -> httpx.AsyncClient | None:
+        """当前 HTTP client，仅供诊断或测试读取。"""
+        return self._client_lifecycle.client
 
     async def submit_approval_request(self, request: ApprovalRequest) -> ApprovalSubmitResult:
         """Submit one approval request and normalize the external response."""
@@ -46,11 +63,8 @@ class ApprovalSystemClient:
             "created_at": request.created_at,
         }
         try:
-            if self.client is not None:
-                response = await self.client.post(str(self.settings.approval_system_url), json=payload)
-            else:
-                async with httpx.AsyncClient(timeout=self.settings.approval_system_timeout) as client:
-                    response = await client.post(str(self.settings.approval_system_url), json=payload)
+            async with self._client_lifecycle.lease() as client:
+                response = await client.post(str(self.settings.approval_system_url), json=payload)
             response.raise_for_status()
             data = response.json()
             return ApprovalSubmitResult(
@@ -61,3 +75,7 @@ class ApprovalSystemClient:
             )
         except Exception as exc:
             return ApprovalSubmitResult(accepted=False, status="submit_failed", error=str(exc))
+
+    async def close(self) -> None:
+        """关闭自有审批连接池；外部注入 client 仍由调用方关闭。"""
+        await self._client_lifecycle.close()

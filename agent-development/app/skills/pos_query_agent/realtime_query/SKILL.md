@@ -1,4 +1,8 @@
 ---
+# Skill frontmatter 是 metadata：SkillSelector 先用它筛选候选，只有选中后才加载下方完整 SOP。
+# intent/sub_intents 必须引用 intent_taxonomy.yaml；private_tools 必须包含在对应 AgentCard.private_tools 中。
+# required_entities=[] 表示本 Skill 自身不在选中后统一要求实体；具体工具缺参由 ToolExecutor observation + Skill SOP 处理。
+# requires_tool_evidence=true 表示最终回答必须有成功工具结果支撑，否则转澄清，不能自由生成业务结论。
 skill_id: pos_query_agent.realtime_query
 name: 保全实时查询
 description: 用于实时查询可做保全项、退保试算详情、保全保单标准信息、批文信息和退保提交校验。
