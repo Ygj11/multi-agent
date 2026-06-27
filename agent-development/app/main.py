@@ -14,6 +14,7 @@ from app.adapters.response_adapter import ResponseAdapter
 from app.bootstrap.container import build_app_container
 from app.config.settings import get_settings
 from app.observability.logger import log_event, preview_text
+from app.runtime.session_locks import SessionExecutionLockTimeout
 from app.schemas.approval import ApprovalCallbackRequest, ApprovalCallbackResponse
 from app.schemas.message import ChatRequest, ChatResponse
 
@@ -80,6 +81,11 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except SessionExecutionLockTimeout as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="当前会话上一条请求仍在处理中，请稍后再试。",
+            ) from exc
 
     @app.post("/api/approval/callback", response_model=ApprovalCallbackResponse)
     async def approval_callback(request: ApprovalCallbackRequest) -> ApprovalCallbackResponse:
@@ -95,6 +101,11 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"approval not found: {request.approval_id}") from exc
+        except SessionExecutionLockTimeout as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="当前会话上一条请求仍在处理中，请稍后再试。",
+            ) from exc
 
     @app.get("/api/approval/{approval_id}")
     async def get_approval(approval_id: str) -> dict:

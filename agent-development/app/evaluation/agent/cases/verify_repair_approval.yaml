@@ -1,0 +1,233 @@
+suite: verify_repair_approval
+description: Approval-aware repair behavior.
+cases:
+  - case_id: repair_triggers_approval
+    description: Repair 子 Agent 产生写工具，进入审批 pending，pending 后不做 completion verify。
+    input:
+      tenant_id: tenant
+      channel: web
+      user_id: u1
+      session_id: approval_d
+      messages:
+        - role: user
+          content: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028，请处理"
+    llm_scripted_responses:
+      - scene: query_rewrite
+        response:
+          content_json:
+            is_follow_up: false
+            rewritten_query: "保全任务完成，保单9200100000458846，受理号930021042875719，保全项001028，处理保单未更新。"
+            rewrite_type: new_request
+            entities: {policy_no: "9200100000458846", apply_seq: "930021042875719", endorseType: "001028"}
+            inherited_entities: {}
+            missing_required_entities: []
+            need_clarification: false
+            clarification_question: null
+            confidence: 0.95
+            reason: agent_eval
+      - scene: intent_recognition
+        response:
+          content_json:
+            intent: troubleshooting
+            sub_intent: endo_completion_aftercare
+            confidence: 0.94
+            need_clarification: false
+            clarification_question: null
+            reason: agent_eval
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: query_endo_task_record
+              arguments: {apply_seq: "930021042875719"}
+      - scene: subagent_reasoning
+        response:
+          content: "已查询到9节点失败，需要通知保单更新。"
+      - scene: task_completion_verifier
+        response:
+          content_json:
+            status: CONTINUE
+            completed: false
+            summary: "需要继续通知保单更新。"
+            completed_items: ["已查询节点"]
+            missing_items: ["通知保单更新"]
+            repair_plan:
+              reason: "9节点保单更新错误"
+              completed_items: ["已查询节点"]
+              missing_items: ["通知保单更新"]
+              next_steps: ["调用 notice_policy_update"]
+              do_not_repeat: ["不要重复 query_endo_task_record"]
+              reuse_evidence_ids: []
+              expected_new_evidence: ["notice_policy_update result"]
+              target_agent: troubleshooting_agent
+              selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+              confidence: 0.9
+            confidence: 0.9
+            reasoning_summary: "缺少写操作结果。"
+            evidence_ids: []
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: notice_policy_update
+              arguments: {apply_seq: "930021042875719", policyNo: "9200100000458846", endorseType: "001028"}
+    tool_fixtures:
+      - tool_name: query_endo_task_record
+        result: {success: true, apply_seq: "930021042875719", task_records: [{task_type: "9", task_status: E, response_body: "保单更新错误"}]}
+      - tool_name: notice_policy_update
+        is_write: true
+        operation: notify
+        risk_level: high
+        result: {success: true, message: "policy update notified"}
+    approval_fixtures:
+      accepted: true
+      status: pending
+    expected:
+      selected_agent: troubleshooting_agent
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      initial_verifier_status: CONTINUE
+      repair_count: 1
+      final_outcome: approval_pending
+      approval_required: true
+      approval_status: pending
+      graph_path_must_include: [build_repair_task, dispatch_repair_agent, create_approval_request, pause_for_approval, pre_answer_verify]
+      tool_calls_must_include: [query_endo_task_record, notice_policy_update]
+      approval_pending_skips_completion_verify: true
+    tags: [approval, repair]
+    risk_level: high
+
+  - case_id: pending_approval_skips_completion
+    description: 首轮直接产生写工具 pending，不进入 Completion Verify。
+    input:
+      tenant_id: tenant
+      channel: web
+      user_id: u1
+      session_id: approval_e
+      messages:
+        - role: user
+          content: "930021042875719 保单号 9200100000458846 保全项001028 保单更新失败，请通知保单更新"
+    llm_scripted_responses:
+      - scene: query_rewrite
+        response:
+          content_json:
+            is_follow_up: false
+            rewritten_query: "受理号930021042875719，保单9200100000458846，保全项001028，通知保单更新。"
+            rewrite_type: new_request
+            entities: {policy_no: "9200100000458846", apply_seq: "930021042875719", endorseType: "001028"}
+            inherited_entities: {}
+            missing_required_entities: []
+            need_clarification: false
+            clarification_question: null
+            confidence: 0.95
+            reason: agent_eval
+      - scene: intent_recognition
+        response:
+          content_json:
+            intent: troubleshooting
+            sub_intent: endo_completion_aftercare
+            confidence: 0.94
+            need_clarification: false
+            clarification_question: null
+            reason: agent_eval
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: notice_policy_update
+              arguments: {apply_seq: "930021042875719", policyNo: "9200100000458846", endorseType: "001028"}
+    tool_fixtures:
+      - tool_name: notice_policy_update
+        is_write: true
+        operation: notify
+        risk_level: high
+        result: {success: true, message: "policy update notified"}
+    approval_fixtures:
+      accepted: true
+      status: pending
+    expected:
+      selected_agent: troubleshooting_agent
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      repair_count: 0
+      final_outcome: approval_pending
+      approval_required: true
+      approval_status: pending
+      graph_path_must_include: [dispatch_agent, create_approval_request, pause_for_approval, pre_answer_verify]
+      graph_path_must_not_include: [collect_verification_evidence, verify_task_completion]
+      tool_calls_must_include: [notice_policy_update]
+      approval_pending_skips_completion_verify: true
+    tags: [approval, pending]
+    risk_level: high
+
+  - case_id: approval_callback_then_pass
+    description: 审批通过后恢复工具循环，随后进入 Completion Verify 并 PASS。
+    input:
+      tenant_id: tenant
+      channel: web
+      user_id: u1
+      session_id: approval_f
+      messages:
+        - role: user
+          content: "930021042875719 保单号 9200100000458846 保全项001028 保单更新失败，请通知保单更新"
+    llm_scripted_responses:
+      - scene: query_rewrite
+        response:
+          content_json:
+            is_follow_up: false
+            rewritten_query: "受理号930021042875719，保单9200100000458846，保全项001028，通知保单更新。"
+            rewrite_type: new_request
+            entities: {policy_no: "9200100000458846", apply_seq: "930021042875719", endorseType: "001028"}
+            inherited_entities: {}
+            missing_required_entities: []
+            need_clarification: false
+            clarification_question: null
+            confidence: 0.95
+            reason: agent_eval
+      - scene: intent_recognition
+        response:
+          content_json:
+            intent: troubleshooting
+            sub_intent: endo_completion_aftercare
+            confidence: 0.94
+            need_clarification: false
+            clarification_question: null
+            reason: agent_eval
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: notice_policy_update
+              arguments: {apply_seq: "930021042875719", policyNo: "9200100000458846", endorseType: "001028"}
+      - scene: subagent_reasoning
+        response:
+          content: "审批通过后已通知保单更新。"
+      - scene: task_completion_verifier
+        response:
+          content_json:
+            status: PASS
+            completed: true
+            summary: "审批通过后写工具已执行成功。"
+            completed_items: ["已通知保单更新"]
+            missing_items: []
+            repair_plan: null
+            confidence: 0.92
+            reasoning_summary: "approved tool result success。"
+            evidence_ids: []
+    tool_fixtures:
+      - tool_name: notice_policy_update
+        is_write: true
+        operation: notify
+        risk_level: high
+        result: {success: true, message: "policy update notified"}
+    approval_fixtures:
+      accepted: true
+      status: pending
+      callbacks:
+        - status: approved
+          approver: manager
+    expected:
+      selected_agent: troubleshooting_agent
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      final_verifier_status: PASS
+      repair_count: 0
+      final_outcome: approval_completed
+      callback_final_status: completed
+      graph_path_must_include: [resume_approved_tool, collect_verification_evidence, verify_task_completion, pre_answer_verify]
+      tool_calls_must_include: [notice_policy_update]
+    tags: [approval, callback]
+    risk_level: high

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.runtime.checkpoint import SQLiteCheckpointStore
 from app.runtime.graph_state import AgentGraphState
+from app.runtime.session_locks import SessionExecutionLockManager
 from app.runtime.state_contracts import AgentResumeState
 from app.runtime.state_projector import project_checkpoint_snapshot
 from app.schemas.approval import ApprovalRequest
@@ -18,13 +19,24 @@ class AgentOrchestrator:
     保存的 resume_state 重建 State，再重新进入 Graph 的恢复分支。
     """
 
-    def __init__(self, graph, checkpoint_store: SQLiteCheckpointStore | None = None) -> None:
+    def __init__(
+        self,
+        graph,
+        checkpoint_store: SQLiteCheckpointStore | None = None,
+        session_locks: SessionExecutionLockManager | None = None,
+    ) -> None:
         """注入已编译的 LangGraph runnable 和项目内 checkpoint store。"""
         self.graph = graph
         self.checkpoint_store = checkpoint_store
+        self.session_locks = session_locks or SessionExecutionLockManager(enabled=False)
 
     async def run(self, inbound: InboundMessage) -> AgentGraphState:
         """执行一次普通请求，并在结束后保存最终状态快照。"""
+        async with self.session_locks.lock(inbound.session_key):
+            return await self._run_without_session_lock(inbound)
+
+    async def _run_without_session_lock(self, inbound: InboundMessage) -> AgentGraphState:
+        """实际执行普通请求；外层 run() 负责同会话串行锁。"""
         thread_id = self._thread_id(inbound.session_key, inbound.request_id)
         initial_state: AgentGraphState = {
             "request_id": inbound.request_id,
@@ -53,12 +65,23 @@ class AgentOrchestrator:
         保存必要的 resume_state、pending_messages、pending_tools 和 pending_tool_call；
         回调通过这些持久化内容重建 State，并从 route_entry 的恢复分支继续执行。
         """
-        thread_id = approval_request.thread_id or self._thread_id(
-            approval_request.session_key or "",
-            approval_request.request_id or approval_request.approval_id,
-        )
         base_state = approval_request.resume_state or approval_request.pending_state
         resume_contract = AgentResumeState.model_validate(base_state)
+        session_key = approval_request.session_key or resume_contract.session_key
+        async with self.session_locks.lock(session_key):
+            return await self._resume_after_approval_without_session_lock(approval_request, resume_contract)
+
+    async def _resume_after_approval_without_session_lock(
+        self,
+        approval_request: ApprovalRequest,
+        resume_contract: AgentResumeState,
+    ) -> AgentGraphState:
+        """实际执行审批恢复；外层 resume_after_approval() 负责同会话串行锁。"""
+        session_key = approval_request.session_key or resume_contract.session_key
+        thread_id = approval_request.thread_id or self._thread_id(
+            session_key,
+            approval_request.request_id or approval_request.approval_id,
+        )
         resume_state: AgentGraphState = {
             **resume_contract.to_graph_state(),
             "approval_resume": True,

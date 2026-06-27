@@ -101,6 +101,8 @@ class QueryRewriteNode:
         ).entity_bag
         summary_bag = self.entity_extractor.extract_from_summary(short_summary)
         recent_bag = self.entity_extractor.extract_from_recent_turns(recent_messages or [])
+
+        # 最近消息的优先级高于摘要
         history_bag = self.entity_resolver.resolve(
             base_bag=summary_bag,
             candidate_bag=recent_bag,
@@ -153,6 +155,35 @@ class QueryRewriteNode:
         4. 若模型仍把继承值 echo 到 entities，先过滤掉，避免继承来源 metadata 被改成 llm；
         5. 当前轮规则实体作为 base_bag，LLM 当前轮候选和继承候选作为 candidate_bag，
             必须经过 EntityResolver 后才形成 canonical entity_bag。
+        """
+
+        """
+        当前用户问题
+          ↓ 规则实体提取
+        extracted_current_bag
+          ↓ Resolver 规范化
+        current_bag
+        
+        短期摘要 ──规则提取──→ summary_bag
+        最近对话 ──规则提取──→ recent_bag
+                                  ↓ Resolver
+                              history_bag
+        
+        history_bag + current_bag
+                  ↓
+        ConversationWindow
+                  ↓
+                 LLM
+                  ↓
+        rewritten_query
+        entities
+        inherited_entities
+                  ↓
+        llm_bag + inherited_bag
+                  ↓
+        current_bag 作为 base
+                  ↓ EntityResolver
+        最终 canonical entity_bag
         """
         prompt_trace = self.prompt_loader.scene_trace("query_rewrite")
         if not self._should_use_llm_json():
@@ -231,13 +262,18 @@ class QueryRewriteNode:
                 extra=parse_trace,
             )
         rewritten_query = output.rewritten_query or original_query
+        # 明确表示从历史上下文继承过来的，不是当前用户明确输入的
         inherited_bag = self._inherited_bag_from_compact(output.inherited_entities)
+
         llm_bag = self._llm_candidate_bag_from_compact(
             output.entities,
             current_bag=current_bag,
             inherited_bag=inherited_bag,
         )
         candidate_bag = EntityBag().merge(inherited_bag).merge(llm_bag)
+
+        # LLM 输出 entities 和 inherited_entities，代码将其转换为 llm_bag 和 inherited_bag，
+        # 最后以 current_bag 为 base，经 EntityResolver 统一规范化、去重、择优和冲突判断，得到最终 canonical entity_bag
         resolution = self.entity_resolver.resolve(
             base_bag=current_bag,
             candidate_bag=candidate_bag,

@@ -46,6 +46,13 @@ class SubAgentContext(BaseModel):
     skill_selection_reason: str | None = None
     skill_selection_fallback: bool = False
     skill_selection_source: str | None = None
+    execution_mode: str = "initial"
+    repair_plan: dict[str, Any] | None = None
+    previous_answer: str | None = None
+    previous_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    previous_tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    repair_round: int = 0
+    do_not_repeat: list[str] = Field(default_factory=list)
     no_skill_policy: str | None = None
     no_skill_blocked: bool = False
     missing_required_entities: list[str] = Field(default_factory=list)

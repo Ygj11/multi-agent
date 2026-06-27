@@ -22,6 +22,7 @@ def test_route_contracts_declare_graph_edge_values():
     assert NODE_CONTRACTS["query_rewrite"].routes == ["clarify", "continue"]
     assert NODE_CONTRACTS["intent_recognition"].routes == ["clarify", "continue"]
     assert NODE_CONTRACTS["select_agent"].routes == ["clarify", "continue"]
-    assert NODE_CONTRACTS["check_human_approval_required"].routes == ["required", "not_required"]
+    assert NODE_CONTRACTS["check_human_approval_required"].routes == ["required", "not_required", "skip_completion"]
+    assert NODE_CONTRACTS["verify_task_completion"].routes == ["passed", "continue", "need_user", "handoff", "failed"]
     assert NODE_CONTRACTS["create_approval_request"].routes == ["submit", "manual"]
     assert NODE_CONTRACTS["pre_answer_verify"].routes == ["passed", "retry", "fallback"]

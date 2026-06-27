@@ -15,6 +15,7 @@ def project_checkpoint_snapshot(state: dict[str, Any]) -> CheckpointSnapshot:
     """Build a compact final-state snapshot from a rich graph state."""
     now = datetime.now(UTC).isoformat()
     subagent_result = _as_dict(state.get("subagent_result"))
+    completion_result = _as_dict(state.get("task_completion_verification_result"))
     return CheckpointSnapshot(
         request_id=str(state.get("request_id") or ""),
         trace_id=_optional_str(state.get("trace_id")),
@@ -35,7 +36,16 @@ def project_checkpoint_snapshot(state: dict[str, Any]) -> CheckpointSnapshot:
         entities=_drop_credential_fields(_as_dict(state.get("entities"))),
         selected_agent=_optional_str(state.get("selected_agent")),
         agent_selection_summary=_drop_credential_fields(_as_dict(state.get("agent_selection_summary"))),
-        selected_skill_id=_optional_str(subagent_result.get("selected_skill_id")),
+        selected_skill_id=_optional_str(state.get("selected_skill_id") or subagent_result.get("selected_skill_id")),
+        selected_skill_version=_optional_str(state.get("selected_skill_version")),
+        task_completion_status=_optional_str(completion_result.get("status")),
+        task_completion_summary=_optional_str(completion_result.get("summary")),
+        task_completion_evidence_ids=_as_str_list(completion_result.get("evidence_ids")),
+        repair_round=int(state.get("repair_round") or 0),
+        repair_plan=_drop_credential_fields(_as_dict(state.get("repair_plan") or completion_result.get("repair_plan"))),
+        last_repair_fingerprint=_optional_str(state.get("last_repair_fingerprint")),
+        repair_no_progress_count=int(state.get("repair_no_progress_count") or 0),
+        execution_mode=_optional_str(state.get("execution_mode")) or "initial",
         approval_required=bool(state.get("approval_required")),
         approval_id=_optional_str(state.get("approval_id")),
         approval_status=_optional_str(state.get("approval_status")),
@@ -89,10 +99,17 @@ def project_approval_resume_state(
         sub_intent=_optional_str(state.get("sub_intent")),
         entities=_drop_credential_fields(_as_dict(state.get("entities"))),
         selected_agent=_optional_str(state.get("selected_agent") or subagent_result.get("agent_name") or subagent_result.get("name")),
-        selected_skill_id=_optional_str(subagent_result.get("selected_skill_id")),
+        selected_skill_id=_optional_str(state.get("selected_skill_id") or subagent_result.get("selected_skill_id")),
         selected_skill_metadata=_as_dict_or_none(subagent_result.get("selected_skill_metadata")),
         skill_selection_score=_optional_float(subagent_result.get("skill_selection_score")),
         skill_selection_reason=_optional_str(subagent_result.get("skill_selection_reason")),
+        selected_skill_version=_optional_str(state.get("selected_skill_version")),
+        execution_mode=_optional_str(state.get("execution_mode")) or "initial",
+        repair_round=int(state.get("repair_round") or 0),
+        repair_plan=_drop_credential_fields(_as_dict(state.get("repair_plan"))),
+        repair_history=_drop_credential_fields(list(state.get("repair_history") or [])),
+        last_repair_fingerprint=_optional_str(state.get("last_repair_fingerprint")),
+        repair_no_progress_count=int(state.get("repair_no_progress_count") or 0),
         approval_id=approval_id or _optional_str(state.get("approval_id")),
         approval_status=approval_status or _optional_str(state.get("approval_status")),
         parent_approval_id=parent_approval_id or _optional_str(state.get("parent_approval_id")),
@@ -202,3 +219,9 @@ def _optional_float(value: Any) -> float | None:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item not in (None, "")]

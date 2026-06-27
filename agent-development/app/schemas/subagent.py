@@ -24,6 +24,14 @@ class SubAgentTask(BaseModel):
     trace_id: str | None = None
     auth_context: dict[str, Any] | None = None
     entities: dict[str, Any] = Field(default_factory=dict)
+    execution_mode: str = "initial"
+    pinned_skill_id: str | None = None
+    repair_plan: dict[str, Any] | None = None
+    previous_answer: str | None = None
+    previous_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    previous_tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    repair_round: int = 0
+    do_not_repeat: list[str] = Field(default_factory=list)
     task_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 

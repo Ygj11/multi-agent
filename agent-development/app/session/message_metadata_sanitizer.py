@@ -19,6 +19,12 @@ RUNTIME_METADATA_ALLOWLIST = {
     "missing_tool_arguments",
     "selected_agent",
     "selected_skill_id",
+    "task_completion_status",
+    "task_completion_summary",
+    "task_completion_evidence_ids",
+    "task_completion_completed",
+    "task_completion_missing_items",
+    "repair_round",
 }
 
 

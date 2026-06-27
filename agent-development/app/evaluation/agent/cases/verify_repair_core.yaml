@@ -1,0 +1,249 @@
+suite: verify_repair_core
+description: Core task-completion verify and repair behavior.
+cases:
+  - case_id: aftercare_first_pass
+    description: 首轮子 Agent 有工具证据，Completion Verifier 直接 PASS。
+    input:
+      tenant_id: tenant
+      channel: web
+      user_id: u1
+      session_id: core_a
+      messages:
+        - role: user
+          content: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028"
+    llm_scripted_responses:
+      - scene: query_rewrite
+        response:
+          content_json:
+            is_follow_up: false
+            rewritten_query: "保全任务完成，保单9200100000458846，受理号930021042875719，保全项001028，为什么没有更新？"
+            rewrite_type: new_request
+            entities: {policy_no: "9200100000458846", apply_seq: "930021042875719", endorseType: "001028"}
+            inherited_entities: {}
+            missing_required_entities: []
+            need_clarification: false
+            clarification_question: null
+            confidence: 0.95
+            reason: agent_eval
+      - scene: intent_recognition
+        response:
+          content_json:
+            intent: troubleshooting
+            sub_intent: endo_completion_aftercare
+            confidence: 0.94
+            need_clarification: false
+            clarification_question: null
+            reason: agent_eval
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: query_endo_task_record
+              arguments: {apply_seq: "930021042875719"}
+      - scene: subagent_reasoning
+        response:
+          content: "已查询保全任务记录，9节点为失败，建议按保单更新异常继续处理。"
+      - scene: task_completion_verifier
+        response:
+          content_json:
+            status: PASS
+            completed: true
+            summary: "已基于成功工具结果完成任务验收。"
+            completed_items: ["已查询保全任务节点"]
+            missing_items: []
+            repair_plan: null
+            confidence: 0.9
+            reasoning_summary: "query_endo_task_record 有成功证据。"
+            evidence_ids: []
+    tool_fixtures:
+      - tool_name: query_endo_task_record
+        expected_arguments: {apply_seq: "930021042875719"}
+        result:
+          success: true
+          apply_seq: "930021042875719"
+          task_records:
+            - task_type: "9"
+              task_status: E
+              response_body: "保单更新错误"
+    expected:
+      selected_agent: troubleshooting_agent
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      initial_verifier_status: PASS
+      final_verifier_status: PASS
+      repair_count: 0
+      final_outcome: answered
+      graph_path_must_include: [verify_task_completion, pre_answer_verify, save_assistant_message]
+      graph_path_must_not_include: [dispatch_repair_agent]
+      tool_calls_must_include: [query_endo_task_record]
+    tags: [core, first_pass]
+    risk_level: low
+
+  - case_id: aftercare_repair_then_pass
+    description: 首轮证据不足，Verifier 要求同一 Agent/Skill 继续补证据，修复后 PASS。
+    input:
+      tenant_id: tenant
+      channel: web
+      user_id: u1
+      session_id: core_b
+      messages:
+        - role: user
+          content: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028，帮我完整排查"
+    llm_scripted_responses:
+      - scene: query_rewrite
+        response:
+          content_json:
+            is_follow_up: false
+            rewritten_query: "保全任务完成，保单9200100000458846，受理号930021042875719，保全项001028，完整排查未更新原因。"
+            rewrite_type: new_request
+            entities: {policy_no: "9200100000458846", apply_seq: "930021042875719", endorseType: "001028"}
+            inherited_entities: {}
+            missing_required_entities: []
+            need_clarification: false
+            clarification_question: null
+            confidence: 0.95
+            reason: agent_eval
+      - scene: intent_recognition
+        response:
+          content_json:
+            intent: troubleshooting
+            sub_intent: endo_completion_aftercare
+            confidence: 0.94
+            need_clarification: false
+            clarification_question: null
+            reason: agent_eval
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: query_endo_task_record
+              arguments: {apply_seq: "930021042875719"}
+      - scene: subagent_reasoning
+        response:
+          content: "已查询保全任务记录，但还缺少内部日志佐证。"
+      - scene: task_completion_verifier
+        response:
+          content_json:
+            status: CONTINUE
+            completed: false
+            summary: "首轮只完成节点查询，还缺少日志证据。"
+            completed_items: ["已查询保全任务节点"]
+            missing_items: ["补充内部日志"]
+            repair_plan:
+              reason: "需要补充日志证据"
+              completed_items: ["已查询保全任务节点"]
+              missing_items: ["补充内部日志"]
+              next_steps: ["查询内部日志并给出结论"]
+              do_not_repeat: ["不要重复 query_endo_task_record"]
+              reuse_evidence_ids: []
+              expected_new_evidence: ["internal_log"]
+              target_agent: troubleshooting_agent
+              selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+              confidence: 0.88
+            confidence: 0.88
+            reasoning_summary: "需要继续补证据。"
+            evidence_ids: []
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: query_internal_log
+              arguments: {request_id: "req_eval_aftercare", query: "930021042875719 保单更新错误"}
+      - scene: subagent_reasoning
+        response:
+          content: "已补充内部日志，确认更新失败来自9节点保单更新错误。"
+      - scene: task_completion_verifier
+        response:
+          content_json:
+            status: PASS
+            completed: true
+            summary: "节点和日志证据均已补齐。"
+            completed_items: ["已查询节点", "已补充日志"]
+            missing_items: []
+            repair_plan: null
+            confidence: 0.91
+            reasoning_summary: "修复轮新增日志证据。"
+            evidence_ids: []
+    tool_fixtures:
+      - tool_name: query_endo_task_record
+        result: {success: true, apply_seq: "930021042875719", task_records: [{task_type: "9", task_status: E}]}
+      - tool_name: query_internal_log
+        result: {success: true, logs: ["9节点保单更新错误，等待通知更新"]}
+    expected:
+      selected_agent: troubleshooting_agent
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      initial_verifier_status: CONTINUE
+      final_verifier_status: PASS
+      repair_count: 1
+      final_outcome: answered
+      graph_path_must_include: [build_repair_task, dispatch_repair_agent, verify_task_completion]
+      tool_calls_must_include: [query_endo_task_record, query_internal_log]
+      tool_calls_must_not_repeat: [query_endo_task_record]
+      no_agent_drift: true
+      no_skill_drift: true
+    tags: [core, repair]
+    risk_level: medium
+
+  - case_id: aftercare_need_user
+    description: Verifier 判断仍缺用户信息，转澄清，不进入 Repair Agent。
+    input:
+      tenant_id: tenant
+      channel: web
+      user_id: u1
+      session_id: core_c
+      messages:
+        - role: user
+          content: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028，但我不确定要处理哪块"
+    llm_scripted_responses:
+      - scene: query_rewrite
+        response:
+          content_json:
+            is_follow_up: false
+            rewritten_query: "保全任务完成，保单9200100000458846，受理号930021042875719，保全项001028，用户不确定处理方向。"
+            rewrite_type: new_request
+            entities: {policy_no: "9200100000458846", apply_seq: "930021042875719", endorseType: "001028"}
+            inherited_entities: {}
+            missing_required_entities: []
+            need_clarification: false
+            clarification_question: null
+            confidence: 0.93
+            reason: agent_eval
+      - scene: intent_recognition
+        response:
+          content_json:
+            intent: troubleshooting
+            sub_intent: endo_completion_aftercare
+            confidence: 0.88
+            need_clarification: false
+            clarification_question: null
+            reason: agent_eval
+      - scene: subagent_reasoning
+        response:
+          tool_calls:
+            - name: query_endo_task_record
+              arguments: {apply_seq: "930021042875719"}
+      - scene: subagent_reasoning
+        response:
+          content: "已查询节点，但无法确定用户要处理保单、客户、账期还是财务方向。"
+      - scene: task_completion_verifier
+        response:
+          content_json:
+            status: NEED_USER
+            completed: false
+            summary: "需要用户确认处理方向。"
+            completed_items: ["已查询保全任务节点"]
+            missing_items: ["处理方向"]
+            repair_plan: null
+            confidence: 0.86
+            reasoning_summary: "缺少业务决策信息。"
+            evidence_ids: []
+    tool_fixtures:
+      - tool_name: query_endo_task_record
+        result: {success: true, apply_seq: "930021042875719", task_records: [{task_type: "9", task_status: E}, {task_type: "10", task_status: E}]}
+    expected:
+      selected_agent: troubleshooting_agent
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      initial_verifier_status: NEED_USER
+      final_verifier_status: NEED_USER
+      repair_count: 0
+      final_outcome: need_user
+      graph_path_must_include: [build_verification_clarification, pre_answer_verify]
+      graph_path_must_not_include: [dispatch_repair_agent]
+    tags: [core, need_user]
+    risk_level: medium

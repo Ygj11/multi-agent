@@ -8,11 +8,11 @@ audit review. It complements, but does not replace, the append-only
 """
 
 import json
-from typing import Any
 
 from app.config.settings import get_settings
 from app.evidence.schemas import Evidence
 from app.storage.sqlite import SQLiteDatabase
+from app.utils.json_utils import to_json
 
 
 class EvidenceStore:
@@ -38,11 +38,11 @@ class EvidenceStore:
                     evidence.session_key,
                     evidence.source_type,
                     evidence.source_name,
-                    self._to_json(evidence.content),
+                    to_json(evidence.content),
                     evidence.summary,
-                    self._to_json(evidence.citations),
-                    self._to_json(evidence.redactions),
-                    self._to_json(evidence.metadata),
+                    to_json(evidence.citations),
+                    to_json(evidence.redactions),
+                    to_json(evidence.metadata),
                     evidence.created_at,
                 ),
             )
@@ -86,7 +86,3 @@ class EvidenceStore:
             metadata=json.loads(row["metadata_json"]),
             created_at=row["created_at"],
         )
-
-    @staticmethod
-    def _to_json(value: Any) -> str:
-        return json.dumps(value, ensure_ascii=False, default=str)

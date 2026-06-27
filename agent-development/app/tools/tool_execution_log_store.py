@@ -13,6 +13,7 @@ from typing import Any
 
 from app.config.settings import get_settings
 from app.storage.sqlite import SQLiteDatabase
+from app.utils.json_utils import to_json
 
 
 SENSITIVE_KEYS = {"secret", "token", "password", "api_key", "authorization"}
@@ -31,14 +32,6 @@ def mask_sensitive(value: Any) -> Any:
     if isinstance(value, list):
         return [mask_sensitive(item) for item in value]
     return value
-
-
-def to_json(value: Any) -> str:
-    """Safely serialize a value as a JSON string."""
-    try:
-        return json.dumps(value, ensure_ascii=False, default=str)
-    except TypeError:
-        return json.dumps(str(value), ensure_ascii=False)
 
 
 class ToolExecutionLogStore:

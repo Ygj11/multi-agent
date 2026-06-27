@@ -193,3 +193,54 @@ async def test_context_builder_loads_only_selected_skill_body(monkeypatch):
     assert context.selected_skill_id == "troubleshooting_agent.endo_completion_aftercare"
     assert loaded_skill_ids == ["troubleshooting_agent.endo_completion_aftercare"]
     assert "保全任务完成后异常处理 Skill" in context.skill_content
+
+
+async def test_repair_context_uses_pinned_skill_without_reselecting(monkeypatch):
+    """repair 模式必须固定原 selected_skill_id，不能因为查询文本变化重新选 Skill。"""
+    catalog = SkillCatalog(Path("app/skills"))
+    selector = SkillSelector()
+    builder = ContextBuilder(
+        skills_root=Path("app/skills"),
+        skill_catalog=catalog,
+        skill_selector=selector,
+    )
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("repair mode should not call SkillSelector.select")
+
+    monkeypatch.setattr(selector, "select", fail_if_called)
+    parent_context = OrchestratorContext(
+        original_query="退保失败，受理号930010412672222，保单9200100000458846，保全项001028",
+        rewritten_query="退保失败，受理号930010412672222，保单9200100000458846，保全项001028",
+        intent="troubleshooting",
+        sub_intent="refund_failure",
+        session_key="s",
+        entities={"apply_seq": "930010412672222", "policy_no": "9200100000458846", "endorseType": "001028"},
+    )
+    task = SubAgentTask(
+        agent_name="troubleshooting_agent",
+        agent_card_version="1.0.0",
+        query=parent_context.rewritten_query,
+        intent="troubleshooting",
+        session_key="s",
+        original_query=parent_context.original_query,
+        entities=parent_context.entities,
+        request_id="req-test",
+        trace_id="trace-test",
+        execution_mode="repair",
+        pinned_skill_id="troubleshooting_agent.endo_completion_aftercare",
+        repair_plan={"reason": "继续保全完成后处理"},
+        repair_round=1,
+    )
+
+    context = await builder.build_for_subagent(
+        task=task,
+        parent_context=parent_context,
+        agent_card=_troubleshooting_card(),
+        allowed_tools=["query_endo_task_record"],
+    )
+
+    assert context.selected_skill_id == "troubleshooting_agent.endo_completion_aftercare"
+    assert context.skill_selection_source == "pinned_repair"
+    assert context.execution_mode == "repair"
+    assert context.repair_round == 1

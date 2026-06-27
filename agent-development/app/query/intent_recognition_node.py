@@ -12,7 +12,6 @@ from typing import Any
 from app.llm.base import LLMProvider
 from app.llm.output_schemas import IntentRecognitionLLMOutput, parse_llm_json_schema
 from app.prompts.loader import PromptLoader, default_prompt_loader
-from app.query.entity_resolver import EntityResolver
 from app.query.intent_fallback_policy import IntentFallbackPolicy
 from app.query.intent_taxonomy_loader import IntentTaxonomyLoader
 from app.runtime.decision_trace import LLMAttempt
@@ -29,7 +28,7 @@ from app.runtime.failure_codes import (
     LLM_STATUS_PROVIDER_ERROR,
     LLM_STATUS_SUCCESS,
 )
-from app.schemas.entities import ConversationWindow, EntityBag
+from app.schemas.entities import ConversationWindow
 from app.schemas.intent import IntentResult
 
 
@@ -39,13 +38,11 @@ class IntentRecognitionNode:
     def __init__(
         self,
         llm_provider: LLMProvider | None = None,
-        entity_resolver: EntityResolver | None = None,
         prompt_loader: PromptLoader | None = None,
         intent_taxonomy_loader: IntentTaxonomyLoader | None = None,
         intent_fallback_policy: IntentFallbackPolicy | None = None,
     ) -> None:
         self.llm_provider = llm_provider
-        self.entity_resolver = entity_resolver or EntityResolver()
         self.prompt_loader = prompt_loader or default_prompt_loader
         self.intent_taxonomy_loader = intent_taxonomy_loader or IntentTaxonomyLoader()
         self.intent_fallback_policy = intent_fallback_policy or IntentFallbackPolicy.load()
@@ -54,10 +51,8 @@ class IntentRecognitionNode:
         self,
         original_query: str,
         rewritten_query: str,
-        recent_messages: list[dict[str, Any]] | None = None,
-        short_summary: str | None = None,
-        current_entities: dict[str, Any] | None = None,
-        entity_bag: dict[str, Any] | None = None,
+        entities: dict[str, Any] | None = None,
+        rewrite_type: str | None = None,
         conversation_window: dict[str, Any] | None = None,
         agent_card_summaries: list[dict[str, Any]] | None = None,
         request_id: str | None = None,
@@ -65,14 +60,17 @@ class IntentRecognitionNode:
         session_key: str | None = None,
     ) -> IntentResult:
         """分类 intent/sub_intent；实体只读，工具和 Agent 后续再选。"""
-        resolved_bag = self._resolved_bag(entity_bag=entity_bag, current_entities=current_entities)
-        entities = resolved_bag.to_compact_dict()
-        window = self._window(conversation_window, short_summary, recent_messages, resolved_bag)
+        if entities is None:
+            raise ValueError("intent_recognition_requires_entities_projection")
+        if not rewrite_type:
+            raise ValueError("intent_recognition_requires_rewrite_type")
+        window = self._window(conversation_window)
 
         llm_result, llm_attempt = await self._recognize_with_llm(
             original_query=original_query,
             rewritten_query=rewritten_query,
             entities=entities,
+            rewrite_type=rewrite_type,
             window=window,
             agent_card_summaries=agent_card_summaries or [],
             request_id=request_id,
@@ -86,7 +84,7 @@ class IntentRecognitionNode:
             original_query=original_query,
             rewritten_query=rewritten_query,
             entities=entities,
-            window=window,
+            rewrite_type=rewrite_type,
             llm_attempt=llm_attempt,
         )
 
@@ -96,6 +94,7 @@ class IntentRecognitionNode:
         original_query: str,
         rewritten_query: str,
         entities: dict[str, Any],
+        rewrite_type: str,
         window: ConversationWindow,
         agent_card_summaries: list[dict[str, Any]],
         request_id: str | None,
@@ -127,6 +126,7 @@ class IntentRecognitionNode:
                             original_query=original_query,
                             rewritten_query=rewritten_query,
                             entities=entities,
+                            rewrite_type=rewrite_type,
                             conversation_window=window.model_dump(),
                             intent_taxonomy=intent_taxonomy,
                             allowed_intents=allowed_intents,
@@ -210,12 +210,9 @@ class IntentRecognitionNode:
             intent=intent,
             sub_intent=sub_intent,
             confidence=confidence,
-            missing_required_entities=[str(item) for item in output.missing_required_entities],
             need_clarification=need_clarification,
             clarification_question=output.clarification_question,
-            is_follow_up=output.is_follow_up,
             reason=output.reason,
-            target_subagent=None,
             llm_status=LLM_STATUS_INVALID_OUTPUT if invalid_sub_intent else LLM_STATUS_SUCCESS,
             fallback_used=invalid_sub_intent,
             fallback_source="intent_recognition" if invalid_sub_intent else None,
@@ -241,18 +238,36 @@ class IntentRecognitionNode:
         original_query: str,
         rewritten_query: str,
         entities: dict[str, Any],
-        window: ConversationWindow,
+        rewrite_type: str,
         llm_attempt: LLMAttempt,
     ) -> IntentResult:
-        query_raw = f"{original_query} {rewritten_query}"
-        is_follow_up = bool(window.entity_bag.to_compact_dict()) and original_query.strip() != rewritten_query.strip()
+        """LLM 不可用、输出非法或置信不足时的确定性意图兜底。
 
+        规则兜底不重新抽取实体，也不修改 canonical entity_bag。
+        它只读取 Query Rewrite 已经产出的 rewritten_query 与 entities，
+        再结合 intent_fallback_policy.yaml 中的关键词、实体提示和澄清话术，
+        给出一个受 taxonomy 约束的 intent/sub_intent。
+        """
+        # 步骤 1：把原始问题和改写后的自包含问题拼在一起作为规则匹配文本。
+        # rewritten_query 通常比 original_query 信息更完整；保留 original_query
+        # 是为了让规则仍能命中用户原话中的关键词。
+        query_raw = f"{original_query} {rewritten_query}"
+        # 步骤 2：规则侧不再读取历史窗口做实体继承，也不重新判断是否追问。
+        # rewrite_type 已由 Query Rewrite 判定，这里只作为 trace 背景记录；
+        # 规则兜底只消费 rewritten_query 与实体投影视图，避免二次维护上下文。
+
+        # 步骤 3：调用 YAML 驱动的 fallback policy 做初步分类。
+        # classify 会根据文本关键词、已有实体提示等返回 intent/sub_intent/confidence，
+        # 但它的结果还不是最终路由结果，后面必须再经过 taxonomy 白名单约束。
         decision = self.intent_fallback_policy.classify(text=query_raw, entities=entities)
         intent = decision.intent
         sub_intent = decision.sub_intent
         confidence = decision.confidence
         reason = "entity_aware_rule_fallback"
 
+        # 步骤 4：用 intent_taxonomy.yaml 约束兜底结果。
+        # intent 不在系统允许值域内时，强制降为 unknown；
+        # sub_intent 不在该 intent 的候选集合内时，丢弃 sub_intent，避免规则把非法子意图送入路由。
         candidate_sub_intents = self.intent_taxonomy_loader.list_candidate_sub_intents()
         if intent != "unknown" and not self.intent_taxonomy_loader.is_allowed_intent(intent):
             intent = "unknown"
@@ -261,16 +276,18 @@ class IntentRecognitionNode:
         else:
             sub_intent = self._validated_sub_intent(sub_intent, intent, candidate_sub_intents)
 
+        # 步骤 5：只有 unknown 且低置信时才要求澄清。
+        # 这保证“规则无法判断业务类型”的场景不会静默进入错误 Agent。
         need_clarification = intent == "unknown" and confidence < 0.5
+        # 步骤 6：把规则命中过程写入 decision_trace，便于排查到底是 LLM 失败后兜底，
+        # 还是命中了哪些关键词/实体提示导致当前意图。
         return IntentResult(
             intent=intent,
             sub_intent=sub_intent,
             confidence=confidence,
             need_clarification=need_clarification,
             clarification_question=decision.clarification_question if need_clarification else None,
-            is_follow_up=is_follow_up,
             reason=reason,
-            target_subagent=None,
             llm_status=llm_attempt.llm_status,
             fallback_used=True,
             fallback_source="intent_recognition",
@@ -279,6 +296,7 @@ class IntentRecognitionNode:
                 "source": "intent_recognition",
                 "method": "rule_fallback",
                 **self.intent_fallback_policy.trace(),
+                "rewrite_type": rewrite_type,
                 "matched_keywords": decision.matched_keywords,
                 "matched_entity_hints": decision.matched_entity_hints,
                 **llm_attempt.trace(source="intent_recognition"),
@@ -288,35 +306,10 @@ class IntentRecognitionNode:
     def _window(
         self,
         conversation_window: dict[str, Any] | None,
-        short_summary: str | None,
-        recent_messages: list[dict[str, Any]] | None,
-        current_bag: EntityBag,
     ) -> ConversationWindow:
-        if conversation_window:
-            try:
-                return ConversationWindow(**conversation_window)
-            except Exception:
-                pass
-        return ConversationWindow(session_key="", summary=short_summary, recent_turns=recent_messages or [], entity_bag=current_bag)
-
-    def _resolved_bag(
-        self,
-        *,
-        entity_bag: dict[str, Any] | None,
-        current_entities: dict[str, Any] | None,
-    ) -> EntityBag:
-        # 兼容旧调用：如果上游只给 compact entities，则临时转成 EntityBag 读取。
-        # 这是只读兼容路径，不能把转换结果作为新的 canonical entity_bag 写回 Graph。
-        if entity_bag:
-            try:
-                return self.entity_resolver.normalize_bag(EntityBag(**entity_bag), stage="intent_recognition_read")
-            except Exception:
-                pass
-        return self.entity_resolver.resolve(
-            base_bag=EntityBag(),
-            candidate_bag=EntityBag.from_compact_dict(current_entities or {}, source="rule", confidence=0.9),
-            stage="intent_recognition_compat_read",
-        ).entity_bag
+        if not conversation_window:
+            raise ValueError("intent_recognition_requires_conversation_window")
+        return ConversationWindow(**conversation_window)
 
     def _should_use_llm_json(self) -> bool:
         if self.llm_provider is None:

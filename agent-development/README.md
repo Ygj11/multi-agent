@@ -120,7 +120,8 @@ flowchart TD
     SUB --> LOOP["LLM Tool Loop"]
     LOOP --> EXEC["ToolExecutor / ExecutionPipeline"]
     EXEC --> EXT["Local Tools / MCP / External APIs"]
-    GRAPH --> VERIFY["pre_answer_verify"]
+    GRAPH --> COMPLETE["task_completion_verify / limited repair"]
+    COMPLETE --> VERIFY["pre_answer_verify"]
     VERIFY --> RESP["ChatResponse"]
 
     subgraph HARNESS["Shared Harness"]
@@ -180,7 +181,18 @@ flowchart TD
     DISPATCH --> APPROVAL_CHECK["check_human_approval_required"]
     RESUME --> APPROVAL_CHECK
     APPROVAL_CHECK -->|required| CREATE_APPROVAL["create_approval_request"]
-    APPROVAL_CHECK -->|not_required| VERIFY["pre_answer_verify"]
+    APPROVAL_CHECK -->|not_required| EVIDENCE["collect_verification_evidence"]
+    APPROVAL_CHECK -->|skip_completion| VERIFY["pre_answer_verify"]
+    EVIDENCE --> TCV["verify_task_completion"]
+    TCV -->|PASS| VERIFY
+    TCV -->|CONTINUE| REPAIR_TASK["build_repair_task"]
+    REPAIR_TASK --> REPAIR_DISPATCH["dispatch_repair_agent"]
+    REPAIR_DISPATCH --> APPROVAL_CHECK
+    TCV -->|NEED_USER| VERIFY_CLARIFY["build_verification_clarification"]
+    TCV -->|HUMAN_HANDOFF| HANDOFF["build_handoff_answer"]
+    TCV -->|FAILED| FALLBACK
+    VERIFY_CLARIFY --> VERIFY
+    HANDOFF --> VERIFY
     CREATE_APPROVAL -->|submit| SUBMIT_APPROVAL["submit_approval_request"]
     CREATE_APPROVAL -->|manual| VERIFY
     SUBMIT_APPROVAL --> PAUSE["pause_for_approval"]
@@ -207,6 +219,7 @@ flowchart TD
 | Agent 无法选择或无权限 | AgentCard 候选不足、低分，或 `AuthorizationService` 拒绝 | 返回澄清或权限说明，不进入子 Agent 执行 |
 | 写工具审批 | ToolExecutor 返回 `human_approval_required` | 主图创建审批记录、提交审批、返回 pending 答案 |
 | 审批回调恢复 | `/api/approval/callback` 收到 approved | 从 ApprovalStore 的 resume state 恢复，执行已批准工具，再继续 Tool Loop |
+| 任务完成度验收 | 子 Agent 正常完成且已选中 Skill | 收集轻量证据，按完整 Skill SOP 验收；可有限次回到同一 Agent/Skill 修复 |
 | Verification retry/fallback | 最终回答被 verifier 标记 retry/block | retry 时生成固定安全摘要再验证一次；失败则使用固定 fallback 文案 |
 
 当前实现没有使用 LangGraph 原生 `interrupt()`。审批中断是通过 ToolCallingRunner 的 pending 信息、ApprovalStore 的 `resume_state` 和 `AgentOrchestrator.resume_after_approval()` 实现的 callback 恢复。
@@ -225,6 +238,10 @@ flowchart TD
 | Agent 路由 | `select_agent` | 从 AgentCard 候选中选子 Agent | Agent 是业务执行边界 | `selected_agent`, `agent_selection_summary` |
 | 子 Agent 执行 | `dispatch_agent` | 封装任务并调用子 Agent | 主流程与子 Agent 之间需要稳定任务协议 | `subagent_result`, `answer` |
 | 审批判断 | `check_human_approval_required` | 判断 Tool Loop 是否触发写审批 | 写操作不能直接对外宣称已执行 | `approval_required`, `approval_payloads` |
+| 完成度证据 | `collect_verification_evidence` | 整理工具结果、Evidence 和只读状态探针摘要 | Completion Verify 不能直接执行原业务工具 | `verification_evidence`, `selected_skill_version` |
+| 完成度验收 | `verify_task_completion` | 根据完整 Skill SOP 判断任务是否完成 | 子 Agent 回答合理不等于业务状态已证明完成 | `task_completion_verification_result`, `repair_plan` |
+| 修复任务 | `build_repair_task`, `dispatch_repair_agent` | 固定原 Agent/Skill 继续执行缺失步骤 | repair 是继续执行，不重新意图识别或重新选 Skill | `repair_round`, `subagent_result` |
+| 验收分支回答 | `build_verification_clarification`, `build_handoff_answer` | 对 NEED_USER/HUMAN_HANDOFF 生成回答 | 无法安全继续时停止自动修复 | `answer` |
 | 审批创建 | `create_approval_request` | 创建审批台账和 resume state | callback 后需要知道从哪里继续 | `approval_id`, `approval_status` |
 | 审批提交 | `submit_approval_request` | 提交外部审批系统或本地 accepted pending | 审批系统是外部边界 | `approval_submit_result` |
 | 审批等待 | `pause_for_approval` | 返回 pending 文案 | 告诉用户操作尚未执行 | `answer`, `approval_status` |
@@ -482,6 +499,13 @@ flowchart TD
 - `skill_content`
 - `selected_skill_id`
 - Skill 选择得分、原因、fallback 信息
+- `execution_mode`
+- `repair_plan`
+- `previous_answer`
+- `previous_evidence`
+- `previous_tool_calls`
+- `repair_round`
+- `do_not_repeat`
 - `missing_required_entities`
 - `need_clarification`
 - `clarification_question`
@@ -594,6 +618,22 @@ flowchart TD
 - 已完成、已拒绝或人工介入的 callback 会被识别为 already processed。
 
 `CheckpointSnapshot` 和 `ApprovalStore` 不是同一个东西。Checkpoint 保存请求最终状态摘要；ApprovalStore 保存审批业务台账和恢复执行所需的 pending 状态。
+
+## 任务完成度 Verify-Repair
+
+`verify_task_completion` 位于子 Agent 执行之后、`pre_answer_verify` 之前。它解决的是“业务任务是否真的完成”，不是“答案能不能外发”。
+
+当前流程：
+
+- `collect_verification_evidence` 只收集轻量证据摘要，包括子 Agent 工具结果、EvidenceStore 记录和只读状态探针结果；
+- Verifier 根据 `selected_skill_id` 重新加载完整 `SKILL.md`，以 Skill SOP、用户目标、实体、工具证据和状态证据判断任务完成度；
+- `PASS` 继续进入 `pre_answer_verify`；
+- `CONTINUE` 生成 `RepairPlan`，通过 `build_repair_task` 固定原 `selected_agent` 和原 `selected_skill_id`，再由 `dispatch_repair_agent` 回到同一个子 Agent 继续执行；
+- `NEED_USER` 生成补充信息澄清；
+- `HUMAN_HANDOFF` 停止自动修复并建议人工接管；
+- 审批 pending 时不会进入 Completion Verify，审批 callback 恢复并继续 Tool Loop 后才重新验收。
+
+`selected_skill_id` 是顶层 Graph State 控制字段，用于 repair pinning；`selected_skill_metadata`、`skill_selection_score`、完整 Skill 文本和完整工具原文仍不进入顶层 checkpoint。修复次数由 `TASK_COMPLETION_MAX_REPAIR_ROUNDS` 控制，默认 2。
 
 ## 最终 Verification
 
@@ -798,10 +838,49 @@ http://127.0.0.1:8000
 | `ENABLE_KNOWLEDGE_API` / `KNOWLEDGE_API_URL` | 外部知识库开关和地址 |
 | `ENABLE_MCP_CLIENT` / `MCP_SERVERS_JSON` | MCP client 开关和 server 配置 |
 | `UNKNOWN_MCP_TOOL_POLICY` | 未声明风险的 MCP 工具处理策略：`allow` / `approval` / `deny` |
+| `ENABLE_SESSION_EXECUTION_LOCK` | 是否启用同会话串行执行锁，默认 true |
+| `SESSION_LOCK_TIMEOUT_SECONDS` | 同会话请求等待上一条请求完成的最长时间 |
 | `ENABLE_EXTERNAL_APPROVAL` | 是否提交外部审批系统；false 时本地 accepted pending |
 | `AUTH_MODE` | 身份接入模式。本地默认 `dev_header`；`required` / `jwt` 会拒绝完全缺失身份 Header 的请求 |
 | `ALLOW_REQUEST_BODY_IDENTITY_FALLBACK` | 是否允许无身份 Header 时使用请求体的 `tenant_id/user_id` 构造本地身份；本地默认 true，生产必须设为 false |
 | `NO_SKILL_POLICY` | 默认 `clarify`，本地可用 `generic_dev_only` |
+| `ENABLE_TASK_COMPLETION_VERIFY` | 是否启用子 Agent 后的任务完成度验收；local/test 默认 true |
+| `TASK_COMPLETION_ENABLE_LLM` | 是否让 Completion Verifier 调用真实 LLM；默认跟真实 LLM 开关联动 |
+| `TASK_COMPLETION_MAX_REPAIR_ROUNDS` | 自动 repair 最大轮次，默认 2 |
+| `TASK_COMPLETION_ENABLE_STATE_PROBES` | 是否启用只读业务状态探针，默认 true |
+
+### 配置组合校验
+
+配置不是简单的“某个变量为 true 就生效”。项目现在会在 `get_settings()` 和 `build_app_container()` 阶段执行组合校验，明显不完整或不安全的组合会启动失败。
+
+| 有效开关 | 需要的配置组合 | 说明 |
+| --- | --- | --- |
+| 可信身份强制模式 | `AUTH_MODE=required|jwt` + `ALLOW_REQUEST_BODY_IDENTITY_FALLBACK=false` | 仅设置 `AUTH_MODE` 不代表请求体身份兜底已经关闭 |
+| OpenSDK LLM | `ENABLE_OPENSDK_LLM=true` + `OPENAI_API_KEY` + `OPENAI_MODEL` | `OPENAI_BASE_URL` 可用于 DeepSeek 等兼容接口 |
+| Internal real LLM | `ENABLE_REAL_LLM=true` + `INTERNAL_LLM_API_URL`，或启用 OpenSDK | `ENABLE_REAL_LLM` 是真实上游要求，不是 provider 选择器 |
+| Completion LLM Verify | `ENABLE_TASK_COMPLETION_VERIFY=true` + `TASK_COMPLETION_ENABLE_LLM=true` + 可用 LLM provider | 只打开验收节点不等于一定调用 LLM |
+| MCP 动态工具 | `ENABLE_MCP_CLIENT=true` + `MCP_SERVERS_JSON` | 只打开 MCP client 但没有 server，不会发现外部工具 |
+| 同会话串行执行 | `ENABLE_SESSION_EXECUTION_LOCK=true` + `SESSION_LOCK_TIMEOUT_SECONDS>0` | 跨 session 并发，同一 session 串行；prod 不允许关闭 |
+| Knowledge API | `ENABLE_KNOWLEDGE_API=true` + `KNOWLEDGE_API_URL` | 缺 URL 会启动失败 |
+| Admin HTTP tools | `ENABLE_HTTP_TOOLS=true` + `ALLOWED_HTTP_TOOL_HOSTS` | 必须有 host 白名单 |
+| Real 业务工具 | `*_TOOL_MODE=real` + 对应 `*_API_BASE_URL` | 不会静默回退 mock |
+
+生产环境还会额外拒绝明显危险组合，例如 `APP_ENV=prod` 但仍允许 body fallback、启用 `shell_exec`、关闭写工具幂等保护等。
+
+### 会话并发语义
+
+`AgentOrchestrator` 入口使用 `SessionExecutionLockManager` 按 `session_key` 加进程内异步锁：
+
+```text
+不同 session_key：可以并发执行
+相同 session_key：串行进入 graph.ainvoke()
+```
+
+普通 `/api/chat` 请求和 `/api/approval/callback` 审批恢复共用同一把 session 锁，避免审批恢复和用户新请求交叉写入同一会话消息、短期记忆和 checkpoint snapshot。
+
+`request_id` 仍然保留，它用于一次请求的日志追踪、工具日志、审批记录和 checkpoint 定位；`thread_id` 仍保持 `session_key:request_id`。session lock 只负责并发控制，不改变请求级 trace 语义。
+
+当前实现边界：这是单进程锁。单个 Uvicorn worker 内同会话串行；多个 worker 或多实例部署时，需要 Redis、数据库 advisory lock 或队列按 `session_key` 分区，才能实现跨进程串行。
 
 `POS_TOOL_MODE` 与 `TROUBLESHOOTING_TOOL_MODE` 使用相同的装配语义：`mock`
 模式只注册本地 mock handler，不构造真实 API Client；`real` 模式会先校验对应
@@ -894,8 +973,8 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 
 | 分类 | 当前状态 |
 | --- | --- |
-| 已实现 | FastAPI `/api/chat`、Runtime AppContainer、LangGraph 主流程、实体解析、Query Rewrite、taxonomy-backed Intent、AgentCard 路由、Skill 延迟加载、Tool Loop、ToolExecutor 安全流水线、审批台账和 callback 恢复、pre_answer Verification、SQLite 持久化、结构化日志 |
-| 部分实现 | LangGraph checkpointer 默认内存，项目级 SQLite 只保存 compact final snapshot；审批是 callback 恢复而非原生 interrupt；Answer repair 是固定安全文案；MCP 取决于外部 server 配置；当前 HTTP MCP client 已在 shutdown 关闭连接池，但 stdio/SSE 等未来 transport 仍需各自实现同一关闭协议；pre_tool verification hook 存在但默认 verifier 主要是 pre_answer |
+| 已实现 | FastAPI `/api/chat`、Runtime AppContainer、LangGraph 主流程、实体解析、Query Rewrite、taxonomy-backed Intent、AgentCard 路由、Skill 延迟加载、Tool Loop、ToolExecutor 安全流水线、审批台账和 callback 恢复、Skill-aware task completion verify-repair、pre_answer Verification、SQLite 持久化、结构化日志 |
+| 部分实现 | LangGraph checkpointer 默认内存，项目级 SQLite 只保存 compact final snapshot；审批是 callback 恢复而非原生 interrupt；Answer repair 是固定安全文案；Completion Verifier 的真实 LLM 调用由配置开启，第一阶段状态探针覆盖 `troubleshooting_agent.endo_completion_aftercare`；MCP 取决于外部 server 配置；当前 HTTP MCP client 已在 shutdown 关闭连接池，但 stdio/SSE 等未来 transport 仍需各自实现同一关闭协议；pre_tool verification hook 存在但默认 verifier 主要是 pre_answer |
 | 本地或测试替身 | InternalLLMProvider 未配置 URL 时有 deterministic fallback；Knowledge API 默认 disabled；POS 和 troubleshooting tools 默认 mock |
 | 未来可演进 | FAQ/direct-answer fast path、语义级 Answer Repair、完整 OpenTelemetry、生产 JWT/网关鉴权、独立 precondition engine、运行时 retry 策略、Postgres/Redis/Queue、LangGraph subgraph 化子 Agent |
 

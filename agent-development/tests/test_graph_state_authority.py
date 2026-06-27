@@ -25,13 +25,15 @@ def test_graph_state_authority_table_covers_every_agent_graph_state_field():
         assert metadata["persistence"] in ALLOWED_PERSISTENCE
 
 
-def test_subagent_result_is_authoritative_for_skill_selection_cache():
+def test_selected_skill_id_is_repair_control_field_not_skill_selection_cache():
     assert GRAPH_STATE_FIELD_AUTHORITY["subagent_result"]["owner"] == "execution_result"
-    assert "selected_skill_id" not in AgentGraphState.__annotations__
+    assert "selected_skill_id" in AgentGraphState.__annotations__
+    assert GRAPH_STATE_FIELD_AUTHORITY["selected_skill_id"]["owner"] == "skill_pin"
+    assert GRAPH_STATE_FIELD_AUTHORITY["selected_skill_id"]["kind"] == "checkpoint"
+    assert GRAPH_STATE_FIELD_AUTHORITY["selected_skill_id"]["persistence"] == "checkpoint_snapshot"
     assert "selected_skill_metadata" not in AgentGraphState.__annotations__
     assert "skill_selection_score" not in AgentGraphState.__annotations__
     assert "skill_selection_reason" not in AgentGraphState.__annotations__
-    assert "selected_skill_id" not in GRAPH_STATE_FIELD_AUTHORITY
     assert "selected_skill_metadata" not in GRAPH_STATE_FIELD_AUTHORITY
     assert "skill_selection_score" not in GRAPH_STATE_FIELD_AUTHORITY
     assert "skill_selection_reason" not in GRAPH_STATE_FIELD_AUTHORITY

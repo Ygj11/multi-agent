@@ -3,6 +3,7 @@ from __future__ import annotations
 """AgentCard 驱动的子 Agent 基类。"""
 
 from abc import ABC, abstractmethod
+import json
 from typing import Any
 
 from app.agents.card_loader import AgentCardLoader
@@ -112,6 +113,7 @@ class BaseSubAgent(ABC):
                 agent_card=agent_card,
             )
             principal = principal_dict_from_auth_context(task.auth_context)
+            # TODO
             tool_schemas = self.get_available_tool_schemas(agent_card, principal=principal)
             # LLM 可以在 tool_schemas 中选择工具，但真正执行仍由 ToolExecutor 校验。
             run_result = await self.tool_calling_runner.run(
@@ -143,6 +145,7 @@ class BaseSubAgent(ABC):
             result.task_id = result.task_id or task.task_id
             return result
 
+        # 子agent没有走父类base.run，兜底走自己的do_run
         result = await self.do_run(
             task=task,
             parent_context=parent_context,
@@ -236,6 +239,8 @@ class BaseSubAgent(ABC):
                     entities=task.entities,
                     short_summary=parent_context.short_summary or "",
                     lightweight_hints=parent_context.lightweight_knowledge_hints,
+                    execution_mode=sub_context.execution_mode,
+                    repair_context=self._repair_context_for_prompt(sub_context),
                 ),
             },
         ]
@@ -283,6 +288,9 @@ class BaseSubAgent(ABC):
                 "skill_selection_source": sub_context.skill_selection_source,
                 "skill_selection_fallback": sub_context.skill_selection_fallback,
                 "skill_selection_decision_trace": task.metadata.get("skill_selection_decision_trace"),
+                "execution_mode": task.execution_mode,
+                "repair_round": task.repair_round,
+                "pinned_skill_id": task.pinned_skill_id,
             },
             selected_skill_id=sub_context.selected_skill_id,
             selected_skill_metadata=sub_context.selected_skill_metadata,
@@ -391,6 +399,20 @@ class BaseSubAgent(ABC):
                     seen.add(label)
                     labels.append(label)
         return labels
+
+    @staticmethod
+    def _repair_context_for_prompt(sub_context: SubAgentContext) -> str:
+        if sub_context.execution_mode != "repair":
+            return "无"
+        payload = {
+            "repair_round": sub_context.repair_round,
+            "repair_plan": sub_context.repair_plan or {},
+            "previous_answer": sub_context.previous_answer,
+            "previous_evidence": sub_context.previous_evidence,
+            "previous_tool_calls": sub_context.previous_tool_calls,
+            "do_not_repeat": sub_context.do_not_repeat,
+        }
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
     def _tool_call_to_evidence(self, item: dict[str, Any]) -> dict[str, Any]:
         tool_name = str(item.get("name") or item.get("tool_name") or "")

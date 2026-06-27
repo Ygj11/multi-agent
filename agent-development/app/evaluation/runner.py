@@ -191,6 +191,7 @@ class PromptEvalRunner:
                 "original_query": query,
                 "rewritten_query": rewritten_query,
                 "entities": entities,
+                "rewrite_type": payload.get("rewrite_type") or "direct",
                 "conversation_window": payload.get("conversation_window") or self._conversation_window(payload),
                 "intent_taxonomy": payload.get("intent_taxonomy") or self._intent_taxonomy(),
                 "allowed_intents": payload.get("allowed_intents") or self._allowed_intents(),

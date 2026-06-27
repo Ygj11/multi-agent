@@ -14,6 +14,7 @@ from app.integrations.clients import IntegrationClients
 from app.integrations.pos_api_client import PosAPIClient
 from app.llm.schemas import LLMResponse
 from app.query.intent_recognition_node import IntentRecognitionNode
+from app.schemas.entities import ConversationWindow, EntityBag
 from app.skills.catalog import SkillCatalog
 from app.subagents.tool_calling_runner import ToolCallingRunner
 from app.tools.agent_tools import register_agent_private_tools
@@ -61,6 +62,11 @@ def _pos_registry(fake_client: FakePosAPIClient | None = None) -> ToolRegistry:
 
 def _pos_card():
     return AgentCardLoader(CARDS_ROOT).get_agent_card("pos_query_agent")
+
+
+def _window(entities: dict | None = None) -> dict:
+    bag = EntityBag.from_compact_dict(entities or {}, source="current_query", confidence=0.9)
+    return ConversationWindow(session_key="test-session", entity_bag=bag).model_dump()
 
 
 def _assert_function_schema(schema: dict[str, Any], *, required: set[str]) -> None:
@@ -185,6 +191,9 @@ async def test_pos_intent_rule_fallback_for_approval_text():
     result = await node.recognize(
         original_query="帮我做保全批文查询，受理号 930010412672222",
         rewritten_query="帮我做保全批文查询，受理号 930010412672222",
+        entities={"apply_seq": "930010412672222"},
+        rewrite_type="new_request",
+        conversation_window=_window({"apply_seq": "930010412672222"}),
         agent_card_summaries=[card.model_dump() for card in AgentCardLoader(CARDS_ROOT).list_available_agents()],
     )
 

@@ -35,10 +35,16 @@ def test_intent_recognition_prompt_contract():
     assert "AgentCard supported_routes describe which agents can handle taxonomy routes" in system_prompt
     assert "Do not use agent_name, skill_id, or capability as intent/sub_intent" in system_prompt
     assert "rewritten_query is the authoritative standalone business request" in system_prompt
+    assert "Use rewrite_type as the read-only context mode decided by query_rewrite" in system_prompt
     assert "do not redo context inheritance" in system_prompt
     assert "older conversation_window messages mention another intent" in system_prompt
     assert "Never output" in system_prompt
+    assert "entities" in system_prompt
+    assert "missing_required_entities" in system_prompt
+    assert "is_follow_up" in system_prompt
     assert "required_tools" in system_prompt
+    assert "Do not decrease confidence only because execution parameters are incomplete" in system_prompt
+    assert "Missing execution parameters must be handled later by Skill required_entities checks" in system_prompt
     assert "Confidence scoring guide" in system_prompt
     assert "Return strict JSON only" in system_prompt
 

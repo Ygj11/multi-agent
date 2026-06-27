@@ -35,6 +35,36 @@ class EntityBag(BaseModel):
     Graph 内部以 EntityBag 为事实源；compact dict 只是兼容视图。
     """
 
+    """
+    数据m模型
+    EntityBag(
+        entities={
+            "policy_no": [
+                EntityMention(
+                    type="policy_no",
+                    value="P001",
+                    confidence=0.95,
+                    source="current_query",
+                ),
+                EntityMention(
+                    type="policy_no",
+                    value="P002",
+                    confidence=0.80,
+                    source="history",
+                ),
+            ],
+            "request_id": [
+                EntityMention(
+                    type="request_id",
+                    value="R1001",
+                    confidence=0.90,
+                    source="current_query",
+                )
+            ],
+        }
+    )
+    """
+
     entities: dict[str, list[EntityMention]] = Field(default_factory=dict)
 
     def add(self, entity: EntityMention) -> None:

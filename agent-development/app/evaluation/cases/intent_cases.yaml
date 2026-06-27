@@ -5,6 +5,7 @@ cases:
     description: Endorsement completed but policy not updated should route to troubleshooting.
     input:
       rewritten_query: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028"
+      rewrite_type: new_request
       entities:
         policy_no: "9200100000458846"
         apply_seq: "930021042875719"
@@ -17,10 +18,92 @@ cases:
     description: Available endorsement items should route to POS query.
     input:
       rewritten_query: "查询保单 9200100000458846 可以做哪些保全项"
+      rewrite_type: direct
       entities:
         policy_no: "9200100000458846"
     expected:
       output_schema: IntentRecognitionLLMOutput
       intent: pos_query
       sub_intent: pos_available_items
-
+  - id: refund_failure_missing_execution_param
+    description: Clear refund failure intent should not be downgraded only because policy_no is missing.
+    input:
+      original_query: "退保失败，帮我排查"
+      rewritten_query: "退保失败，帮我排查"
+      rewrite_type: new_request
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: refund_failure
+      must_not_include:
+        - missing_required_entities
+        - selected_agent
+        - required_tools
+  - id: new_request_not_polluted_by_history
+    description: New POS request should not inherit troubleshooting intent from history.
+    input:
+      original_query: "现在查这个保单可以做哪些保全项"
+      rewritten_query: "查询保单 9200100000458847 可以做哪些保全项"
+      rewrite_type: new_request
+      entities:
+        policy_no: "9200100000458847"
+      conversation_window:
+        summary: "上一轮用户在排查保单 9200100000458846 的退保失败。"
+        recent_turns: []
+        entity_bag: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_available_items
+  - id: clarification_reply_aftercare
+    description: Clarification reply should classify the restored pending task in rewritten_query.
+    input:
+      original_query: "001028"
+      rewritten_query: "保全任务完成，保单9200100000458846，受理号930021042875719，保全项001028，为什么没有更新？"
+      rewrite_type: clarification_reply
+      entities:
+        policy_no: "9200100000458846"
+        apply_seq: "930021042875719"
+        endorseType: "001028"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: endo_completion_aftercare
+      must_not_include:
+        - is_follow_up
+        - missing_required_entities
+  - id: contextual_follow_up_refund
+    description: Contextual follow-up should classify the active business domain, not re-decide follow-up state.
+    input:
+      original_query: "那这个一般是谁的问题？"
+      rewritten_query: "继续排查保单9200100000458846退保失败的原因，并判断问题归属。"
+      rewrite_type: contextual_follow_up
+      entities:
+        policy_no: "9200100000458846"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: refund_failure
+      must_not_include:
+        - is_follow_up
+  - id: out_of_domain
+    description: Out-of-domain user request should classify as unknown.
+    input:
+      rewritten_query: "帮我写一首诗"
+      rewrite_type: direct
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: unknown
+      sub_intent: null
+  - id: legal_intent_uncertain_sub_intent
+    description: A valid parent intent with unclear POS sub-intent may keep sub_intent null.
+    input:
+      rewritten_query: "帮我查一下保全相关信息"
+      rewrite_type: direct
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: null

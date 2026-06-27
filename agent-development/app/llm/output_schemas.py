@@ -6,7 +6,8 @@ from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.query.json_utils import parse_json_object
+from app.utils.json_utils import parse_json_object
+from app.verification.task_completion.schemas import RepairPlan, TaskCompletionStatus
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -51,11 +52,8 @@ class IntentRecognitionLLMOutput(_StrictOutput):
     intent: str
     sub_intent: str | None = None
     confidence: float
-    entities: dict[str, Any] = Field(default_factory=dict)
-    missing_required_entities: list[str] = Field(default_factory=list)
     need_clarification: bool
     clarification_question: str | None = None
-    is_follow_up: bool = False
     reason: str = "llm_json_classification"
 
 
@@ -73,11 +71,24 @@ class SkillSelectionLLMOutput(_StrictOutput):
     reason: str = "llm semantic rerank"
 
 
+class TaskCompletionLLMOutput(_StrictOutput):
+    status: TaskCompletionStatus
+    completed: bool
+    summary: str
+    completed_items: list[str] = Field(default_factory=list)
+    missing_items: list[str] = Field(default_factory=list)
+    repair_plan: RepairPlan | None = None
+    confidence: float
+    reasoning_summary: str = ""
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "QueryRewriteLLMOutput": QueryRewriteLLMOutput,
     "IntentRecognitionLLMOutput": IntentRecognitionLLMOutput,
     "AgentSelectionLLMOutput": AgentSelectionLLMOutput,
     "SkillSelectionLLMOutput": SkillSelectionLLMOutput,
+    "TaskCompletionLLMOutput": TaskCompletionLLMOutput,
 }
 
 

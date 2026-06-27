@@ -61,6 +61,30 @@ def test_strict_schema_accepts_optional_defaults():
 
     assert result.success is True
     assert isinstance(result.data, IntentRecognitionLLMOutput)
-    assert result.data.entities == {}
-    assert result.data.missing_required_entities == []
+    assert "entities" not in result.data.model_dump()
+    assert "missing_required_entities" not in result.data.model_dump()
+    assert "is_follow_up" not in result.data.model_dump()
 
+
+def test_intent_schema_rejects_legacy_entity_and_followup_fields():
+    result = parse_llm_json_schema(
+        json.dumps(
+            {
+                "intent": "troubleshooting",
+                "sub_intent": "refund_failure",
+                "confidence": 0.95,
+                "entities": {"policy_no": "9200100000458846"},
+                "missing_required_entities": [],
+                "need_clarification": False,
+                "is_follow_up": False,
+                "reason": "legacy output",
+            }
+        ),
+        IntentRecognitionLLMOutput,
+    )
+
+    assert result.success is False
+    assert result.error_code == "llm_schema_validation_failed"
+    assert "entities" in (result.error_detail or "")
+    assert "missing_required_entities" in (result.error_detail or "")
+    assert "is_follow_up" in (result.error_detail or "")

@@ -64,6 +64,9 @@ class SkillContextResolver:
         parent_context: OrchestratorContext,
         agent_card: AgentCard,
     ) -> SkillResolution:
+        if task.execution_mode == "repair" and task.pinned_skill_id:
+            return self._resolve_pinned_skill(task=task, parent_context=parent_context, agent_card=agent_card)
+
         selection_context = self.build_selection_context(task=task, parent_context=parent_context)
         candidates = self.build_candidates(task=task, agent_card=agent_card)
 
@@ -76,10 +79,48 @@ class SkillContextResolver:
 
         self.write_selection_metadata(task, selection)
 
-
         if selection.selected_skill_id is None or selection.selected_skill_metadata is None:
             return self._resolve_no_skill(task=task, selection=selection)
 
+        return self._resolve_selected_skill(task=task, parent_context=parent_context, selection=selection)
+
+    def _resolve_pinned_skill(
+        self,
+        *,
+        task: SubAgentTask,
+        parent_context: OrchestratorContext,
+        agent_card: AgentCard,
+    ) -> SkillResolution:
+        """Repair 模式固定第一次选中的 Skill，不再重新自由选择。"""
+        metadata = self.skill_catalog.get_skill_metadata(str(task.pinned_skill_id))
+        if metadata is None:
+            raise ValueError(f"pinned skill not found: {task.pinned_skill_id}")
+        if metadata.agent != task.agent_name:
+            raise ValueError(f"pinned skill agent mismatch: {task.pinned_skill_id}")
+        if metadata.skill_id not in set(agent_card.skills):
+            raise ValueError(f"pinned skill is not declared by AgentCard: {metadata.skill_id}")
+        if not metadata.enabled:
+            raise ValueError(f"pinned skill is disabled: {metadata.skill_id}")
+
+        selection = SkillSelectionResult(
+            selected_skill_id=metadata.skill_id,
+            selected_skill_metadata=metadata,
+            score=100.0,
+            reason="repair pinned skill",
+            fallback=False,
+            selection_source="pinned_repair",
+            decision_trace={"skill_pin": "repair", "selected_skill_id": metadata.skill_id},
+        )
+        self.write_selection_metadata(task, selection)
+        return self._resolve_selected_skill(task=task, parent_context=parent_context, selection=selection)
+
+    def _resolve_selected_skill(
+        self,
+        *,
+        task: SubAgentTask,
+        parent_context: OrchestratorContext,
+        selection: SkillSelectionResult,
+    ) -> SkillResolution:
         # 只有选中 Skill 后才加载完整内容；随后基于 resolved EntityBag 检查必填实体。
         loaded_skill = self.skill_loader.load(selection.selected_skill_id)
 

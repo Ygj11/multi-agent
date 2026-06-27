@@ -1,7 +1,14 @@
+import pytest
+
 from app.adapters.request_adapter import RequestAdapter
 from app.query.intent_recognition_node import IntentRecognitionNode
-from app.schemas.entities import EntityBag
+from app.schemas.entities import ConversationWindow, EntityBag
 from app.schemas.message import ChatMessage, ChatRequest
+
+
+def _window(entities: dict | None = None) -> dict:
+    bag = EntityBag.from_compact_dict(entities or {}, source="current_query", confidence=0.9)
+    return ConversationWindow(session_key="test-session", entity_bag=bag).model_dump()
 
 
 async def test_graph_final_state_keeps_entities_and_entity_bag_synchronized(app_factory):
@@ -50,7 +57,7 @@ async def test_query_rewrite_result_entities_are_projected_from_entity_bag(app_f
     assert state["entities"]["error_code"] == "E102"
 
 
-async def test_intent_recognition_result_does_not_expose_entities_even_when_llm_returns_them():
+async def test_intent_recognition_result_does_not_expose_entities():
     class JsonLLM:
         async def chat(self, *args, **kwargs):
             from app.llm.schemas import LLMResponse
@@ -58,7 +65,7 @@ async def test_intent_recognition_result_does_not_expose_entities_even_when_llm_
             return LLMResponse(
                 content=(
                     '{"intent":"troubleshooting","sub_intent":"refund_failure","confidence":0.91,'
-                    '"entities":{"policyNo":"9200100000999999"},"need_clarification":false}'
+                    '"need_clarification":false}'
                 ),
                 finish_reason="stop",
                 model="fake",
@@ -67,8 +74,42 @@ async def test_intent_recognition_result_does_not_expose_entities_even_when_llm_
     result = await IntentRecognitionNode(llm_provider=JsonLLM()).recognize(
         original_query="退保失败，保单号9200100000458846",
         rewritten_query="退保失败，保单号9200100000458846",
-        current_entities={"policy_no": "9200100000458846"},
+        entities={"policy_no": "9200100000458846"},
+        rewrite_type="direct",
+        conversation_window=_window({"policy_no": "9200100000458846"}),
     )
 
     assert result.intent == "troubleshooting"
     assert "entities" not in result.model_dump()
+    assert "missing_required_entities" not in result.model_dump()
+    assert "is_follow_up" not in result.model_dump()
+
+
+async def test_intent_recognition_requires_entities_projection():
+    with pytest.raises(ValueError, match="intent_recognition_requires_entities_projection"):
+        await IntentRecognitionNode(llm_provider=None).recognize(
+            original_query="退保失败，保单号9200100000458846",
+            rewritten_query="退保失败，保单号9200100000458846",
+            rewrite_type="direct",
+            conversation_window=_window({"policy_no": "9200100000458846"}),
+        )
+
+
+async def test_intent_recognition_requires_conversation_window():
+    with pytest.raises(ValueError, match="intent_recognition_requires_conversation_window"):
+        await IntentRecognitionNode(llm_provider=None).recognize(
+            original_query="退保失败，保单号9200100000458846",
+            rewritten_query="退保失败，保单号9200100000458846",
+            entities={"policy_no": "9200100000458846"},
+            rewrite_type="direct",
+        )
+
+
+async def test_intent_recognition_requires_rewrite_type():
+    with pytest.raises(ValueError, match="intent_recognition_requires_rewrite_type"):
+        await IntentRecognitionNode(llm_provider=None).recognize(
+            original_query="退保失败，保单号9200100000458846",
+            rewritten_query="退保失败，保单号9200100000458846",
+            entities={"policy_no": "9200100000458846"},
+            conversation_window=_window({"policy_no": "9200100000458846"}),
+        )

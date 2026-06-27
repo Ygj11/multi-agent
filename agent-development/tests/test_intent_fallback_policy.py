@@ -1,5 +1,11 @@
 from app.query.intent_fallback_policy import IntentFallbackPolicy
 from app.query.intent_recognition_node import IntentRecognitionNode
+from app.schemas.entities import ConversationWindow, EntityBag
+
+
+def _window(entities: dict | None = None) -> dict:
+    bag = EntityBag.from_compact_dict(entities or {}, source="current_query", confidence=0.9)
+    return ConversationWindow(session_key="test-session", entity_bag=bag).model_dump()
 
 
 def test_intent_fallback_policy_classifies_from_yaml():
@@ -25,7 +31,9 @@ async def test_intent_recognition_rule_fallback_records_policy_trace():
     result = await node.recognize(
         original_query="保全任务完成，保单9200100000458846没有更新？",
         rewritten_query="保全任务完成，保单9200100000458846没有更新？",
-        current_entities={"policy_no": "9200100000458846"},
+        entities={"policy_no": "9200100000458846"},
+        rewrite_type="new_request",
+        conversation_window=_window({"policy_no": "9200100000458846"}),
     )
 
     assert result.intent == "troubleshooting"

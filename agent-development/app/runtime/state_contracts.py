@@ -89,6 +89,15 @@ class CheckpointSnapshot(BaseModel):
     selected_agent: str | None = None
     agent_selection_summary: dict[str, Any] = Field(default_factory=dict)
     selected_skill_id: str | None = None
+    selected_skill_version: str | None = None
+    task_completion_status: str | None = None
+    task_completion_summary: str | None = None
+    task_completion_evidence_ids: list[str] = Field(default_factory=list)
+    repair_round: int = 0
+    repair_plan: dict[str, Any] = Field(default_factory=dict)
+    last_repair_fingerprint: str | None = None
+    repair_no_progress_count: int = 0
+    execution_mode: str = "initial"
     approval_required: bool = False
     approval_id: str | None = None
     approval_status: str | None = None
@@ -123,6 +132,13 @@ class AgentResumeState(BaseModel):
     selected_skill_metadata: dict[str, Any] | None = None
     skill_selection_score: float | None = None
     skill_selection_reason: str | None = None
+    selected_skill_version: str | None = None
+    execution_mode: str = "initial"
+    repair_round: int = 0
+    repair_plan: dict[str, Any] = Field(default_factory=dict)
+    repair_history: list[dict[str, Any]] = Field(default_factory=list)
+    last_repair_fingerprint: str | None = None
+    repair_no_progress_count: int = 0
     approval_id: str | None = None
     approval_status: str | None = None
     parent_approval_id: str | None = None
@@ -155,6 +171,14 @@ class AgentResumeState(BaseModel):
             "sub_intent": self.sub_intent,
             "entities": dict(self.entities),
             "selected_agent": self.selected_agent,
+            "selected_skill_id": self.selected_skill_id,
+            "selected_skill_version": self.selected_skill_version,
+            "execution_mode": self.execution_mode,
+            "repair_round": self.repair_round,
+            "repair_plan": dict(self.repair_plan),
+            "repair_history": list(self.repair_history),
+            "last_repair_fingerprint": self.last_repair_fingerprint,
+            "repair_no_progress_count": self.repair_no_progress_count,
             "approval_id": self.approval_id,
             "approval_status": self.approval_status,
             "parent_approval_id": self.parent_approval_id,

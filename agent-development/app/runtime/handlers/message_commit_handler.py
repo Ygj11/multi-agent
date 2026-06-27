@@ -35,6 +35,11 @@ class MessageCommitHandler:
             raise RuntimeError("message_store_not_configured")
         subagent_result = state.get("subagent_result") if isinstance(state.get("subagent_result"), dict) else {}
         subagent_metadata = subagent_result.get("metadata") if isinstance(subagent_result.get("metadata"), dict) else {}
+        completion_result = (
+            state.get("task_completion_verification_result")
+            if isinstance(state.get("task_completion_verification_result"), dict)
+            else {}
+        )
         metadata = {
             "request_id": state["request_id"],
             "trace_id": state["trace_id"],
@@ -49,7 +54,13 @@ class MessageCommitHandler:
             "missing_required_entities": state.get("missing_required_entities") or subagent_metadata.get("missing_required_entities") or [],
             "missing_tool_arguments": subagent_metadata.get("missing_tool_arguments") or [],
             "selected_agent": state.get("selected_agent"),
-            "selected_skill_id": subagent_result.get("selected_skill_id"),
+            "selected_skill_id": state.get("selected_skill_id") or subagent_result.get("selected_skill_id"),
+            "task_completion_status": completion_result.get("status"),
+            "task_completion_summary": completion_result.get("summary"),
+            "task_completion_evidence_ids": completion_result.get("evidence_ids") or [],
+            "task_completion_completed": completion_result.get("completed"),
+            "task_completion_missing_items": completion_result.get("missing_items") or [],
+            "repair_round": state.get("repair_round", 0),
             "fallback_summary": {
                 "query_rewrite": state.get("query_rewrite_fallback_reason"),
                 "intent_recognition": state.get("intent_fallback_reason"),

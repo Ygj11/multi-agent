@@ -17,6 +17,7 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "auth_context": {"owner": "auth", "source": "RequestAdapter", "kind": "resume", "persistence": "approval_store"},
     "original_query": {"owner": "request", "source": "RequestAdapter", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "rewritten_query": {"owner": "understanding", "source": "query_rewrite", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "rewrite_type": {"owner": "understanding", "source": "query_rewrite", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "query_rewrite_decision_trace": {"owner": "understanding_trace", "source": "query_rewrite", "kind": "debug_temporary", "persistence": "none"},
     "query_rewrite_llm_status": {"owner": "understanding_trace", "source": "query_rewrite", "kind": "debug_temporary", "persistence": "none"},
     "query_rewrite_fallback_reason": {"owner": "understanding_trace", "source": "query_rewrite", "kind": "debug_temporary", "persistence": "none"},
@@ -50,7 +51,7 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     },
     "missing_required_entities": {
         "owner": "clarification_route",
-        "source": "query_rewrite / intent_recognition / subagent required-entity check",
+        "source": "query_rewrite / subagent required-entity check",
         "kind": "checkpoint",
         "persistence": "checkpoint_snapshot",
     },
@@ -62,7 +63,24 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "agent_selection_llm_status": {"owner": "routing_trace", "source": "select_agent", "kind": "debug_temporary", "persistence": "none"},
     "agent_selection_fallback_reason": {"owner": "routing_trace", "source": "select_agent", "kind": "debug_temporary", "persistence": "none"},
     "selected_agent": {"owner": "routing", "source": "select_agent", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "selected_skill_id": {"owner": "skill_pin", "source": "dispatch_agent / dispatch_repair_agent", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "selected_skill_version": {"owner": "skill_pin", "source": "collect_verification_evidence", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "subagent_result": {"owner": "execution_result", "source": "dispatch_agent / resume_approved_tool", "kind": "runtime", "persistence": "none"},
+    "task_completion_verification_result": {
+        "owner": "completion_verification",
+        "source": "verify_task_completion",
+        "kind": "runtime",
+        "persistence": "none",
+    },
+    "verification_evidence": {"owner": "completion_evidence", "source": "collect_verification_evidence", "kind": "runtime", "persistence": "none"},
+    "repair_plan": {"owner": "repair_control", "source": "verify_task_completion", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "repair_round": {"owner": "repair_control", "source": "build_repair_task", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "repair_history": {"owner": "repair_audit", "source": "verify_task_completion", "kind": "resume", "persistence": "resume_state"},
+    "last_repair_fingerprint": {"owner": "repair_guard", "source": "verify_task_completion", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "repair_no_progress_count": {"owner": "repair_guard", "source": "verify_task_completion", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "execution_mode": {"owner": "execution_control", "source": "dispatch_agent / dispatch_repair_agent", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
+    "original_subagent_result": {"owner": "repair_audit", "source": "dispatch_agent", "kind": "runtime", "persistence": "none"},
+    "previous_subagent_results": {"owner": "repair_audit", "source": "dispatch_repair_agent", "kind": "runtime", "persistence": "none"},
     "pre_answer_verification_result": {"owner": "verification_route", "source": "pre_answer_verify", "kind": "runtime", "persistence": "none"},
     "approval_required": {"owner": "approval_summary", "source": "check_human_approval_required", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "approval_payloads": {"owner": "approval_summary", "source": "subagent_result.approval_payloads", "kind": "runtime", "persistence": "none"},
@@ -106,6 +124,7 @@ class AgentGraphState(TypedDict, total=False):
 
     original_query: str
     rewritten_query: str
+    rewrite_type: str
     query_rewrite_decision_trace: dict[str, Any]
     query_rewrite_llm_status: str | None
     query_rewrite_fallback_reason: str | None
@@ -133,7 +152,19 @@ class AgentGraphState(TypedDict, total=False):
     agent_selection_llm_status: str | None
     agent_selection_fallback_reason: str | None
     selected_agent: str | None
+    selected_skill_id: str | None
+    selected_skill_version: str | None
     subagent_result: dict[str, Any] | None
+    task_completion_verification_result: dict[str, Any] | None
+    verification_evidence: list[dict[str, Any]]
+    repair_plan: dict[str, Any] | None
+    repair_round: int
+    repair_history: list[dict[str, Any]]
+    last_repair_fingerprint: str | None
+    repair_no_progress_count: int
+    execution_mode: str
+    original_subagent_result: dict[str, Any] | None
+    previous_subagent_results: list[dict[str, Any]]
     pre_answer_verification_result: dict[str, Any] | None
     approval_required: bool
     approval_payloads: list[dict[str, Any]]

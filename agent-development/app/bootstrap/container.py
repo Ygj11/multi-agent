@@ -24,7 +24,7 @@ from app.bootstrap.agents import build_subagent_manager
 from app.bootstrap.storage import StorageBundle, build_storage
 from app.bootstrap.tools import register_admin_restricted_tools
 from app.bootstrap.verification import build_verification_service
-from app.config.settings import Settings
+from app.config.settings import Settings, assert_settings_valid, validate_settings
 from app.integrations.base_http_client import BaseIntegrationHTTPClient
 from app.integrations.clients import IntegrationClients
 from app.integrations.pos_api_client import PosAPIClient
@@ -41,7 +41,9 @@ from app.query.query_rewrite_node import QueryRewriteNode
 from app.runtime.checkpoint import build_checkpointer
 from app.runtime.context_builder import ContextBuilder
 from app.runtime.graph import AgentGraphFactory
+from app.runtime.handlers.task_completion_handler import TaskCompletionGraphHandler
 from app.runtime.orchestrator import AgentOrchestrator
+from app.runtime.session_locks import SessionExecutionLockManager
 from app.session.session_manager import SessionManager
 from app.skills.catalog import SkillCatalog
 from app.skills.selector import SkillSelector
@@ -51,6 +53,9 @@ from app.tools.agent_tools import register_agent_private_tools
 from app.tools.executor import ToolExecutor
 from app.tools.public_tools import register_public_tools
 from app.tools.registry import ToolRegistry
+from app.verification.task_completion.evidence_collector import VerificationEvidenceCollector
+from app.verification.task_completion.service import TaskCompletionVerifierService
+from app.verification.task_completion.state_probes.endo_aftercare import EndoCompletionAftercareProbe
 
 
 @dataclass(slots=True)
@@ -76,6 +81,9 @@ class AppContainer:
     authorization_service: AuthorizationService
     resource_access_service: ResourceAccessService
     verification_service: Any
+    task_completion_verifier_service: TaskCompletionVerifierService
+    task_completion_evidence_collector: VerificationEvidenceCollector
+    task_completion_handler: TaskCompletionGraphHandler
     tool_executor: ToolExecutor
     tool_calling_runner: ToolCallingRunner
     approval_service: ApprovalService
@@ -84,6 +92,7 @@ class AppContainer:
     subagent_manager: SubAgentManager
     agent_card_loader: AgentCardLoader
     graph: Any
+    session_locks: SessionExecutionLockManager
     orchestrator: AgentOrchestrator
     _started: bool = False
     _closed: bool = False
@@ -174,6 +183,8 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
     这里允许本地确定性初始化：加载 YAML/Skill/AgentCard、构建 SQLite store、
     注册本地工具、装配 Graph。需要网络或 await 的 MCP 能力发现放在 startup。
     """
+    assert_settings_valid(settings)
+    _log_config_warnings(settings)
     validate_real_tool_configuration(settings)
     storage = build_storage(settings, sqlite_db_path)
     db = storage.db
@@ -270,6 +281,25 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
         tool_calling_runner=tool_calling_runner,
     )
 
+    task_completion_evidence_collector = VerificationEvidenceCollector(
+        skill_catalog=skill_catalog,
+        evidence_store=storage.evidence_store,
+        probes=[EndoCompletionAftercareProbe()],
+        enable_state_probes=settings.task_completion_enable_state_probes,
+    )
+    task_completion_verifier_service = TaskCompletionVerifierService(
+        skill_catalog=skill_catalog,
+        llm_provider=llm_provider,
+        enable_llm=settings.task_completion_enable_llm,
+        min_confidence=settings.task_completion_min_verifier_confidence,
+        fail_closed=settings.task_completion_fail_closed,
+    )
+    task_completion_handler = TaskCompletionGraphHandler(
+        evidence_collector=task_completion_evidence_collector,
+        verifier_service=task_completion_verifier_service,
+        max_repair_rounds=settings.task_completion_max_repair_rounds,
+    )
+
     graph = AgentGraphFactory(
         session_manager=session_manager,
         message_store=storage.message_store,
@@ -291,8 +321,19 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
         max_write_tools_per_request=settings.max_write_tools_per_request,
         authorization_service=authorization_service,
         verification_service=verification_service,
+        task_completion_handler=task_completion_handler,
+        enable_task_completion_verify=settings.enable_task_completion_verify,
     ).build()
-    orchestrator = AgentOrchestrator(graph, checkpoint_store=storage.checkpoint_store)
+
+    session_locks = SessionExecutionLockManager(
+        enabled=settings.enable_session_execution_lock,
+        timeout_seconds=settings.session_lock_timeout_seconds,
+    )
+    orchestrator = AgentOrchestrator(
+        graph,
+        checkpoint_store=storage.checkpoint_store,
+        session_locks=session_locks,
+    )
     approval_service.orchestrator = orchestrator
 
     return AppContainer(
@@ -311,6 +352,9 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
         authorization_service=authorization_service,
         resource_access_service=resource_access_service,
         verification_service=verification_service,
+        task_completion_verifier_service=task_completion_verifier_service,
+        task_completion_evidence_collector=task_completion_evidence_collector,
+        task_completion_handler=task_completion_handler,
         tool_executor=tool_executor,
         tool_calling_runner=tool_calling_runner,
         approval_service=approval_service,
@@ -319,6 +363,7 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
         subagent_manager=subagent_manager,
         agent_card_loader=agent_card_loader,
         graph=graph,
+        session_locks=session_locks,
         orchestrator=orchestrator,
     )
 
@@ -363,3 +408,26 @@ def _log_contract_warnings(tool_registry: ToolRegistry, settings: Settings) -> N
             message="Tool contract validation produced warnings",
             data={"errors": contract_errors},
         )
+
+
+def _log_config_warnings(settings: Settings) -> None:
+    """记录非阻断配置治理提示；error 已由 assert_settings_valid 拦截。"""
+    warnings = [issue for issue in validate_settings(settings) if issue.level == "warning"]
+    if not warnings:
+        return
+    log_event(
+        "runtime_config_validation_warning",
+        level="WARNING",
+        node="app_startup",
+        message="Runtime configuration produced warnings",
+        data={
+            "warnings": [
+                {
+                    "code": issue.code,
+                    "variables": list(issue.variables),
+                    "message": issue.message,
+                }
+                for issue in warnings
+            ]
+        },
+    )

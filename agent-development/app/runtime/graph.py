@@ -15,6 +15,7 @@ from langgraph.graph import END, StateGraph
 
 from app.agents.card_loader import AgentCardLoader
 from app.agents.dispatcher import DispatchAgentNode
+from app.agents.repair_task_builder import RepairTaskBuilder
 from app.agents.selection import AgentSelectionNode
 from app.agents.task_assembler import AgentTaskAssembler
 from app.auth.authorization_service import AuthorizationService
@@ -32,6 +33,7 @@ from app.runtime.handlers.approval_handler import ApprovalGraphHandler
 from app.runtime.handlers.clarification_handler import ClarificationHandler
 from app.runtime.handlers.memory_commit_handler import MemoryCommitHandler
 from app.runtime.handlers.message_commit_handler import MessageCommitHandler
+from app.runtime.handlers.task_completion_handler import TaskCompletionGraphHandler
 from app.runtime.handlers.verification_handler import VerificationHandler
 from app.schemas.agent_card import AgentCard, AgentSelectionResult
 from app.schemas.entities import EntityBag
@@ -78,6 +80,9 @@ class AgentGraphFactory:
         max_write_tools_per_request: int = 3,
         authorization_service: AuthorizationService | None = None,
         verification_service: VerificationService | None = None,
+        task_completion_handler: TaskCompletionGraphHandler | None = None,
+        repair_task_builder: RepairTaskBuilder | None = None,
+        enable_task_completion_verify: bool = False,
     ) -> None:
         self.session_manager = session_manager
         self.message_store = message_store
@@ -99,6 +104,9 @@ class AgentGraphFactory:
         self.max_write_tools_per_request = max_write_tools_per_request
         self.authorization_service = authorization_service
         self.verification_service = verification_service
+        self.task_completion_handler = task_completion_handler
+        self.repair_task_builder = repair_task_builder or RepairTaskBuilder()
+        self.enable_task_completion_verify = enable_task_completion_verify and task_completion_handler is not None
         self.log_graph_node_events = get_settings().log_graph_node_events
         self.clarification_handler = ClarificationHandler()
         self.message_commit_handler = MessageCommitHandler(message_store=message_store)
@@ -132,6 +140,12 @@ class AgentGraphFactory:
         graph.add_node("dispatch_agent", self.dispatch_agent)
         graph.add_node("build_clarification_answer", self.build_clarification_answer)
         graph.add_node("check_human_approval_required", self.check_human_approval_required)
+        graph.add_node("collect_verification_evidence", self.collect_verification_evidence)
+        graph.add_node("verify_task_completion", self.verify_task_completion)
+        graph.add_node("build_repair_task", self.build_repair_task)
+        graph.add_node("dispatch_repair_agent", self.dispatch_repair_agent)
+        graph.add_node("build_verification_clarification", self.build_verification_clarification)
+        graph.add_node("build_handoff_answer", self.build_handoff_answer)
         graph.add_node("create_approval_request", self.create_approval_request)
         graph.add_node("submit_approval_request", self.submit_approval_request)
         graph.add_node("pause_for_approval", self.pause_for_approval)
@@ -174,9 +188,26 @@ class AgentGraphFactory:
             self.human_approval_route,
             {
                 "required": "create_approval_request",
-                "not_required": "pre_answer_verify",
+                "not_required": "collect_verification_evidence",
+                "skip_completion": "pre_answer_verify",
             },
         )
+        graph.add_edge("collect_verification_evidence", "verify_task_completion")
+        graph.add_conditional_edges(
+            "verify_task_completion",
+            self.task_completion_route,
+            {
+                "passed": "pre_answer_verify",
+                "continue": "build_repair_task",
+                "need_user": "build_verification_clarification",
+                "handoff": "build_handoff_answer",
+                "failed": "fallback_answer",
+            },
+        )
+        graph.add_edge("build_repair_task", "dispatch_repair_agent")
+        graph.add_edge("dispatch_repair_agent", "check_human_approval_required")
+        graph.add_edge("build_verification_clarification", "pre_answer_verify")
+        graph.add_edge("build_handoff_answer", "pre_answer_verify")
         graph.add_conditional_edges(
             "create_approval_request",
             self.after_create_approval_route,
@@ -242,6 +273,7 @@ class AgentGraphFactory:
         entity_updates = build_entity_state_updates(EntityBag(**result.entity_bag))
         return {
             "rewritten_query": result.rewritten_query,
+            "rewrite_type": result.rewrite_type,
             **entity_updates,
             "conversation_window": result.conversation_window,
             "is_follow_up": result.is_follow_up,
@@ -260,12 +292,10 @@ class AgentGraphFactory:
         agent_summaries = [self._agent_card_summary(card) for card in self.agent_card_loader.list_available_agents()]
         result = await self.intent_recognition_node.recognize(
             original_query=state["original_query"],
-            rewritten_query=state.get("rewritten_query", state["original_query"]),
-            recent_messages=state.get("recent_messages", []),
-            short_summary=state.get("short_summary"),
-            current_entities=state.get("entities", {}),
-            entity_bag=state.get("entity_bag", {}),
-            conversation_window=state.get("conversation_window", {}),
+            rewritten_query=state["rewritten_query"],
+            entities=state["entities"],
+            rewrite_type=state["rewrite_type"],
+            conversation_window=state["conversation_window"],
             agent_card_summaries=agent_summaries,
             request_id=state.get("request_id"),
             trace_id=state.get("trace_id"),
@@ -281,7 +311,6 @@ class AgentGraphFactory:
             "need_clarification": result.need_clarification,
             "clarification_question": result.clarification_question,
             "clarification_source": "intent_recognition" if result.need_clarification else state.get("clarification_source"),
-            "missing_required_entities": result.missing_required_entities,
             "intent_decision_trace": result.decision_trace,
             "intent_llm_status": result.llm_status,
             "intent_fallback_reason": result.fallback_reason,
@@ -325,6 +354,7 @@ class AgentGraphFactory:
         )
         selected_candidate = next((item for item in selection.candidates if item.agent_name == selection.selected_agent), selection.candidates[0])
         selected_card = selected_candidate.card
+        # 检查 agent 可用性，通过 agent card 的 access_policy 进行检查，配合AuthContext.Principal
         access_decision = self._check_agent_access(state, selected_card)
         if not access_decision.get("allowed", True):
             self._log_node_exit(state, "select_agent")
@@ -371,6 +401,7 @@ class AgentGraphFactory:
             "answer": result.answer,
             "graph_path": self._append_path(state, "dispatch_agent"),
         }
+        updates.update(self._skill_pin_updates(result.model_dump(), execution_mode="initial"))
         result_metadata = result.metadata or {}
         if result_metadata.get("clarification"):
             updates.update(
@@ -387,6 +418,8 @@ class AgentGraphFactory:
         """Resume a paused tool loop after one pending write tool was approved."""
         self._log_node_enter(state, "resume_approved_tool")
         updates = await self.approval_handler.resume_approved_tool(state)
+        subagent_result = updates.get("subagent_result") if isinstance(updates.get("subagent_result"), dict) else {}
+        updates.update(self._skill_pin_updates(subagent_result, execution_mode=state.get("execution_mode") or "initial"))
         self._log_node_exit(state, "resume_approved_tool")
         return {**updates, "graph_path": self._append_path(state, "resume_approved_tool")}
 
@@ -397,7 +430,88 @@ class AgentGraphFactory:
         return {**updates, "graph_path": self._append_path(state, "check_human_approval_required")}
 
     def human_approval_route(self, state: AgentGraphState) -> str:
-        return RoutePolicy.route_approval_required(state)
+        if state.get("approval_required"):
+            return "required"
+        if self._should_skip_task_completion(state):
+            return "skip_completion"
+        return "not_required"
+
+    async def collect_verification_evidence(self, state: AgentGraphState) -> dict[str, Any]:
+        if self.task_completion_handler is None:
+            return {"graph_path": self._append_path(state, "collect_verification_evidence")}
+        self._log_node_enter(state, "collect_verification_evidence")
+        updates = await self.task_completion_handler.collect_verification_evidence(state)
+        self._log_node_exit(state, "collect_verification_evidence")
+        return {**updates, "graph_path": self._append_path(state, "collect_verification_evidence")}
+
+    async def verify_task_completion(self, state: AgentGraphState) -> dict[str, Any]:
+        if self.task_completion_handler is None:
+            return {"graph_path": self._append_path(state, "verify_task_completion")}
+        self._log_node_enter(state, "verify_task_completion")
+        updates = await self.task_completion_handler.verify_task_completion(state)
+        self._log_node_exit(state, "verify_task_completion")
+        return {**updates, "graph_path": self._append_path(state, "verify_task_completion")}
+
+    def task_completion_route(self, state: AgentGraphState) -> str:
+        return RoutePolicy.route_task_completion(state)
+
+    async def build_repair_task(self, state: AgentGraphState) -> dict[str, Any]:
+        if self.task_completion_handler is None:
+            return {"graph_path": self._append_path(state, "build_repair_task")}
+        self._log_node_enter(state, "build_repair_task")
+        updates = self.task_completion_handler.build_repair_task(state)
+        self._log_node_exit(state, "build_repair_task")
+        return {**updates, "graph_path": self._append_path(state, "build_repair_task")}
+
+    async def dispatch_repair_agent(self, state: AgentGraphState) -> dict[str, Any]:
+        self._log_node_enter(state, "dispatch_repair_agent")
+        context = self._orchestrator_context_from_state(state)
+        selected_card = self._selected_agent_card(state)
+        task = self.repair_task_builder.build(
+            selected_card=selected_card,
+            orchestrator_context=context,
+            state=state,
+        )
+        result = await self.dispatch_agent_node.dispatch(task, context)
+        prior_results = list(state.get("previous_subagent_results") or [])
+        if isinstance(state.get("subagent_result"), dict):
+            prior_results.append(state["subagent_result"])
+        updates: dict[str, Any] = {
+            "subagent_result": result.model_dump(),
+            "answer": result.answer,
+            "previous_subagent_results": prior_results[-5:],
+            "execution_mode": "repair",
+            "graph_path": self._append_path(state, "dispatch_repair_agent"),
+        }
+        updates.update(self._skill_pin_updates(result.model_dump(), execution_mode="repair"))
+        result_metadata = result.metadata or {}
+        if result_metadata.get("clarification"):
+            updates.update(
+                {
+                    "need_clarification": True,
+                    "clarification_question": result_metadata.get("clarification_question") or result.answer,
+                    "clarification_source": result_metadata.get("clarification_source") or "subagent_repair",
+                    "missing_required_entities": result_metadata.get("missing_required_entities") or [],
+                }
+            )
+        self._log_node_exit(state, "dispatch_repair_agent")
+        return updates
+
+    async def build_verification_clarification(self, state: AgentGraphState) -> dict[str, Any]:
+        if self.task_completion_handler is None:
+            return {"graph_path": self._append_path(state, "build_verification_clarification")}
+        self._log_node_enter(state, "build_verification_clarification")
+        updates = self.task_completion_handler.build_verification_clarification(state)
+        self._log_node_exit(state, "build_verification_clarification")
+        return {**updates, "graph_path": self._append_path(state, "build_verification_clarification")}
+
+    async def build_handoff_answer(self, state: AgentGraphState) -> dict[str, Any]:
+        if self.task_completion_handler is None:
+            return {"graph_path": self._append_path(state, "build_handoff_answer")}
+        self._log_node_enter(state, "build_handoff_answer")
+        updates = self.task_completion_handler.build_handoff_answer(state)
+        self._log_node_exit(state, "build_handoff_answer")
+        return {**updates, "graph_path": self._append_path(state, "build_handoff_answer")}
 
     def after_create_approval_route(self, state: AgentGraphState) -> str:
         return RoutePolicy.route_after_create_approval(state)
@@ -536,12 +650,65 @@ class AgentGraphFactory:
             raise RuntimeError(f"selected_agent_card_not_found:{selected_agent}")
         return card
 
+    def _should_skip_task_completion(self, state: AgentGraphState) -> bool:
+        if not self.enable_task_completion_verify:
+            return True
+        if state.get("need_clarification") or state.get("manual_intervention_required"):
+            return True
+        subagent_result = state.get("subagent_result") if isinstance(state.get("subagent_result"), dict) else {}
+        metadata = subagent_result.get("metadata") if isinstance(subagent_result.get("metadata"), dict) else {}
+        if metadata.get("clarification") or metadata.get("no_skill_blocked"):
+            return True
+        if not (state.get("selected_skill_id") or subagent_result.get("selected_skill_id")):
+            return True
+        return False
+
+    @staticmethod
+    def _skill_pin_updates(subagent_result: dict[str, Any], *, execution_mode: str) -> dict[str, Any]:
+        selected_skill_id = subagent_result.get("selected_skill_id") if isinstance(subagent_result, dict) else None
+        if not selected_skill_id:
+            return {}
+        updates: dict[str, Any] = {
+            "selected_skill_id": selected_skill_id,
+            "execution_mode": execution_mode,
+        }
+        if execution_mode == "initial":
+            updates.update(
+                {
+                    "repair_round": 0,
+                    "repair_history": [],
+                    "last_repair_fingerprint": None,
+                    "repair_no_progress_count": 0,
+                    "original_subagent_result": subagent_result,
+                    "previous_subagent_results": [],
+                }
+            )
+        return updates
+
+    @staticmethod
+    def _orchestrator_context_from_state(state: AgentGraphState) -> OrchestratorContext:
+        if isinstance(state.get("orchestrator_context"), dict):
+            return OrchestratorContext(**state["orchestrator_context"])
+        return OrchestratorContext(
+            original_query=state["original_query"],
+            rewritten_query=state.get("rewritten_query") or state["original_query"],
+            intent=state.get("intent") or "unknown",
+            sub_intent=state.get("sub_intent"),
+            entities=state.get("entities", {}),
+            entity_bag=state.get("entity_bag", {}),
+            session_key=state["session_key"],
+            recent_messages=state.get("recent_messages", []),
+            short_summary=state.get("short_summary"),
+            lightweight_knowledge_hints=[],
+            auth_context=state.get("auth_context"),
+        )
+
     @staticmethod
     def _agent_selection_summary(selection: AgentSelectionResult) -> dict[str, Any]:
         return {
             "selected_agent": selection.selected_agent,
             "confidence": selection.confidence,
-            "selection_method": selection.selection_method,
+            "selection_method": selection.selection_method, # 如何选择的 rule？llm？
             "fallback_used": bool(selection.fallback_used),
             "fallback_reason": selection.fallback_reason,
             "candidate_count": len(selection.candidates),

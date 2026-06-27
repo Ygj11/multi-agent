@@ -62,11 +62,26 @@ NODE_CONTRACTS: dict[str, NodeContract] = {
         optional_inputs=["approval_resume"],
         routes=["resume", "normal"],
     ),
-    "load_session": _contract("load_session", ["session_key"], ["recent_messages", "short_summary", "retry_count", "graph_path"]),
+    "load_session": _contract(
+        "load_session",
+        ["session_key"],
+        ["recent_messages", "short_summary", "retry_count", "graph_path"]
+    ),
     "resume_approved_tool": _contract(
         "resume_approved_tool",
         ["approval_id", "session_key", "request_id"],
-        ["subagent_result", "answer", "approval_required", "approval_payloads", "current_approval_id", "root_approval_id", "approval_depth", "graph_path"],
+        [
+            "subagent_result",
+            "answer",
+            "approval_required",
+            "approval_payloads",
+            "current_approval_id",
+            "root_approval_id",
+            "approval_depth",
+            "selected_skill_id",
+            "execution_mode",
+            "graph_path",
+        ],
         optional_inputs=["pending_messages", "pending_tools", "pending_tool_call", "auth_context"],
     ),
     "save_user_message": _contract("save_user_message", ["session_key", "original_query"], ["graph_path"], optional_inputs=["request_id", "trace_id"]),
@@ -75,6 +90,7 @@ NODE_CONTRACTS: dict[str, NodeContract] = {
         ["original_query", "session_key"],
         [
             "rewritten_query",
+            "rewrite_type",
             "entities",
             "entity_bag",
             "conversation_window",
@@ -99,22 +115,19 @@ NODE_CONTRACTS: dict[str, NodeContract] = {
     ),
     "intent_recognition": _contract(
         "intent_recognition",
-        ["original_query"],
+        ["original_query", "rewritten_query", "entities", "rewrite_type", "conversation_window"],
         [
             "intent",
             "sub_intent",
             "confidence",
-            "entities",
             "need_clarification",
             "clarification_question",
             "clarification_source",
-            "missing_required_entities",
             "intent_decision_trace",
             "intent_llm_status",
             "intent_fallback_reason",
             "graph_path",
         ],
-        optional_inputs=["rewritten_query", "recent_messages", "short_summary", "conversation_window"],
         routes=["clarify", "continue"],
         failure_codes=[
             failure_codes.LLM_DISABLED,
@@ -158,7 +171,23 @@ NODE_CONTRACTS: dict[str, NodeContract] = {
     "dispatch_agent": _contract(
         "dispatch_agent",
         ["orchestrator_context", "selected_agent", "request_id", "trace_id"],
-        ["subagent_result", "answer", "need_clarification", "clarification_question", "clarification_source", "missing_required_entities", "entities", "graph_path"],
+        [
+            "subagent_result",
+            "answer",
+            "selected_skill_id",
+            "execution_mode",
+            "repair_round",
+            "repair_history",
+            "last_repair_fingerprint",
+            "repair_no_progress_count",
+            "original_subagent_result",
+            "previous_subagent_results",
+            "need_clarification",
+            "clarification_question",
+            "clarification_source",
+            "missing_required_entities",
+            "graph_path",
+        ],
         routes=["required", "not_required"],
         failure_codes=[
             failure_codes.NO_CONFIDENT_SKILL,
@@ -176,7 +205,61 @@ NODE_CONTRACTS: dict[str, NodeContract] = {
         [],
         ["approval_required", "approval_payloads", "graph_path"],
         optional_inputs=["subagent_result"],
-        routes=["required", "not_required"],
+        routes=["required", "not_required", "skip_completion"],
+    ),
+    "collect_verification_evidence": _contract(
+        "collect_verification_evidence",
+        ["selected_skill_id", "subagent_result"],
+        ["verification_evidence", "selected_skill_version", "graph_path"],
+        optional_inputs=["entities", "repair_round", "repair_history"],
+    ),
+    "verify_task_completion": _contract(
+        "verify_task_completion",
+        ["selected_skill_id", "subagent_result"],
+        [
+            "task_completion_verification_result",
+            "verification_evidence",
+            "selected_skill_version",
+            "repair_history",
+            "repair_plan",
+            "last_repair_fingerprint",
+            "repair_no_progress_count",
+            "graph_path",
+        ],
+        optional_inputs=["repair_round", "repair_history", "last_repair_fingerprint", "repair_no_progress_count"],
+        routes=["passed", "continue", "need_user", "handoff", "failed"],
+    ),
+    "build_repair_task": _contract(
+        "build_repair_task",
+        ["task_completion_verification_result", "repair_plan", "selected_skill_id"],
+        ["execution_mode", "repair_round", "graph_path"],
+    ),
+    "dispatch_repair_agent": _contract(
+        "dispatch_repair_agent",
+        ["selected_agent", "selected_skill_id", "repair_plan", "repair_round", "subagent_result"],
+        [
+            "subagent_result",
+            "answer",
+            "previous_subagent_results",
+            "execution_mode",
+            "selected_skill_id",
+            "need_clarification",
+            "clarification_question",
+            "clarification_source",
+            "missing_required_entities",
+            "graph_path",
+        ],
+        optional_inputs=["orchestrator_context", "entities", "verification_evidence"],
+    ),
+    "build_verification_clarification": _contract(
+        "build_verification_clarification",
+        ["task_completion_verification_result"],
+        ["answer", "need_clarification", "clarification_source", "clarification_question", "graph_path"],
+    ),
+    "build_handoff_answer": _contract(
+        "build_handoff_answer",
+        ["task_completion_verification_result"],
+        ["answer", "need_clarification", "manual_intervention_required", "error", "graph_path"],
     ),
     "create_approval_request": _contract(
         "create_approval_request",
@@ -234,8 +317,3 @@ def validate_node_contracts() -> list[str]:
             if code not in ALLOWED_FAILURE_CODES:
                 errors.append(f"{node_name} references unknown failure code: {code}")
     return errors
-
-
-def contract_snapshot() -> dict[str, dict[str, Any]]:
-    """生成可序列化快照，供测试和架构审查比较。"""
-    return {name: contract.model_dump() for name, contract in NODE_CONTRACTS.items()}

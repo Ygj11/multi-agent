@@ -16,6 +16,7 @@ from app.main import create_app
 def isolated_runtime_env(monkeypatch) -> None:
     """Keep tests independent from the developer's local .env runtime choices."""
     monkeypatch.setenv("INTERNAL_LLM_API_URL", "")
+    monkeypatch.setenv("ENABLE_REAL_LLM", "false")
     monkeypatch.setenv("ENABLE_OPENSDK_LLM", "false")
     monkeypatch.setenv("POS_TOOL_MODE", "mock")
     monkeypatch.setenv("TROUBLESHOOTING_TOOL_MODE", "mock")

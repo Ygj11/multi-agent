@@ -42,6 +42,7 @@ def test_prompt_loader_renders_scene_templates_and_trace():
         original_query="保全任务完成但没有更新",
         rewritten_query="保全任务完成但没有更新",
         entities={"policy_no": "9200100000458846"},
+        rewrite_type="new_request",
         conversation_window={},
         intent_taxonomy=[],
         allowed_intents=["troubleshooting"],
@@ -55,4 +56,3 @@ def test_prompt_loader_renders_scene_templates_and_trace():
     assert trace["prompt_version"]
     assert trace["output_schema"] == "IntentRecognitionLLMOutput"
     assert trace["eval_suite"] == "intent_taxonomy_v1"
-

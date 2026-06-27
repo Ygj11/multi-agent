@@ -28,6 +28,33 @@ class AuthorizationService:
     """
 
     def check_agent_access(self, *, principal: Principal | None, agent_card: AgentCard) -> AuthorizationDecision:
+        """
+        YAML 不声明 access_policy，表示该 Agent 不增加任何 AgentCard 级别的访问限制，任何 Principal 都可以通过这一层检查，包括 principal=None。
+
+        access_policy:
+          required_roles:
+            - operations_engineer
+            - insurance_admin
+
+          required_scopes:
+            - agent:troubleshooting:access
+            - policy:read
+
+          required_data_permissions:
+            - troubleshooting:diagnose
+
+          allowed_org_types:
+            - head_office
+            - branch
+
+          allowed_org_ids:
+            - ORG_001
+            - ORG_002
+
+          denied_org_ids:
+            - ORG_TEST
+
+        """
         policy = agent_card.access_policy
         required_roles = set(policy.required_roles)
         required_scopes = set(policy.required_scopes)
@@ -74,6 +101,7 @@ class AuthorizationService:
         return AuthorizationDecision(allowed=True)
 
     def check_tool_access(self, *, principal: Principal | None, tool_definition: ToolDefinition) -> AuthorizationDecision:
+        # 默认不拦截
         required_scopes = set(tool_definition.required_scopes or [])
         if not required_scopes:
             return AuthorizationDecision(allowed=True)

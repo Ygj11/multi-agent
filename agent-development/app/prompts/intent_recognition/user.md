@@ -4,6 +4,8 @@ Rewritten query: {rewritten_query}
 
 Entities: {entities}
 
+Rewrite type: {rewrite_type}
+
 Conversation window: {conversation_window}
 
 Intent taxonomy: {intent_taxonomy}

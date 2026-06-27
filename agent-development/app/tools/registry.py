@@ -192,6 +192,7 @@ class ToolRegistry:
         principal_obj = self._coerce_principal(principal)
         allowed: list[str] = []
         for name in visible:
+            # 第一道工具检查：Tool 是否会暴露给 LLM
             decision = authorization_service.check_tool_access(principal=principal_obj, tool_definition=self._tools[name])
             if decision.allowed:
                 allowed.append(name)

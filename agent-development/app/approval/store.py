@@ -15,6 +15,7 @@ from typing import Any
 from app.config.settings import get_settings
 from app.schemas.approval import ApprovalRequest, ApprovalStatus
 from app.storage.sqlite import SQLiteDatabase
+from app.utils.json_utils import to_json
 
 
 class SQLiteApprovalStore:
@@ -95,25 +96,25 @@ class SQLiteApprovalStore:
                     request.subject,
                     request.user_id,
                     request.org_id,
-                    self._to_json(request.org_path),
-                    self._to_json(request.principal_snapshot),
-                    self._to_json(request.auth_context_snapshot),
+                    to_json(request.org_path),
+                    to_json(request.principal_snapshot),
+                    to_json(request.auth_context_snapshot),
                     request.resource_type,
                     request.resource_id,
-                    self._to_json(request.tool_required_scopes),
+                    to_json(request.tool_required_scopes),
                     request.agent_name,
                     request.tool_name,
                     request.operation_type,
                     request.risk_level,
-                    self._to_json(request.arguments),
+                    to_json(request.arguments),
                     request.reason,
                     request.status,
                     request.callback_url,
-                    self._to_json(request.resume_state),
-                    self._to_json(request.pending_messages),
-                    self._to_json(request.pending_tools),
-                    self._to_json(request.pending_tool_call),
-                    self._to_json(request.result) if request.result is not None else None,
+                    to_json(request.resume_state),
+                    to_json(request.pending_messages),
+                    to_json(request.pending_tools),
+                    to_json(request.pending_tool_call),
+                    to_json(request.result) if request.result is not None else None,
                     request.final_answer,
                     request.error,
                     request.approver,
@@ -145,7 +146,7 @@ class SQLiteApprovalStore:
                 INSERT INTO approval_events(approval_id, event_type, payload_json, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (approval_id, event_type, self._to_json(payload), created_at),
+                (approval_id, event_type, to_json(payload), created_at),
             )
 
         await self.db.run(write)
@@ -194,25 +195,25 @@ class SQLiteApprovalStore:
             request.subject,
             request.user_id,
             request.org_id,
-            cls._to_json(request.org_path),
-            cls._to_json(request.principal_snapshot),
-            cls._to_json(request.auth_context_snapshot),
+            to_json(request.org_path),
+            to_json(request.principal_snapshot),
+            to_json(request.auth_context_snapshot),
             request.resource_type,
             request.resource_id,
-            cls._to_json(request.tool_required_scopes),
+            to_json(request.tool_required_scopes),
             request.agent_name,
             request.tool_name,
             request.operation_type,
             request.risk_level,
-            cls._to_json(request.arguments),
+            to_json(request.arguments),
             request.reason,
             request.status,
             request.callback_url,
-            cls._to_json(request.resume_state),
-            cls._to_json(request.pending_messages),
-            cls._to_json(request.pending_tools),
-            cls._to_json(request.pending_tool_call),
-            cls._to_json(request.result) if request.result is not None else None,
+            to_json(request.resume_state),
+            to_json(request.pending_messages),
+            to_json(request.pending_tools),
+            to_json(request.pending_tool_call),
+            to_json(request.result) if request.result is not None else None,
             request.final_answer,
             request.error,
             request.approver,
@@ -270,10 +271,6 @@ class SQLiteApprovalStore:
             updated_at=row["updated_at"],
             decided_at=row["decided_at"],
         )
-
-    @staticmethod
-    def _to_json(value: Any) -> str:
-        return json.dumps(value, ensure_ascii=False, default=str)
 
     @staticmethod
     def _now() -> str:

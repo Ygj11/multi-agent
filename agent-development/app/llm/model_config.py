@@ -10,6 +10,7 @@ SCENE_MODEL_FIELDS = {
     "intent_recognition": "intent_recognition_model",
     "agent_selection": "agent_selection_model",
     "subagent_reasoning": "subagent_reasoning_model",
+    "task_completion_verifier": "task_completion_model",
     "final_compliance": "final_compliance_model",
     "summary": "summary_model",
 }
@@ -26,4 +27,3 @@ def get_llm_model(settings: Settings, scene: str | None = None, explicit_model: 
             if scene_model:
                 return scene_model
     return settings.internal_llm_model
-

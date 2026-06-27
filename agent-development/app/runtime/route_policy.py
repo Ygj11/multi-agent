@@ -23,6 +23,20 @@ class RoutePolicy:
         return "required" if state.get("approval_required") else "not_required"
 
     @staticmethod
+    def route_task_completion(state: dict[str, Any]) -> Literal["passed", "continue", "need_user", "handoff", "failed"]:
+        result = state.get("task_completion_verification_result") or {}
+        status = str(result.get("status") or "").upper()
+        if status == "PASS":
+            return "passed"
+        if status == "CONTINUE":
+            return "continue"
+        if status == "NEED_USER":
+            return "need_user"
+        if status == "HUMAN_HANDOFF":
+            return "handoff"
+        return "failed"
+
+    @staticmethod
     def route_after_create_approval(state: dict[str, Any]) -> Literal["submit", "manual"]:
         return "manual" if state.get("manual_intervention_required") else "submit"
 

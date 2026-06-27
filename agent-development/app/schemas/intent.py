@@ -17,12 +17,9 @@ class IntentResult(BaseModel):
     intent: str
     sub_intent: str | None = None
     confidence: float
-    missing_required_entities: list[str] = Field(default_factory=list)
     need_clarification: bool = False
     clarification_question: str | None = None
-    is_follow_up: bool = False
     reason: str = ""
-    target_subagent: str | None = None
     llm_status: str | None = None
     fallback_used: bool = False
     fallback_source: str | None = None

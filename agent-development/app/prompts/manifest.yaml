@@ -9,7 +9,7 @@ scenes:
     default_model: configured-default
     tools_allowed: false
   intent_recognition:
-    version: "2026-06-12.1"
+    version: "2026-06-26.1"
     system: intent_recognition/system.md
     user: intent_recognition/user.md
     output_schema: IntentRecognitionLLMOutput
@@ -54,5 +54,13 @@ scenes:
     user: null
     output_schema: VerificationResult
     eval_suite: final_compliance_v1
+    default_model: configured-default
+    tools_allowed: false
+  task_completion_verifier:
+    version: "2026-06-25.1"
+    system: task_completion_verifier/system.md
+    user: task_completion_verifier/user.md
+    output_schema: TaskCompletionLLMOutput
+    eval_suite: task_completion_verify_v1
     default_model: configured-default
     tools_allowed: false

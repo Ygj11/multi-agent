@@ -15,3 +15,9 @@ Short summary:
 
 Lightweight hints:
 {lightweight_hints}
+
+Execution mode:
+{execution_mode}
+
+Repair context:
+{repair_context}
