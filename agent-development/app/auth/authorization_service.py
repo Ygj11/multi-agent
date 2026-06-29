@@ -134,6 +134,13 @@ class ResourceAccessService:
         resource_id: str | None,
         action: str = "read",
     ) -> AuthorizationDecision:
+        """检查 principal 是否能访问某个业务资源。
+
+        `action` 当前本地 MVP 实现尚未参与判断，只使用 allowlist 做资源归属校验。
+        但接口保留它是有意的：企业资源权限服务通常会区分 read / write / delete /
+        notify 等动作，同一个用户可能能读保单但不能发起写操作。ToolExecutor 会把
+        ToolDefinition.operation 传进来，未来替换为真实权限中心时不需要再改调用链。
+        """
         if not resource_type or not resource_id:
             return AuthorizationDecision(allowed=True)
         if principal is None:

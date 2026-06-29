@@ -1,5 +1,5 @@
 from app.evaluation.agent.runner import AgentEvalRunner
-from app.evaluation.runner import PromptEvalRunner
+from app.evaluation.prompts.runner import PromptEvalRunner
 
 
 def test_agent_eval_cases_load_and_ids_are_unique():
@@ -32,4 +32,11 @@ def test_prompt_eval_cases_still_load_after_agent_eval_addition():
     report = PromptEvalRunner().run(suite_name="query_rewrite_multiturn_v1")
 
     assert report.failed == 0
-    assert report.total == 2
+    assert report.total == 12
+
+
+def test_prompt_eval_intent_suite_has_extended_coverage():
+    report = PromptEvalRunner().run(suite_name="intent_taxonomy_v1")
+
+    assert report.failed == 0
+    assert report.total == 18

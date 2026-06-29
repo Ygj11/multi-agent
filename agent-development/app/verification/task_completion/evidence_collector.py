@@ -75,11 +75,11 @@ class VerificationEvidenceCollector:
                 evidence_id=item.evidence_id,
                 source_type=item.source_type,
                 source_name=item.source_name,
-                summary=item.summary or self._preview(item.content),
+                summary=item.summary or f"{item.source_type}:{item.source_name}",
                 status="available",
                 tool_name=item.metadata.get("tool_name") if isinstance(item.metadata, dict) else None,
-                result_summary={"preview": self._preview(item.content)},
-                metadata={"created_at": item.created_at},
+                result_summary={"preview": item.summary or "", "tool_log_id": item.tool_log_id},
+                metadata={"created_at": item.created_at, "tool_log_id": item.tool_log_id, **item.metadata},
             )
             for item in items
         ]

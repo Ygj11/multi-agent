@@ -122,6 +122,7 @@ class AgentResumeState(BaseModel):
     session_key: str
     thread_id: str
     auth_context_summary: dict[str, Any] = Field(default_factory=dict)
+    result_callback_url: str | None = None
     original_query: str
     rewritten_query: str | None = None
     intent: str | None = None
@@ -165,6 +166,7 @@ class AgentResumeState(BaseModel):
             "session_id": self.session_id,
             "session_key": self.session_key,
             "thread_id": self.thread_id,
+            "result_callback_url": self.result_callback_url,
             "original_query": self.original_query,
             "rewritten_query": self.rewritten_query or self.original_query,
             "intent": self.intent or "unknown",

@@ -64,7 +64,20 @@ async def test_agent_can_execute_authorized_mcp_tool_and_logs(tmp_path):
     assert manager.calls == [("mcp.workflow.query_refund_task", {"policy_no": "9201344266"})]
     assert logs[0]["source"] == "mcp"
     assert logs[0]["server_name"] == "workflow"
-    assert logs[0]["original_tool_name"] == "query_refund_task"
+    assert "original_tool_name" not in logs[0]
+
+
+@pytest.mark.asyncio
+async def test_tool_execution_log_table_does_not_store_original_tool_name(tmp_path):
+    db = SQLiteDatabase(tmp_path / "mcp-log-schema.sqlite3")
+
+    def read_columns(conn):
+        return [row["name"] for row in conn.execute("PRAGMA table_info(tool_execution_logs)").fetchall()]
+
+    columns = await db.run(read_columns)
+
+    assert "server_name" in columns
+    assert "original_tool_name" not in columns
 
 
 @pytest.mark.asyncio

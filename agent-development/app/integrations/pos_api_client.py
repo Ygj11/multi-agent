@@ -10,7 +10,9 @@ from app.observability.logger import log_event, preview_text
 
 
 class PosAPIClient:
-    """POS 领域 Client，复用统一 HTTP 传输层并保留 POS 结果契约。"""
+    """POS 领域 Client，复用统一 HTTP 传输层并保留 POS 结果契约。
+    POS_TOOL_MODE=real 时由 AppContainer 构建，再被 POS tool handlers 使用
+    """
 
     def __init__(self, http_client: BaseIntegrationHTTPClient) -> None:
         self.http = http_client

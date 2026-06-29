@@ -50,7 +50,7 @@ LLM 不直接看到这些内部字段：
 - `enabled`
 - `agent_name`
 - `server_name`
-- `original_tool_name`
+- `original_name`
 - `callable`
 - `metadata`
 

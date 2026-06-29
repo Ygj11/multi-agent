@@ -98,6 +98,7 @@ class ToolExecutor:
                 evidence=evidence,
             )
         )
+        # 日志打印和数据存储
         await self._log(result, arguments, request_id, trace_id, session_key, started_at, started_perf)
         return result
 
@@ -120,6 +121,13 @@ class ToolExecutor:
 
         审批通过不等于任意工具可执行：这里仍会校验 approval_id 对应的 Agent、
         tool_name 和 arguments 是否与当初申请完全一致，并继续执行权限与验证检查。
+
+        与普通 execute() 的关键区别：
+        - 普通路径在权限、验证之后如果发现需要审批，会返回 human_approval_required；
+        - 审批恢复路径已经拿到了 approved 的 approval_id，因此不会再次调用
+          _requires_approval() 创建新审批，否则会形成“审批通过后又申请审批”的死循环；
+        - 但工具存在性、Agent 可见性、必填参数、principal 权限、资源访问、pre-tool
+          verification 和幂等保护仍然必须重新检查，因为审批 callback 与原请求之间存在时间差。
         """
         started_perf = perf_counter()
         started_at = self._now()
@@ -252,6 +260,10 @@ class ToolExecutor:
                 raw=raw,
             )
             if result.success:
+                """从 tooldefinition.contract 中获取工具定义的contract.result_schema
+                contract 是 tool_contracts.yaml 配置驱动的，它为已注册 ToolDefinition 补充信息
+                具体看contracts.py
+                """
                 schema_error = validate_tool_result_schema(self._result_schema(definition), raw)
                 if schema_error:
                     result = ToolResult(
@@ -294,6 +306,14 @@ class ToolExecutor:
         if definition.source == "mcp":
             if self.mcp_client_manager is None:
                 raise MCPServerUnavailableError("mcp_client_manager_not_configured")
+            # MCP 工具调用链路：
+            # 1. 启动或刷新 MCP server 时，ToolRegistry 会把 server 返回的原始工具
+            #    注册成项目内规范名，例如 mcp.workflow.query_refund_task；
+            # 2. LLM 只看到这个规范注册名，并按 OpenAI function calling 格式生成 tool call；
+            # 3. ToolExecutor 先完成工具存在性、Agent 可见性、参数、权限、审批等确定性校验；
+            # 4. MCPClientManager 再用规范注册名找到所属 server 和 server 原始工具名；
+            # 5. MCP client 调用 server 的 tools/call，由 server 执行真实工具；
+            # 6. server 返回结果后，ToolExecutor 会统一包装成 ToolResult 并写日志/evidence。
             return await self.mcp_client_manager.call_tool(tool_name, arguments)
         return await definition.callable(**self._call_arguments(definition, arguments, principal, auth_context))
 
@@ -350,6 +370,14 @@ class ToolExecutor:
         started_perf: float,
         approval_id: str | None = None,
     ) -> None:
+        """三件事
+        计算工具耗时 duration_ms，写回 ToolResult.duration_ms。
+        打结构化运行日志 tool_execution_finished。
+        如果配置了 store：
+            写 tool_execution_logs：工具执行流水账。
+            写 evidence：从工具结果抽取一份可供 Verify / Repair / 审计引用的证据。
+                evidence中不保存完整的工具ToolResult，只保存摘要和 tool_log_id，完整事实回查 tool_execution_logs。
+        """
         duration_ms = max(0, int((perf_counter() - started_perf) * 1000))
         result.duration_ms = duration_ms
         finished_at = self._now()
@@ -371,9 +399,10 @@ class ToolExecutor:
                 "result_preview": preview_text(str(result.result)) if result.result is not None else None,
             },
         )
+        tool_log_id: int | None = None
         if self.log_store is not None:
             definition = self.registry.get_definition(result.name)
-            await self.log_store.append(
+            tool_log_id = await self.log_store.append(
                 request_id=request_id,
                 trace_id=trace_id,
                 session_key=session_key,
@@ -388,10 +417,9 @@ class ToolExecutor:
                 duration_ms=duration_ms,
                 source=definition.source if definition else None,
                 server_name=definition.server_name if definition else None,
-                original_tool_name=definition.original_name if definition else None,
                 approval_id=approval_id or result.approval_id,
             )
-        if self.evidence_store is not None and session_key:
+        if self.evidence_store is not None and session_key and tool_log_id is not None:
             try:
                 evidence = EvidenceBuilder.from_tool_result(
                     session_key=session_key,
@@ -399,6 +427,7 @@ class ToolExecutor:
                     trace_id=trace_id,
                     tool_name=result.name,
                     result=result.model_dump(),
+                    tool_log_id=tool_log_id,
                     summary=preview_text(str(result.result)) if result.result is not None else result.error,
                 )
                 await self.evidence_store.save(evidence)
@@ -435,6 +464,14 @@ class ToolExecutor:
         action: str,
         approval_id: str | None = None,
     ) -> ToolResult | None:
+        """执行工具级和资源级授权检查。
+
+        ToolDefinition.required_scopes 用于工具级 scope 校验；
+        ToolDefinition.resource_type/resource_id_arg 用于资源级访问校验。
+        `action` 来自 ToolDefinition.operation，当前本地 ResourceAccessService
+        只做资源 allowlist 判断，尚未按 action 分支；保留该参数是为了后续接入
+        企业权限中心时能区分 read/write/delete/notify 等资源动作。
+        """
         if self.authorization_service is not None:
             decision = self.authorization_service.check_tool_access(principal=principal, tool_definition=definition)
             if not decision.allowed:

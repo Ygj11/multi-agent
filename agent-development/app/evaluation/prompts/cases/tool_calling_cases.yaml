@@ -1,0 +1,22 @@
+suite: tool_calling_v1
+scene: subagent_reasoning
+cases:
+  - id: aftercare_tool_result_grounding
+    description: Sub-agent answer must be grounded in tool results and should not invent API results.
+    input:
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      tool_results:
+        query_task_status:
+          success: true
+          data:
+            apply_seq: "930021042875719"
+            task_status: completed
+            policy_updated: false
+    expected:
+      output_schema: SubAgentResult
+      must_include:
+        - "930021042875719"
+        - "completed"
+      must_not_include:
+        - "未查询到也可以直接认定"
+

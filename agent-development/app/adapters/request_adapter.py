@@ -87,6 +87,7 @@ class RequestAdapter:
             original_query=original_query,
             messages=request.messages,
             auth_context=auth_context.model_dump(),
+            result_callback_url=request.result_callback_url,
         )
 
     @staticmethod

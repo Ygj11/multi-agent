@@ -148,6 +148,7 @@ class AppContainer:
     async def _shutdown_resources(self) -> None:
         """按依赖逆序释放已构造资源，可被 startup 半失败路径复用。"""
         await self._close_resource("tool_registry", self.tool_registry)
+        await self._close_resource("approval_service", self.approval_service)
         await self._close_resource("approval_system_client", self.approval_service.client)
         await self._close_resource("mcp_client_manager", self.mcp_client_manager, method_name="shutdown")
         await self._close_resource("troubleshooting_api_client", self.integration_clients.troubleshooting)
@@ -216,6 +217,9 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
     # contract 校验属于启动期治理：prod 环境严格失败，非 prod 只记录告警。
     _log_contract_warnings(tool_registry, settings)
 
+    # 构建最终外发/工具前策略校验服务。它服务于 pre_tool、pre_answer 等安全边界，
+    # 与后面的 TaskCompletionVerifierService 不同：后者负责 Skill-aware 任务完成度
+    # verify-repair loop，判断“任务是否做完、是否需要继续修复”。
     verification_service = build_verification_service(llm_provider)
     tool_executor = ToolExecutor(
         registry=tool_registry,

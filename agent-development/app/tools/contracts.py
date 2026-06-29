@@ -42,6 +42,13 @@ class ToolContract(BaseModel):
     ``result_schema`` 和 ``approval_policy_id`` 均为可选附加约束：未配置
     结果 Schema 时跳过结果结构校验；未配置审批策略时，不会覆盖写操作或
     风险等级已有的审批判断。超时和数据分级属于有默认值的策略参数。
+
+    它不是权限策略本身。工具权限主要来自 ToolDefinition.required_scopes、
+    resource_type 和 resource_id_arg；Contract 只能补充 operation/risk_level/
+    approval_policy_id 等执行治理信号。例如一个工具注册时 operation=read，
+    但 tool_contracts.yaml 为它声明 operation=notify、risk_level=high，则
+    ToolRegistry 会生成带新治理字段的 ToolDefinition，ToolExecutor 后续按更新后
+    的字段判断审批和审计。
     """
 
     tool_name: str

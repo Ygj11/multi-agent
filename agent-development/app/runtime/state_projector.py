@@ -93,6 +93,7 @@ def project_approval_resume_state(
             "subject": principal.get("subject"),
             "org_id": principal.get("org_id"),
         },
+        result_callback_url=_optional_str(state.get("result_callback_url")),
         original_query=str(state.get("original_query") or ""),
         rewritten_query=_optional_str(state.get("rewritten_query")),
         intent=_optional_str(state.get("intent")),

@@ -72,7 +72,6 @@ class SQLiteDatabase:
                     duration_ms INTEGER NOT NULL,
                     source TEXT,
                     server_name TEXT,
-                    original_tool_name TEXT,
                     approval_id TEXT
                 );
 
@@ -92,10 +91,9 @@ class SQLiteDatabase:
                     session_key TEXT NOT NULL,
                     source_type TEXT NOT NULL,
                     source_name TEXT NOT NULL,
-                    content_json TEXT NOT NULL,
+                    tool_log_id INTEGER,
                     summary TEXT,
                     citations_json TEXT NOT NULL,
-                    redactions_json TEXT NOT NULL,
                     metadata_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );

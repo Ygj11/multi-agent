@@ -8,7 +8,9 @@ from app.integrations.base_http_client import BaseIntegrationHTTPClient
 
 
 class LogAPIClient:
-    """未来用于替换 query_internal_log mock tool。"""
+    """未来用于替换 query_internal_log mock tool。
+    未来真实日志平台 Client 示例，可替换或补强排障中的内部日志查询。
+    """
 
     def __init__(self, http_client: BaseIntegrationHTTPClient) -> None:
         self.http = http_client

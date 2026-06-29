@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-"""SQLite evidence store.
+"""SQLite Evidence 存储。
 
-Evidence is a reusable reference index for answers, verification, and future
-audit review. It complements, but does not replace, the append-only
-`tool_execution_logs` facts or the business-state `approval_requests` table.
+Evidence 是答案验证、Repair 和审计复查使用的轻量证据索引。它不替代
+append-only 的 `tool_execution_logs`，也不替代审批业务状态表
+`approval_requests`。工具类 Evidence 只保存 summary 和 tool_log_id；
+需要完整工具结果时，按 tool_log_id 回查 `tool_execution_logs`。
 """
 
 import json
@@ -25,11 +26,11 @@ class EvidenceStore:
         def write(conn):
             conn.execute(
                 """
-                INSERT OR REPLACE INTO evidence(
+                INSERT INTO evidence(
                     evidence_id, request_id, trace_id, session_key, source_type, source_name,
-                    content_json, summary, citations_json, redactions_json, metadata_json, created_at
+                    tool_log_id, summary, citations_json, metadata_json, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     evidence.evidence_id,
@@ -38,10 +39,9 @@ class EvidenceStore:
                     evidence.session_key,
                     evidence.source_type,
                     evidence.source_name,
-                    to_json(evidence.content),
+                    evidence.tool_log_id,
                     evidence.summary,
                     to_json(evidence.citations),
-                    to_json(evidence.redactions),
                     to_json(evidence.metadata),
                     evidence.created_at,
                 ),
@@ -79,10 +79,9 @@ class EvidenceStore:
             session_key=row["session_key"],
             source_type=row["source_type"],
             source_name=row["source_name"],
-            content=json.loads(row["content_json"]),
+            tool_log_id=row["tool_log_id"],
             summary=row["summary"],
             citations=json.loads(row["citations_json"]),
-            redactions=json.loads(row["redactions_json"]),
             metadata=json.loads(row["metadata_json"]),
             created_at=row["created_at"],
         )

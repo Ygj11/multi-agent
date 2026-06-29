@@ -97,6 +97,7 @@ def test_resume_projection_keeps_only_execution_resume_payload():
         "sub_intent": "endo_completion_aftercare",
         "entities": {"policy_no": "9200100000458846", "apply_seq": "930021042875719"},
         "selected_agent": "troubleshooting_agent",
+        "result_callback_url": "https://caller.example.test/agent/final-result",
         "conversation_window": {"raw": "not persisted"},
         "auth_context": {"principal": {"tenant_id": "tenant", "user_id": "u1", "subject": "sub"}},
         "subagent_result": {
@@ -124,3 +125,4 @@ def test_resume_projection_keeps_only_execution_resume_payload():
     assert resume["pending_tool_arguments"] == {"apply_seq": "930021042875719"}
     assert resume["selected_skill_id"] == "troubleshooting_agent.endo_completion_aftercare"
     assert resume["auth_context_summary"] == {"tenant_id": "tenant", "user_id": "u1", "subject": "sub", "org_id": None}
+    assert resume["result_callback_url"] == "https://caller.example.test/agent/final-result"

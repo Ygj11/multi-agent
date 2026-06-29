@@ -127,12 +127,25 @@ class BaseSubAgent(ABC):
                 principal=principal,
                 auth_context=task.auth_context,
             )
+
+            """把通用的 ToolCallingRunResult 转成项目统一的 SubAgentResult
+            如果触发审批：answer = "该操作需要人工审批，当前尚未执行。"
+            如果正常结束：answer = run_result.final_answer
+            如果失败：answer = run_result.error or "Agent loop failed."
+            把每次工具调用转成轻量 evidence。
+            把 pending messages/tools/tool_call 放进 metadata，供审批恢复用。
+            """
             result = self.build_result_from_runner(
                 task=task,
                 sub_context=sub_context,
                 agent_card=agent_card,
                 run_result=run_result,
             )
+
+            """一个安全兜底：防止某些必须依赖工具事实的 Skill，在没有成功工具结果时，让 LLM 直接自由文本回答业务结论。
+            只在 Skill metadata 里配置了：requires_tool_evidence: true 生效
+            
+            """
             result = self._enforce_tool_evidence_requirement(
                 task=task,
                 sub_context=sub_context,
@@ -195,6 +208,7 @@ class BaseSubAgent(ABC):
         name: str,
         arguments: dict[str, Any],
     ):
+        """预留给手写子 Agent 的便利入口，子 agent 的 do_run方法使用"""
         if self.tool_executor is None:
             raise RuntimeError("tool executor is not configured")
         return await self.tool_executor.execute(
@@ -306,7 +320,20 @@ class BaseSubAgent(ABC):
         run_result: ToolCallingRunResult,
         result: SubAgentResult,
     ) -> SubAgentResult:
-        """阻止强依赖工具事实的 Skill 返回无证据业务结论。"""
+        """阻止强依赖工具事实的 Skill 返回无证据业务结论。
+        如果当前 Skill 不要求工具证据
+            直接返回原 result
+
+        如果当前结果是审批 pending
+            直接返回原 result
+
+        如果 tool_calls 中有 success=True 的工具结果
+            直接返回原 result
+
+        否则：
+            不允许把 LLM 的自由回答当作成功业务结论
+            改成澄清/补参话术
+        """
         if not self._requires_tool_evidence(sub_context) or result.needs_human_approval:
             return result
         if self._has_successful_tool_result(run_result):

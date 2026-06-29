@@ -1,16 +1,29 @@
 from __future__ import annotations
 
-"""Final-answer data permission verifier."""
+"""最终答案数据权限 verifier。
+
+场景：Graph 的 `pre_answer_verify` 节点在答案返回用户前调用。
+
+职责：
+- 读取 FieldVisibilityPolicy；
+- 根据 principal.roles / scopes / data_permissions 判断敏感类别是否可见；
+- 不可见时按策略脱敏或记录 warning。
+
+它不决定“工具能不能执行”。工具执行权限仍由 ToolExecutor 中的
+AuthorizationService / ResourceAccessService 完成。
+"""
 
 import re
 from typing import Any
 
 from app.auth.principal import Principal
-from app.verification.field_visibility_policy import FieldVisibilityPolicy, FieldVisibilityRule
+from app.verification.policies.field_visibility_policy import FieldVisibilityPolicy, FieldVisibilityRule
 from app.verification.schemas import VerificationInput, VerificationResult
 
 
 class DataPermissionVerifier:
+    """按字段可见性策略过滤最终答案。"""
+
     name = "data_permission"
     stages = ["pre_answer"]
 

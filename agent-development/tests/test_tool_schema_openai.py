@@ -181,7 +181,7 @@ def test_mcp_tools_are_exposed_as_openai_function_schema_without_internal_fields
     assert definition.server_name == "workflow"
     assert definition.original_name == "query_refund_task"
     assert definition.metadata["server_name"] == "workflow"
-    assert definition.metadata["original_tool_name"] == "query_refund_task"
+    assert "original_tool_name" not in definition.metadata
 
 
 def test_mcp_array_parameter_schema_is_preserved_for_batch_entity_queries():

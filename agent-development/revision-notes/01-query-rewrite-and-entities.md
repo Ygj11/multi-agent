@@ -79,7 +79,7 @@ Graph 入口在 `app/runtime/graph.py:query_rewrite()`；实现位于 `app/query
 | `app/prompts/query_rewrite/user.md` | 输入变量的呈现；当前包含 `original_query`、`current_entities`、`conversation_window`。 |
 | `app/llm/output_schemas.py` | 改变 JSON 输出字段时同步修改 `QueryRewriteLLMOutput`。 |
 | `app/prompts/manifest.yaml` | 改 Prompt 内容语义时提高 scene version；schema 或 eval suite 改名时同步。 |
-| `app/evaluation/cases/query_rewrite_cases.yaml` | 新增正向、反例、追问和澄清回复 fixture。 |
+| `app/evaluation/prompts/cases/query_rewrite_cases.yaml` | 新增正向、反例、追问和澄清回复 fixture。 |
 
 LLM 输出的 `entities` 与 `inherited_entities` 是候选；`QueryRewriteNode._rewrite_with_llm()` 会经 `EntityResolver` 才生成 canonical bag。不能让 Prompt 要求替代服务端优先级。
 

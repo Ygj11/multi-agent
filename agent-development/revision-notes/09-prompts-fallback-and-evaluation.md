@@ -30,7 +30,7 @@ scene -> version -> system/user markdown -> output_schema -> eval_suite -> tools
 2. 修改对应 `system.md` 或 `user.md`；`user.md` 只能引用调用方实际传入的变量。
 3. 在 `app/prompts/manifest.yaml` 提升该 scene 的 `version`；若改 output schema 或 eval suite 名称，同步更新 manifest。
 4. 如果 JSON 字段、类型、合法值变化，修改 `app/llm/output_schemas.py` 中对应 Pydantic model，以及所有调用节点的消费逻辑。
-5. 更新 `app/evaluation/cases/<suite>_cases.yaml`：至少包含正例、边界例、反例和 fallback 相关样例。
+5. 更新 `app/evaluation/prompts/cases/<suite>_cases.yaml`：至少包含正例、边界例、反例和 fallback 相关样例。
 6. 补节点单测和 fixture load 测试。
 
 ## 2. 新增 Prompt scene
@@ -41,7 +41,7 @@ scene -> version -> system/user markdown -> output_schema -> eval_suite -> tools
 - `app/prompts/manifest.yaml` scene 声明，包含 version、system/user、output_schema、eval_suite、tools_allowed；
 - 若 JSON 输出，`app/llm/output_schemas.py` 的 schema 与 `SCHEMA_REGISTRY`；
 - 调用组件，明确 `scene="<scene>"`、传入变量、解析失败时的处理；
-- `app/evaluation/cases/<scene>_cases.yaml`；
+- `app/evaluation/prompts/cases/<scene>_cases.yaml`；
 - `tests/test_prompt_manifest.py`、`tests/test_prompt_templates.py` 的覆盖或新断言。
 
 没有独立业务调用点的 scene 不应先创建。Prompt manifest 不是自由的内容目录，它是运行时可验证契约。
@@ -85,7 +85,7 @@ provider disabled/error
 uv run pytest tests/test_prompt_manifest.py tests/test_prompt_templates.py tests/test_evaluation_cases_load.py -q
 uv run pytest tests/test_llm_strict_schema.py tests/test_llm_model_config.py -q
 uv run pytest tests/test_query_rewrite.py tests/test_intent_recognition_llm_json.py -q
-uv run python -c 'from app.evaluation.runner import PromptEvalRunner; print(PromptEvalRunner().run())'
+uv run python -c 'from app.evaluation.prompts.runner import PromptEvalRunner; print(PromptEvalRunner().run())'
 ```
 
 最后一条命令执行的是 deterministic fixture eval，不会调用真实 LLM。真实模型评估应显式调用 `PromptEvalRunner.run_with_provider()` 并传入已配置 provider。

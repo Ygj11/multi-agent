@@ -11,7 +11,10 @@ from app.observability.logger import log_event
 
 
 class KnowledgeAPIClient:
-    """KnowledgeService implementation backed by an external API."""
+    """KnowledgeService implementation backed by an external API.
+    外部知识库 Client，实现 KnowledgeService 查询接口，并把外部结果归一化为 KnowledgeChunk
+    ENABLE_KNOWLEDGE_API=true 时由 app/knowledge/factory.py 构建
+    """
 
     def __init__(
         self,

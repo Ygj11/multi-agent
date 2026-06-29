@@ -1,9 +1,16 @@
+import importlib.util
+
 import pytest
 
 from app.auth.principal import Principal
-from app.verification.field_visibility_policy import FieldVisibilityPolicy
+from app.verification.policies.field_visibility_policy import FieldVisibilityPolicy
 from app.verification.schemas import VerificationInput
 from app.verification.verifiers.data_permission_verifier import DataPermissionVerifier
+
+
+def test_field_visibility_policy_lives_under_policies_namespace_only():
+    assert importlib.util.find_spec("app.verification.policies.field_visibility_policy") is not None
+    assert importlib.util.find_spec("app.verification.field_visibility_policy") is None
 
 
 def test_field_visibility_policy_loads_config_file():

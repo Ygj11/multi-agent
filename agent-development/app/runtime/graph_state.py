@@ -15,6 +15,12 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "session_key": {"owner": "session_identity", "source": "RequestAdapter", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "thread_id": {"owner": "graph_execution", "source": "AgentOrchestrator", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "auth_context": {"owner": "auth", "source": "RequestAdapter", "kind": "resume", "persistence": "approval_store"},
+    "result_callback_url": {
+        "owner": "approval_result_callback",
+        "source": "RequestAdapter",
+        "kind": "resume",
+        "persistence": "resume_state",
+    },
     "original_query": {"owner": "request", "source": "RequestAdapter", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "rewritten_query": {"owner": "understanding", "source": "query_rewrite", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "rewrite_type": {"owner": "understanding", "source": "query_rewrite", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
@@ -121,6 +127,7 @@ class AgentGraphState(TypedDict, total=False):
     session_key: str
     thread_id: str
     auth_context: dict[str, Any] | None
+    result_callback_url: str | None
 
     original_query: str
     rewritten_query: str

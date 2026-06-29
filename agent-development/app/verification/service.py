@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""可组合的 Verification 服务。
+"""可组合的通用 Verification 服务。
 
 Verification 处理需要可插拔 verifier 的运行时策略检查。当前主路径使用：
 
@@ -9,6 +9,9 @@ Verification 处理需要可插拔 verifier 的运行时策略检查。当前主
 
 Authorization 仍然独立且确定性地判断“能不能做”；Verification 判断工具或答案
 是否满足外发/执行前策略。当前 patch/block 能力以注册 verifier 的真实行为为准。
+
+这不是 task completion verify-repair loop。任务完成度验收需要读取 Skill SOP、
+工具证据和状态探针，因此放在 `app.verification.task_completion`，使用独立 schema。
 """
 
 from app.verification.base import BaseVerifier
@@ -16,7 +19,16 @@ from app.verification.schemas import VerificationInput, VerificationResult
 
 
 class VerificationService:
-    """执行某一阶段的所有 verifier，并聚合最终动作。"""
+    """执行某一阶段的所有 verifier，并聚合最终动作。
+
+    聚合规则有意保持简单：
+    - 任一 verifier 返回 block/manual 或 blocking severity，整体立即阻断；
+    - verifier 返回 patch 时，把 patched_output 作为后续 verifier 的输入；
+    - 没有 verifier 支持当前 stage 时默认 allow。
+
+    这样可以让 DataPermissionVerifier 先脱敏，ComplianceVerifier 再基于脱敏结果
+    检查最终答案，而不是每个节点各自实现一套外发安全逻辑。
+    """
 
     def __init__(self, verifiers: list[BaseVerifier] | None = None) -> None:
         self.verifiers = verifiers or []

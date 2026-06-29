@@ -51,6 +51,19 @@ class ToolExecutionPipeline:
         self.approval_guard = ToolApprovalGuard(executor)
 
     async def run(self, context: ToolExecutionContext) -> ToolResult:
+        """普通工具调用的守卫链。
+
+        顺序很重要：
+        1. 工具存在且对当前 Agent 可见；
+        2. LLM 生成的参数满足工具 JSON Schema required；
+        3. principal 具备 ToolDefinition.required_scopes；
+        4. principal 可访问 resource_type/resource_id_arg 指向的业务资源；
+        5. pre-tool verification 没有阻断；
+        6. 未知 MCP 工具策略没有拒绝；
+        7. 写操作/高风险/审批策略命中时返回 human_approval_required，不执行工具；
+        8. 全部通过后才调用本地 callable 或 MCP 工具。
+        """
+
         # 1. 工具必须存在，并且对当前 AgentCard 可见。
         definition, exists_error = self.availability_guard.check_exists(
             agent_name=context.agent_name,

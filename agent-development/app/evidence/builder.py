@@ -15,10 +15,10 @@ class EvidenceBuilder:
         session_key: str,
         tool_name: str,
         result: Any,
+        tool_log_id: int,
         request_id: str | None = None,
         trace_id: str | None = None,
         summary: str | None = None,
-        redactions: list[dict[str, Any]] | None = None,
     ) -> Evidence:
         return Evidence(
             request_id=request_id,
@@ -26,9 +26,8 @@ class EvidenceBuilder:
             session_key=session_key,
             source_type="tool",
             source_name=tool_name,
-            content=result,
+            tool_log_id=tool_log_id,
             summary=summary or str(result)[:240],
-            redactions=redactions or [],
         )
 
     @staticmethod
@@ -50,9 +49,7 @@ class EvidenceBuilder:
             session_key=session_key,
             source_type="knowledge",
             source_name=chunk.source,
-            content=chunk.content,
             summary=chunk.content[:240],
             citations=[citation],
             metadata=chunk.metadata,
         )
-

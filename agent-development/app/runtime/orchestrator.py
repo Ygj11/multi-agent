@@ -49,6 +49,7 @@ class AgentOrchestrator:
             "thread_id": thread_id,
             "auth_context": inbound.auth_context,
             "original_query": inbound.original_query,
+            "result_callback_url": inbound.result_callback_url,
             "error": None,
             "graph_path": [],
         }

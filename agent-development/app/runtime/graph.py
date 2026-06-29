@@ -156,18 +156,18 @@ class AgentGraphFactory:
         graph.add_node("compress_short_memory", self.compress_short_memory)
         graph.add_node("finalize_response", self.finalize_response)
 
-        graph.set_entry_point("route_entry")
+        graph.set_entry_point("route_entry") # start节点
         graph.add_conditional_edges(
             "route_entry",
             self.entry_route,
             {"resume": "resume_approved_tool", "normal": "load_session"},
         )
-        graph.add_edge("resume_approved_tool", "check_human_approval_required")
+        graph.add_edge("resume_approved_tool", "check_human_approval_required") # 有没有写工具需要审批
         graph.add_edge("load_session", "save_user_message")
         graph.add_edge("save_user_message", "query_rewrite")
         graph.add_conditional_edges(
-            "query_rewrite",
-            self.clarification_route,
+            "query_rewrite", # 从哪个节点开始分支
+            self.clarification_route, # 用哪个函数判断路线
             {"clarify": "build_clarification_answer", "continue": "intent_recognition"},
         )
         graph.add_conditional_edges(
@@ -181,7 +181,7 @@ class AgentGraphFactory:
             self.clarification_route,
             {"clarify": "build_clarification_answer", "continue": "dispatch_agent"},
         )
-        graph.add_edge("dispatch_agent", "check_human_approval_required")
+        graph.add_edge("dispatch_agent", "check_human_approval_required") # 有没有写工具需要审批
         graph.add_edge("build_clarification_answer", "pre_answer_verify")
         graph.add_conditional_edges(
             "check_human_approval_required",
@@ -205,7 +205,7 @@ class AgentGraphFactory:
             },
         )
         graph.add_edge("build_repair_task", "dispatch_repair_agent")
-        graph.add_edge("dispatch_repair_agent", "check_human_approval_required")
+        graph.add_edge("dispatch_repair_agent", "check_human_approval_required") # 有没有写工具需要审批
         graph.add_edge("build_verification_clarification", "pre_answer_verify")
         graph.add_edge("build_handoff_answer", "pre_answer_verify")
         graph.add_conditional_edges(
@@ -232,11 +232,13 @@ class AgentGraphFactory:
         return graph.compile(checkpointer=self.checkpointer)
 
     async def route_entry(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "route_entry")
-        self._log_node_exit(state, "route_entry")
         return {"graph_path": self._append_path(state, "route_entry")}
 
     def entry_route(self, state: AgentGraphState) -> str:
+        """
+        route_entry 只是分流，
+        真正让 state 拿到旧变量的是 ApprovalStore 里保存的 resume_state_json + pending_messages + pending_tools + pending_tool_call
+        """
         return RoutePolicy.route_entry(state)
 
     async def load_session(self, state: AgentGraphState) -> dict[str, Any]:
@@ -384,6 +386,30 @@ class AgentGraphFactory:
         }
 
     async def dispatch_agent(self, state: AgentGraphState) -> dict[str, Any]:
+        """
+        dispatch_agent 执行完成，不等于“业务任务完成，SubAgentResult 可能是最终答案，也可能是“中断态结果”
+
+        dispatch_agent
+        → subagent.run()
+        → ToolCallingRunner loop 第 1 次
+           → LLM 调用只读工具 query_task_status
+           → 工具执行成功
+           → observation 回填给 LLM
+
+        → ToolCallingRunner loop 第 2 次
+           → LLM 决定调用写工具 notice_policy_update
+           → ToolExecutor 判断这是写工具，需要人工审批
+           → 不执行真实写工具
+           → 返回 ToolResult(error="human_approval_required")
+
+        → ToolCallingRunner 立刻停止 loop
+        → 返回 ToolCallingRunResult(stopped_reason="human_approval_required")
+        → BaseSubAgent 把它包装成 SubAgentResult(needs_human_approval=True)
+        → dispatch_agent 节点返回
+        → check_human_approval_required 检查这个 SubAgentResult
+        → create_approval_request
+        → pause_for_approval
+        ”"""
         self._log_node_enter(state, "dispatch_agent")
         context = OrchestratorContext(**state["orchestrator_context"])
         selected_card = self._selected_agent_card(state)
@@ -654,6 +680,7 @@ class AgentGraphFactory:
         if not self.enable_task_completion_verify:
             return True
         if state.get("need_clarification") or state.get("manual_intervention_required"):
+            # 人工接管
             return True
         subagent_result = state.get("subagent_result") if isinstance(state.get("subagent_result"), dict) else {}
         metadata = subagent_result.get("metadata") if isinstance(subagent_result.get("metadata"), dict) else {}
@@ -708,7 +735,7 @@ class AgentGraphFactory:
         return {
             "selected_agent": selection.selected_agent,
             "confidence": selection.confidence,
-            "selection_method": selection.selection_method, # 如何选择的 rule？llm？
+            "selection_method": selection.selection_method, # 表达 如何选择的 rule？llm？
             "fallback_used": bool(selection.fallback_used),
             "fallback_reason": selection.fallback_reason,
             "candidate_count": len(selection.candidates),

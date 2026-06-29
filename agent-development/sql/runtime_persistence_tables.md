@@ -177,7 +177,6 @@ CREATE TABLE graph_checkpoints (
 | `duration_ms` | int | 是 | 工具耗时，毫秒 |
 | `source` | varchar(64) | 否 | 工具来源，例如 local、mcp |
 | `server_name` | varchar(128) | 否 | MCP server 名称 |
-| `original_tool_name` | varchar(255) | 否 | MCP 或外部原始工具名 |
 | `approval_id` | varchar(128) | 否 | 如果该工具由审批恢复后执行，则记录对应审批 ID |
 
 ### MySQL DDL
@@ -199,7 +198,6 @@ CREATE TABLE tool_execution_logs (
     duration_ms INT NOT NULL COMMENT '执行耗时毫秒',
     source VARCHAR(64) NULL COMMENT '工具来源, 如local/mcp',
     server_name VARCHAR(128) NULL COMMENT 'MCP server名称',
-    original_tool_name VARCHAR(255) NULL COMMENT '外部或MCP原始工具名',
     approval_id VARCHAR(128) NULL COMMENT '关联审批ID',
     PRIMARY KEY (id),
     KEY idx_tool_execution_logs_session (session_key, id),
@@ -382,11 +380,12 @@ CREATE TABLE approval_events (
 它与 `tool_execution_logs` 的区别：
 
 - `tool_execution_logs` 是工具执行事实流水。
-- `evidence` 是可复用的回答证据索引，面向后续回答生成、合规校验和审计。
+- `evidence` 是可复用的回答证据索引，面向后续回答生成、任务完成度验收和审计。
+- 工具类 evidence 不保存完整工具返回；完整事实通过 `tool_log_id` 回查 `tool_execution_logs`。
 
 ### 什么时候用
 
-- 工具执行成功后，ToolExecutor 可把可信结果复制为 evidence。
+- 工具执行后，ToolExecutor 可把工具日志引用和摘要保存为 evidence。
 - 验证服务、最终回答、审计场景可以按 request 或 session 查询 evidence。
 - 后续如果接入知识库，也可以把检索到的知识片段保存为 evidence。
 
@@ -400,10 +399,9 @@ CREATE TABLE approval_events (
 | `session_key` | varchar(255) | 是 | 会话唯一键 |
 | `source_type` | varchar(64) | 是 | 证据来源类型：tool、knowledge、user、system、approval |
 | `source_name` | varchar(255) | 是 | 具体来源名称，例如工具名、知识库名 |
-| `content_json` | json | 是 | 证据原始内容 JSON |
+| `tool_log_id` | bigint | 否 | 工具 evidence 对应的 tool_execution_logs.id；非工具证据为空 |
 | `summary` | text | 否 | 证据摘要 |
 | `citations_json` | json | 是 | 引用信息 JSON |
-| `redactions_json` | json | 是 | 脱敏记录 JSON |
 | `metadata_json` | json | 是 | 扩展元数据 JSON |
 | `created_at` | varchar(40) | 是 | 创建时间 |
 
@@ -417,10 +415,9 @@ CREATE TABLE evidence (
     session_key VARCHAR(255) NOT NULL COMMENT '会话唯一键',
     source_type VARCHAR(64) NOT NULL COMMENT '证据来源类型:tool/knowledge/user/system/approval',
     source_name VARCHAR(255) NOT NULL COMMENT '具体来源名称',
-    content_json JSON NOT NULL COMMENT '证据内容JSON',
+    tool_log_id BIGINT UNSIGNED NULL COMMENT '关联工具执行流水ID',
     summary TEXT NULL COMMENT '证据摘要',
     citations_json JSON NOT NULL COMMENT '引用信息JSON',
-    redactions_json JSON NOT NULL COMMENT '脱敏记录JSON',
     metadata_json JSON NOT NULL COMMENT '扩展元数据JSON',
     created_at VARCHAR(40) NOT NULL COMMENT '创建时间, ISO-8601 UTC字符串',
     PRIMARY KEY (evidence_id),

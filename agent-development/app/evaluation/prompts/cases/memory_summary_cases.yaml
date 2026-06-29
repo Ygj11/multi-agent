@@ -1,0 +1,13 @@
+suite: memory_summary_v1
+scene: memory_summary
+cases:
+  - id: summary_keeps_business_entities
+    description: Memory summary should keep business entities needed for future context.
+    input:
+      current_turn: "用户询问保单9200100000458846，受理号930021042875719 的保全完成后未更新。"
+    expected:
+      output_schema: text
+      must_include:
+        - policy_no
+        - apply_seq
+

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-"""SQLite tool execution log store.
+"""SQLite 工具执行日志存储。
 
-This is the authoritative execution ledger for ToolExecutor attempts. It stores
-masked arguments, result/error, timing, source, and approval_id. Approval
-workflow state remains in `ApprovalStore`; reusable answer evidence is copied to
-`EvidenceStore` by ToolExecutor when configured.
+这里是 ToolExecutor 每次尝试调用工具的权威流水账，保存脱敏参数、
+工具结果/错误、耗时、来源和 approval_id。审批工作流状态仍属于
+`ApprovalStore`；可复用的 Evidence 只保存摘要，并通过 tool_log_id 指回这里。
 """
 
 import json
@@ -57,22 +56,20 @@ class ToolExecutionLogStore:
         duration_ms: int,
         source: str | None = None,
         server_name: str | None = None,
-        original_tool_name: str | None = None,
         approval_id: str | None = None,
-    ) -> None:
+    ) -> int:
         arguments_json = to_json(mask_sensitive(arguments))
         result_json = to_json(result) if result is not None else None
 
         def write(conn):
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO tool_execution_logs(
                     request_id, trace_id, session_key, agent_name, tool_name,
                     arguments_json, success, result_json, error, started_at,
-                    finished_at, duration_ms, source, server_name, original_tool_name,
-                    approval_id
+                    finished_at, duration_ms, source, server_name, approval_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     request_id,
@@ -89,12 +86,12 @@ class ToolExecutionLogStore:
                     duration_ms,
                     source,
                     server_name,
-                    original_tool_name,
                     approval_id,
                 ),
             )
+            return int(cursor.lastrowid)
 
-        await self.db.run(write)
+        return await self.db.run(write)
 
     async def list_by_session(self, session_key: str) -> list[dict[str, Any]]:
         def read(conn):
@@ -118,6 +115,21 @@ class ToolExecutionLogStore:
 
         return await self.db.run(read)
 
+    async def get_by_id(self, log_id: int) -> dict[str, Any] | None:
+        def read(conn):
+            row = conn.execute(
+                """
+                SELECT *
+                FROM tool_execution_logs
+                WHERE id = ?
+                """,
+                (log_id,),
+            ).fetchone()
+            return self._row_to_dict(row) if row else None
+
+        item = await self.db.run(read)
+        return self._with_parsed_result(item) if item else None
+
     async def find_success_by_approval(self, approval_id: str) -> dict[str, Any] | None:
         """Return the first successful execution for an approval id, if any."""
 
@@ -135,6 +147,10 @@ class ToolExecutionLogStore:
             return self._row_to_dict(row) if row else None
 
         item = await self.db.run(read)
+        return self._with_parsed_result(item) if item else None
+
+    @staticmethod
+    def _with_parsed_result(item: dict[str, Any] | None) -> dict[str, Any] | None:
         if item and item.get("result_json"):
             try:
                 item["result"] = json.loads(item["result_json"])
@@ -160,6 +176,5 @@ class ToolExecutionLogStore:
             "duration_ms": row["duration_ms"],
             "source": row["source"] if "source" in row.keys() else None,
             "server_name": row["server_name"] if "server_name" in row.keys() else None,
-            "original_tool_name": row["original_tool_name"] if "original_tool_name" in row.keys() else None,
             "approval_id": row["approval_id"] if "approval_id" in row.keys() else None,
         }

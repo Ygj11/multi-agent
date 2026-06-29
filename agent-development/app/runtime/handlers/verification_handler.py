@@ -20,6 +20,21 @@ class VerificationHandler:
         self.verification_service = verification_service
 
     async def pre_answer_verify(self, state: dict[str, Any]) -> dict[str, Any]:
+        """
+        Graph 生成 answer
+        → pre_answer_verify 节点
+        → VerificationService
+           → DataPermissionVerifier   判断“这个用户能不能看这些字段”，
+                app.verification.policies.field_visibility_policy 是
+                DataPermissionVerifier 的策略配置模型，不是 verifier。
+                读取 policies/field_visibility_policy.yaml
+                → 定义哪些字段类别敏感
+                → 定义匹配正则
+                → 定义无权限时怎么 mask
+                → 定义哪些 permission / role 可以看明文
+           → ComplianceVerifier    判断“这个答案整体能不能外发”
+        → patch/block/allow 后再返回用户
+        """
         answer = state.get("answer", "")
         if self.verification_service is not None:
             verification = await self.verification_service.verify(

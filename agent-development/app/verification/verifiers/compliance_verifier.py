@@ -1,6 +1,16 @@
 from __future__ import annotations
 
-"""Pre-answer compliance verifier."""
+"""最终答案合规 verifier。
+
+场景：Graph 的 `pre_answer_verify` 节点在答案返回用户前调用。
+
+职责：
+- 调用 final_compliance prompt，让 LLM provider 有机会参与外发合规判断；
+- 用确定性规则脱敏 credential / token / 内部日志字段；
+- 阻断原始工具输出直出，例如 RAW_TOOL_RESULT、tool_result_json。
+
+它不判断用户有没有资源权限；资源和 scope 权限由 AuthorizationService 处理。
+"""
 
 import re
 
@@ -10,6 +20,8 @@ from app.verification.schemas import VerificationInput, VerificationResult
 
 
 class ComplianceVerifier:
+    """检查最终答案是否可以外发。"""
+
     name = "compliance"
     stages = ["pre_answer"]
 

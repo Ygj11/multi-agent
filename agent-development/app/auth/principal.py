@@ -33,8 +33,8 @@ class AuthContext(BaseModel):
 
     principal: Principal
     auth_source: Literal["gateway", "jwt", "dev_header", "body_fallback", "service_account"] = "dev_header"
-    raw_claims: dict[str, Any] = Field(default_factory=dict)
-    authenticated_at: str | None = None
+    raw_claims: dict[str, Any] = Field(default_factory=dict) # 认证系统返回的原始声明信息
+    authenticated_at: str | None = None  # 本次身份认证发生的时间
 
 
 def principal_from_auth_context(value: AuthContext | dict[str, Any] | None) -> Principal | None:

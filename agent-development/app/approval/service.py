@@ -6,10 +6,13 @@ from datetime import UTC, datetime
 from uuid import uuid4
 from typing import Any
 
+import httpx
+
 from app.approval.client import ApprovalSystemClient
 from app.approval.store import SQLiteApprovalStore
 from app.auth.principal import principal_dict_from_auth_context
 from app.memory.short_term_memory_manager import ShortTermMemoryManager
+from app.runtime.async_client_lifecycle import AsyncClientLifecycle
 from app.schemas.approval import (
     ApprovalCallbackHandleResult,
     ApprovalCallbackRequest,
@@ -40,6 +43,8 @@ class ApprovalService:
         short_memory: ShortTermMemoryManager,
         callback_url: str,
         orchestrator: Any | None = None,
+        result_callback_client: httpx.AsyncClient | None = None,
+        owns_result_callback_client: bool = False,
     ) -> None:
         self.store = store
         self.client = client
@@ -48,6 +53,13 @@ class ApprovalService:
         self.short_memory = short_memory
         self.callback_url = callback_url
         self.orchestrator = orchestrator
+        timeout = getattr(getattr(client, "settings", None), "approval_system_timeout", 30.0)
+        self._result_callback_client_lifecycle = AsyncClientLifecycle(
+            factory=lambda: httpx.AsyncClient(timeout=timeout),
+            close_client=lambda value: value.aclose(),
+            client=result_callback_client,
+            owns_client=owns_result_callback_client,
+        )
 
     async def create_approval_request(
         self,
@@ -153,6 +165,19 @@ class ApprovalService:
         return result
 
     async def handle_callback(self, callback: ApprovalCallbackRequest) -> ApprovalCallbackHandleResult:
+        """
+        审批回调
+          -> ApprovalService.handle_callback()
+          -> ApprovalStore.get(approval_id)
+          -> 取出 approval_request.resume_state
+          -> AgentResumeState.model_validate(...)
+          -> resume_contract.to_graph_state()
+          -> 加上 approval_resume=True
+          -> graph.ainvoke(resume_state)
+          -> route_entry 看到 approval_resume=True
+          -> 进入 resume_approved_tool
+        """
+
         approval_request = await self.store.get(callback.approval_id)
         if approval_request is None:
             raise KeyError(callback.approval_id)
@@ -231,6 +256,7 @@ class ApprovalService:
                 event_type="manual_intervention_required",
                 payload={"final_answer": final_answer},
             )
+            await self._notify_result_callback_if_needed(refreshed, state=state)
         else:
             refreshed.status = "completed"
             refreshed.error = state.get("error")
@@ -244,6 +270,7 @@ class ApprovalService:
                 event_type="completed",
                 payload={"final_answer": final_answer, "error": refreshed.error},
             )
+            await self._notify_result_callback_if_needed(refreshed, state=state)
 
         return ApprovalResumeResult(
             approval_id=refreshed.approval_id,
@@ -267,7 +294,87 @@ class ApprovalService:
             event_type="rejected",
             payload={"final_answer": final_answer, "approver": approval_request.approver, "comment": approval_request.comment},
         )
+        await self._notify_result_callback_if_needed(approval_request, state=None)
         return final_answer
+
+    async def _notify_result_callback_if_needed(
+        self,
+        approval_request: ApprovalRequest,
+        *,
+        state: dict[str, Any] | None,
+    ) -> None:
+        """审批链路到达终态后，把最终结果回调给最初的 /api/chat 调用方。
+
+        这里通知的是“业务最终结果”，不是外部审批系统的审批结果：
+        - /api/chat 在写工具触发审批时只能同步返回 pending；
+        - 审批 callback 恢复 Graph 后，才知道工具是否真的执行、后续 LLM 是否还要调用工具、
+          最终回答是什么；
+        - 如果恢复后又触发下一次审批，当前审批不是终态，不应把中间 pending 当最终答案推送。
+
+        回调失败只写入审批记录和事件，不反向改变审批恢复结果。否则调用方 callback URL
+        短暂不可达会把已经完成的本地工具执行误标成失败。
+        """
+        callback_url = self._result_callback_url(approval_request)
+        if not callback_url:
+            return
+
+        payload = {
+            "event": "approval_final_result",
+            "approval_id": approval_request.approval_id,
+            "root_approval_id": approval_request.root_approval_id or approval_request.approval_id,
+            "parent_approval_id": approval_request.parent_approval_id,
+            "request_id": approval_request.request_id,
+            "trace_id": approval_request.trace_id,
+            "session_key": approval_request.session_key,
+            "status": approval_request.status,
+            "final_answer": approval_request.final_answer,
+            "error": approval_request.error,
+            "graph_path": (state or {}).get("graph_path", []),
+            "created_at": approval_request.created_at,
+            "decided_at": approval_request.decided_at,
+        }
+        try:
+            delivery = await self._post_result_callback(callback_url, payload)
+            callback_result = {
+                "delivered": True,
+                "url": callback_url,
+                **delivery,
+            }
+            event_type = "result_callback_delivered"
+        except Exception as exc:
+            callback_result = {
+                "delivered": False,
+                "url": callback_url,
+                "error": str(exc),
+            }
+            event_type = "result_callback_failed"
+
+        approval_request.result = {
+            **(approval_request.result or {}),
+            "result_callback": callback_result,
+        }
+        await self.store.update(
+            approval_request,
+            event_type=event_type,
+            payload=callback_result,
+        )
+
+    async def _post_result_callback(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """向初始调用方发送最终结果；独立方法方便测试替换。"""
+        async with self._result_callback_client_lifecycle.lease() as client:
+            response = await client.post(url, json=payload)
+        response.raise_for_status()
+        return {"status_code": response.status_code}
+
+    @staticmethod
+    def _result_callback_url(approval_request: ApprovalRequest) -> str | None:
+        resume_state = approval_request.resume_state or approval_request.pending_state or {}
+        value = resume_state.get("result_callback_url")
+        return str(value) if value else None
+
+    async def close(self) -> None:
+        """关闭审批最终结果回调使用的自有 HTTP 连接池。"""
+        await self._result_callback_client_lifecycle.close()
 
     async def _sanitize_and_persist_answer(
         self,

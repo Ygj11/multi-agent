@@ -127,7 +127,6 @@ class ToolRegistry:
                 enabled=capability.enabled,
                 metadata={
                     "server_name": capability.server_name,
-                    "original_tool_name": capability.original_tool_name,
                     "raw_schema": capability.raw_schema,
                     **mcp_policy,
                 },

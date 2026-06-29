@@ -1,0 +1,218 @@
+suite: query_rewrite_multiturn_v1
+scene: query_rewrite
+cases:
+  - id: clarification_reply_inherits_policy
+    description: Clarification reply should combine prior business request with current entity.
+    input:
+      current_query: "001028"
+      recent_messages:
+        - role: assistant
+          content: "还缺少保全项 endorseType，请补充后继续处理。"
+          metadata:
+            need_clarification: true
+            rewritten_query: "保单 9200100000458846 保全完成后未更新"
+            entities:
+              policy_no: "9200100000458846"
+            missing_required_entities:
+              - endorseType
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      rewrite_type: clarification_reply
+      must_include:
+        - policy_no
+        - endorseType
+  - id: new_strong_anchor_does_not_inherit_history
+    description: A new strong anchor should be treated as a standalone request.
+    input:
+      current_query: "保单 9200100000458847 查一下保全状态"
+      short_summary: "上一轮保单号 9200100000458846。"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      rewrite_type: new_request
+      must_include:
+        - "9200100000458847"
+      must_not_include:
+        - "9200100000458846"
+  - id: direct_aftercare_with_all_entities
+    description: A fully specified current request should stay standalone and preserve all current entities.
+    input:
+      current_query: "保全任务完成，保单9200100000458846，受理号930021042875719，保全项001028，为什么还没更新？"
+      current_entities:
+        policy_no: "9200100000458846"
+        apply_seq: "930021042875719"
+        endorseType: "001028"
+      short_summary: "上一轮咨询过退保失败。"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: false
+      rewrite_type: new_request
+      need_clarification: false
+      must_include:
+        - "9200100000458846"
+        - "930021042875719"
+        - "001028"
+      must_not_include:
+        - 退保失败
+  - id: contextual_follow_up_keeps_business_focus
+    description: A follow-up question should keep the active business task and add the follow-up focus.
+    input:
+      current_query: "那一般是什么原因？"
+      recent_messages:
+        - role: user
+          content: "保全任务完成，保单9200100000458846，受理号930021042875719，为什么没更新？"
+        - role: assistant
+          content: "可能需要检查任务状态、回调记录和保全项是否完成。"
+          metadata:
+            rewritten_query: "保全任务完成，保单9200100000458846，受理号930021042875719，为什么没更新？"
+            entities:
+              policy_no: "9200100000458846"
+              apply_seq: "930021042875719"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: true
+      rewrite_type: contextual_follow_up
+      need_clarification: false
+      must_include:
+        - "9200100000458846"
+        - "930021042875719"
+        - 原因
+  - id: clarification_required_multiple_policy_candidates
+    description: Ambiguous history with multiple policy candidates should require clarification before inheriting.
+    input:
+      current_query: "那这个保全项001028为什么没更新？"
+      recent_messages:
+        - role: user
+          content: "保单9200100000458846和9200100000458847都查过保全状态。"
+      short_summary: "最近出现两个保单号 9200100000458846、9200100000458847。"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: true
+      rewrite_type: clarification_required
+      need_clarification: true
+      must_include:
+        - "9200100000458846"
+        - "9200100000458847"
+  - id: clarification_reply_inherits_apply_seq_and_policy
+    description: A clarification reply supplying endorseType should inherit unique policy and apply sequence.
+    input:
+      current_query: "保全项是001028"
+      recent_messages:
+        - role: assistant
+          content: "还缺少保全项，请补充后继续排查。"
+          metadata:
+            need_clarification: true
+            rewritten_query: "保单9200100000458846，受理号930021042875719，保全完成后未更新"
+            entities:
+              policy_no: "9200100000458846"
+              apply_seq: "930021042875719"
+            missing_required_entities:
+              - endorseType
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: true
+      rewrite_type: clarification_reply
+      need_clarification: false
+      must_include:
+        - "9200100000458846"
+        - "930021042875719"
+        - "001028"
+  - id: user_correction_overrides_history_policy
+    description: Explicit correction in current turn should override historical policy number.
+    input:
+      current_query: "不是9200100000458846，是9200100000458847，查这个保全完成后没更新"
+      short_summary: "上一轮保单号 9200100000458846 保全更新失败。"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: false
+      rewrite_type: new_request
+      need_clarification: false
+      must_include:
+        - "9200100000458847"
+      must_not_include:
+        - "9200100000458846"
+  - id: parallel_policy_query_keeps_two_policy_numbers
+    description: A current request with two explicit policy numbers should keep both instead of forcing conflict.
+    input:
+      current_query: "保单9200100000458846和9200100000458847的被保人分别是谁？"
+      current_entities:
+        policy_no:
+          - "9200100000458846"
+          - "9200100000458847"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: false
+      rewrite_type: new_request
+      need_clarification: false
+      must_include:
+        - "9200100000458846"
+        - "9200100000458847"
+  - id: direct_pos_product_code_query
+    description: Current product-code query should stay independent and include pm code.
+    input:
+      current_query: "pm123456 这个产品支持哪些保全项？"
+      current_entities:
+        product_code: "pm123456"
+      short_summary: "上一轮在排查保单9200100000458846。"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: false
+      rewrite_type: new_request
+      need_clarification: false
+      must_include:
+        - pm123456
+      must_not_include:
+        - "9200100000458846"
+  - id: contextual_follow_up_uses_latest_answer_summary
+    description: A short follow-up should use latest assistant answer rather than unrelated older summary.
+    input:
+      current_query: "那下一步怎么处理？"
+      short_summary: "更早之前用户咨询过可做保全项。"
+      recent_messages:
+        - role: user
+          content: "退保失败，帮我排查保单9200100000458846"
+        - role: assistant
+          content: "已确认退保失败，需要进一步核对退款任务和错误原因。"
+          metadata:
+            rewritten_query: "排查保单9200100000458846退保失败原因"
+            intent: troubleshooting
+            sub_intent: refund_failure
+            entities:
+              policy_no: "9200100000458846"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: true
+      rewrite_type: contextual_follow_up
+      need_clarification: false
+      must_include:
+        - 退保失败
+        - 下一步
+        - "9200100000458846"
+  - id: clarification_required_missing_referent
+    description: A bare pronoun without unique history should ask what business object it refers to.
+    input:
+      current_query: "这个为什么失败了？"
+      recent_messages: []
+      short_summary: ""
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: true
+      rewrite_type: clarification_required
+      need_clarification: true
+      must_include:
+        - 这个
+  - id: new_request_aftercare_not_polluted_by_refund_history
+    description: A new explicit aftercare request should not inherit refund-failure context.
+    input:
+      current_query: "受理号930021042875719，保单9200100000458846，保全项001028完成后还是没有更新"
+      short_summary: "上一轮排查过退保失败和退款任务。"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      is_follow_up: false
+      rewrite_type: new_request
+      need_clarification: false
+      must_include:
+        - "930021042875719"
+        - "9200100000458846"
+        - "001028"
+      must_not_include:
+        - 退保失败

@@ -93,6 +93,7 @@ class ToolCallingRunner:
         same_tool_failure_counts: dict[str, int] = {}
         tool_call_counts: dict[str, int] = {}
 
+        # 模型思考轮次，最多允许 LLM 思考 limit 轮。
         for iteration in range(1, limit + 1):
             # 每一轮先把当前 messages 和可见工具 schema 交给 LLM。
             # LLM 可以返回最终答案，也可以返回一个或多个 tool_calls。
@@ -124,6 +125,16 @@ class ToolCallingRunner:
                         "tool_calls": response.tool_calls,
                     }
                 )
+
+                """模型同一轮返回的多个工具调用
+                校验工具调用格式
+                检查重复调用
+                执行工具
+                记录工具结果
+                检查人工审批
+                检查失败次数
+                把工具结果加入messages
+                """
                 for raw_call in response.tool_calls:
                     normalized = normalize_tool_call(raw_call)
                     if normalized.error:
@@ -182,7 +193,7 @@ class ToolCallingRunner:
                         )
 
                     # 归一化后的 tool_call 交给 ToolExecutor。即使 tool 名来自 LLM，
-                    # 执行前仍会重新校验 AgentCard 可见性和工具契约。
+                    # 执行前仍会重新校验 AgentCard 可见性和工具契约。 todo 执行工具入口
                     tool_result = await self.tool_executor.execute(
                         agent_name=agent_name,
                         tool_name=normalized.name,

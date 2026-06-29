@@ -1,7 +1,9 @@
 import json
 import re
+import importlib.util
+from pathlib import Path
 
-from app.evaluation.runner import PromptEvalRunner
+from app.evaluation.prompts.runner import PromptEvalRunner
 from app.llm.schemas import LLMResponse
 from app.prompts.manifest import PromptManifest
 
@@ -54,6 +56,13 @@ def test_eval_cases_load_and_map_to_manifest_scenes():
         assert len({case.id for case in suite.cases}) == len(suite.cases)
 
 
+def test_prompt_eval_uses_prompts_namespace_without_root_compat_modules():
+    assert importlib.util.find_spec("app.evaluation.prompts.runner") is not None
+    assert importlib.util.find_spec("app.evaluation.prompts.schemas") is not None
+    assert importlib.util.find_spec("app.evaluation.runner") is None
+    assert importlib.util.find_spec("app.evaluation.schemas") is None
+
+
 def test_eval_runner_executes_fixture_checks():
     report = PromptEvalRunner().run()
 
@@ -65,15 +74,40 @@ def test_eval_runner_executes_fixture_checks():
 def test_eval_runner_can_execute_one_suite():
     report = PromptEvalRunner().run(suite_name="query_rewrite_multiturn_v1")
 
-    assert report.total == 2
+    assert report.total == 12
     assert report.failed == 0
     assert report.suites[0].suite == "query_rewrite_multiturn_v1"
 
 
-async def test_eval_runner_can_execute_with_injected_provider():
+async def test_eval_runner_can_execute_with_injected_provider(tmp_path: Path):
+    (tmp_path / "query_rewrite_cases.yaml").write_text(
+        """
+suite: query_rewrite_multiturn_v1
+scene: query_rewrite
+cases:
+  - id: provider_clarification_reply
+    input:
+      current_query: "001028"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      rewrite_type: clarification_reply
+      must_include:
+        - policy_no
+        - endorseType
+  - id: provider_new_request
+    input:
+      current_query: "保单 9200100000458847 查一下保全状态"
+    expected:
+      output_schema: QueryRewriteLLMOutput
+      rewrite_type: new_request
+      must_include:
+        - "9200100000458847"
+""",
+        encoding="utf-8",
+    )
     provider = EvalFakeProvider()
 
-    report = await PromptEvalRunner().run_with_provider(
+    report = await PromptEvalRunner(cases_root=tmp_path).run_with_provider(
         provider,
         suite_name="query_rewrite_multiturn_v1",
     )

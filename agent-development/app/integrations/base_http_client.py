@@ -31,6 +31,9 @@ class BaseIntegrationHTTPClient:
 
     该传输层不在请求间修改共享 client 的全局 headers/cookies；用户级身份、
     request_id 和 trace_id 都通过单次请求参数传入，避免并发请求串身份。
+
+    共享 HTTP 传输层，负责连接池复用、请求级 headers、JSON 请求、基础脱敏和关闭生命周期。
+    使用者：PosAPIClient、TroubleshootingAPIClient、KnowledgeAPIClient 以及示例 Client
     """
 
     def __init__(

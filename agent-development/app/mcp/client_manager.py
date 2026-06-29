@@ -118,7 +118,9 @@ class MCPClientManager:
                 )
 
     async def call_tool(self, registered_tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Route a registered MCP tool call to its owning server."""
+        """Route a registered MCP tool call to its owning server.
+        注册名称 registered_tool_name   到--》  capability.original_tool_name 原始工具名称的执行。
+        """
         capability = self.capability_registry.get_tool(registered_tool_name)
         if capability is None:
             raise MCPToolError(f"unknown_mcp_tool:{registered_tool_name}")
@@ -129,6 +131,7 @@ class MCPClientManager:
         if client is None:
             raise MCPServerUnavailableError(f"mcp_server_unavailable:{capability.server_name}")
         try:
+            """mcp server will call this tool"""
             return await client.call_tool(capability.original_tool_name, arguments)
         except asyncio.TimeoutError as exc:
             raise MCPToolTimeoutError(str(exc)) from exc

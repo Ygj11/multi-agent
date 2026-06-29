@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""Evidence schemas used by verification and audit."""
+"""验证与审计使用的 Evidence schema。
+
+Evidence 是给答案验证、Repair 和审计使用的轻量证据索引，不保存完整工具
+返回。工具执行完整事实保存在 tool_execution_logs，Evidence 只通过
+tool_log_id 建立引用，并保留可直接给 Verifier 使用的 summary。
+"""
 
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -19,10 +24,8 @@ class Evidence(BaseModel):
     session_key: str
     source_type: EvidenceSourceType
     source_name: str
-    content: Any
+    tool_log_id: int | None = None
     summary: str | None = None
     citations: list[dict[str, Any]] = Field(default_factory=list)
-    redactions: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
-

@@ -21,7 +21,7 @@ Skill: 某 Agent 内怎样处理一个或多个 sub_intent
 3. `app/skills/<agent>/<skill>/SKILL.md`：frontmatter 中设置 `intent`、`sub_intents`，并把 `skill_id` 写入对应 AgentCard `skills`。
 4. `app/query/intent_fallback_policy.yaml`：LLM 不可用时仍需识别该意图才增加 rules/keywords；仅 LLM 场景可识别时不要伪造宽泛 fallback。
 5. `app/prompts/intent_recognition/*.md`：只有分类边界、字段含义或 prompt 指令变化时调整。
-6. `app/evaluation/cases/intent_cases.yaml`：增加合法分类、相邻分类、unknown/澄清 fixture。
+6. `app/evaluation/prompts/cases/intent_cases.yaml`：增加合法分类、相邻分类、unknown/澄清 fixture。
 
 启动时 `AppContainer` 会调用 `AgentCardLoader.validate_with_intent_taxonomy()`、`SkillCatalog.validate_with_intent_taxonomy()` 和 card-skill 交叉校验。不要通过关闭 `STRICT_TAXONOMY_ROUTE_COVERAGE` 逃避缺失 route。
 

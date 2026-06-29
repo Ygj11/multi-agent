@@ -1,0 +1,240 @@
+suite: intent_taxonomy_v1
+scene: intent_recognition
+cases:
+  - id: troubleshooting_aftercare_intent
+    description: Endorsement completed but policy not updated should route to troubleshooting.
+    input:
+      rewritten_query: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028"
+      rewrite_type: new_request
+      entities:
+        policy_no: "9200100000458846"
+        apply_seq: "930021042875719"
+        endorseType: "001028"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: endo_completion_aftercare
+  - id: pos_available_items_intent
+    description: Available endorsement items should route to POS query.
+    input:
+      rewritten_query: "查询保单 9200100000458846 可以做哪些保全项"
+      rewrite_type: direct
+      entities:
+        policy_no: "9200100000458846"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_available_items
+  - id: refund_failure_missing_execution_param
+    description: Clear refund failure intent should not be downgraded only because policy_no is missing.
+    input:
+      original_query: "退保失败，帮我排查"
+      rewritten_query: "退保失败，帮我排查"
+      rewrite_type: new_request
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: refund_failure
+      must_not_include:
+        - missing_required_entities
+        - selected_agent
+        - required_tools
+  - id: new_request_not_polluted_by_history
+    description: New POS request should not inherit troubleshooting intent from history.
+    input:
+      original_query: "现在查这个保单可以做哪些保全项"
+      rewritten_query: "查询保单 9200100000458847 可以做哪些保全项"
+      rewrite_type: new_request
+      entities:
+        policy_no: "9200100000458847"
+      conversation_window:
+        summary: "上一轮用户在排查保单 9200100000458846 的退保失败。"
+        recent_turns: []
+        entity_bag: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_available_items
+  - id: clarification_reply_aftercare
+    description: Clarification reply should classify the restored pending task in rewritten_query.
+    input:
+      original_query: "001028"
+      rewritten_query: "保全任务完成，保单9200100000458846，受理号930021042875719，保全项001028，为什么没有更新？"
+      rewrite_type: clarification_reply
+      entities:
+        policy_no: "9200100000458846"
+        apply_seq: "930021042875719"
+        endorseType: "001028"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: endo_completion_aftercare
+      must_not_include:
+        - is_follow_up
+        - missing_required_entities
+  - id: contextual_follow_up_refund
+    description: Contextual follow-up should classify the active business domain, not re-decide follow-up state.
+    input:
+      original_query: "那这个一般是谁的问题？"
+      rewritten_query: "继续排查保单9200100000458846退保失败的原因，并判断问题归属。"
+      rewrite_type: contextual_follow_up
+      entities:
+        policy_no: "9200100000458846"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: refund_failure
+      must_not_include:
+        - is_follow_up
+  - id: out_of_domain
+    description: Out-of-domain user request should classify as unknown.
+    input:
+      rewritten_query: "帮我写一首诗"
+      rewrite_type: direct
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: unknown
+      sub_intent: null
+  - id: legal_intent_uncertain_sub_intent
+    description: A valid parent intent with unclear POS sub-intent may keep sub_intent null.
+    input:
+      rewritten_query: "帮我查一下保全相关信息"
+      rewrite_type: direct
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: null
+  - id: pos_surrender_premium_calc
+    description: Surrender premium trial calculation should route to POS surrender premium calculation.
+    input:
+      rewritten_query: "保单9200230000453437做退保试算，查询可退金额和明细"
+      rewrite_type: new_request
+      entities:
+        policy_no: "9200230000453437"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_surrender_premium_calc
+      need_clarification: false
+      must_not_include:
+        - selected_agent
+        - tools
+  - id: pos_approval_text_query
+    description: Approval text or endorsement change detail query should route to POS approval text.
+    input:
+      rewritten_query: "查询受理号930021041267222的保全批文和变更详情"
+      rewrite_type: direct
+      entities:
+        apply_seq: "930021041267222"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_approval_text_query
+      need_clarification: false
+  - id: pos_policy_standard_query
+    description: Policy standard information query should route to POS policy standard query.
+    input:
+      rewritten_query: "查询保单9200100000458846的保全保单标准信息"
+      rewrite_type: direct
+      entities:
+        policy_no: "9200100000458846"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_policy_standard_query
+      need_clarification: false
+  - id: pos_submit_verify
+    description: Pre-submit surrender validation should route to POS submit verification.
+    input:
+      rewritten_query: "保单9200100000458846发起退保前做提交校验"
+      rewrite_type: new_request
+      entities:
+        policy_no: "9200100000458846"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_submit_verify
+      need_clarification: false
+  - id: troubleshooting_refund_failure_with_error_code
+    description: Refund failure with an error code should remain troubleshooting refund failure.
+    input:
+      rewritten_query: "保单9200100000458846退保失败，错误码E304，帮我排查原因"
+      rewrite_type: new_request
+      entities:
+        policy_no: "9200100000458846"
+        error_code: "E304"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: refund_failure
+      need_clarification: false
+  - id: troubleshooting_aftercare_sms_not_sent
+    description: Aftercare completed but SMS not sent belongs to endorsement completion aftercare.
+    input:
+      rewritten_query: "保全任务完成，保单9200100000458846没有发短信通知客户"
+      rewrite_type: direct
+      entities:
+        policy_no: "9200100000458846"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: endo_completion_aftercare
+      need_clarification: false
+  - id: pos_available_items_by_product_code
+    description: Product-level available endorsement item query should route to available items.
+    input:
+      rewritten_query: "pm123456这个产品可以做哪些保全项"
+      rewrite_type: new_request
+      entities:
+        product_code: "pm123456"
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: pos_available_items
+      need_clarification: false
+  - id: ambiguous_pos_sub_intent_needs_intent_clarification
+    description: POS parent intent is clear but two sub-intents are plausible, so ask an intent-level clarification.
+    input:
+      rewritten_query: "帮我查保全退保相关信息"
+      rewrite_type: direct
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: pos_query
+      sub_intent: null
+      need_clarification: true
+      must_include:
+        - clarification_question
+  - id: contextual_follow_up_aftercare_not_refund
+    description: Follow-up should classify the restored rewritten query, not an older refund history.
+    input:
+      original_query: "那这个为什么还没有同步？"
+      rewritten_query: "继续排查保单9200100000458846保全完成后信息没有同步的问题"
+      rewrite_type: contextual_follow_up
+      entities:
+        policy_no: "9200100000458846"
+      conversation_window:
+        summary: "更早之前用户咨询过退保失败。"
+        recent_turns: []
+        entity_bag: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: troubleshooting
+      sub_intent: endo_completion_aftercare
+      need_clarification: false
+      must_not_include:
+        - is_follow_up
+  - id: non_business_small_talk_unknown
+    description: Small talk should not be forced into business taxonomy.
+    input:
+      rewritten_query: "你好，今天北京天气怎么样？"
+      rewrite_type: direct
+      entities: {}
+    expected:
+      output_schema: IntentRecognitionLLMOutput
+      intent: unknown
+      sub_intent: null
+      need_clarification: false

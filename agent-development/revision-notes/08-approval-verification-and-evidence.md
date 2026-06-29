@@ -53,7 +53,7 @@ ToolExecutor / ToolApprovalGuard
 | `app/verification/service.py` | 按 stage 聚合 verifier。 |
 | `app/runtime/handlers/verification_handler.py` | MainGraph 的 pre-answer 行为、patch/retry/fallback。 |
 | `app/tools/guards/verification_guard.py` | 工具前 hook；当前是否实际生效取决于注册的 stage。 |
-| `app/verification/field_visibility_policy.yaml` | 字段级可见性策略。 |
+| `app/verification/policies/field_visibility_policy.yaml` | 字段级可见性策略。 |
 
 区分：Authorization 决定“是否可调用 Agent/Tool”；Verification 决定“参数或最终输出是否可外发”。新增校验不要把这两个职责混在一个 verifier 中。
 

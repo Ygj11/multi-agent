@@ -1,0 +1,28 @@
+suite: agent_selection_v1
+scene: agent_selection
+cases:
+  - id: troubleshooting_agent_for_aftercare
+    description: Troubleshooting taxonomy route should select troubleshooting agent.
+    input:
+      intent: troubleshooting
+      sub_intent: endo_completion_aftercare
+      query: "保全任务完成后保单没有更新"
+      candidates:
+        - troubleshooting_agent
+        - pos_query_agent
+    expected:
+      output_schema: AgentSelectionLLMOutput
+      selected_agent: troubleshooting_agent
+  - id: pos_query_agent_for_available_items
+    description: POS query taxonomy route should select POS query agent.
+    input:
+      intent: pos_query
+      sub_intent: pos_available_items
+      query: "查询可做保全项"
+      candidates:
+        - pos_query_agent
+        - troubleshooting_agent
+    expected:
+      output_schema: AgentSelectionLLMOutput
+      selected_agent: pos_query_agent
+
