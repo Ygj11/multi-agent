@@ -18,6 +18,7 @@ from app.llm.model_config import get_llm_model
 from app.llm.schemas import LLMResponse
 from app.observability.logger import log_event, preview_text
 from app.runtime.async_client_lifecycle import AsyncClientLifecycle
+from app.schemas.enums.observability import RuntimeEvent
 
 
 class InternalLLMProvider:
@@ -337,7 +338,7 @@ class InternalLLMProvider:
     @staticmethod
     def _log(scene: str | None, response: LLMResponse, *, trace_id: str | None = None, session_key: str | None = None) -> None:
         log_event(
-            "llm_chat_finished",
+            RuntimeEvent.LLM_CHAT_FINISHED,
             request_id=response.request_id,
             trace_id=trace_id,
             session_key=session_key,

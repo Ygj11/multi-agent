@@ -3,7 +3,9 @@ from __future__ import annotations
 """Human approval guard for write-side tools."""
 
 from app.auth.principal import Principal
+from app.schemas.enums.tool import RiskLevel
 from app.schemas.tool import ToolResult
+from app.tools.error_codes import HUMAN_APPROVAL_REQUIRED
 
 
 class ToolApprovalGuard:
@@ -33,7 +35,7 @@ class ToolApprovalGuard:
             "tool_name": tool_name,
             "arguments": arguments,
             "operation_type": self.executor._operation_type(tool_name),
-            "risk_level": "high",
+            "risk_level": str(RiskLevel.HIGH),
             "reason": f"Tool {tool_name} is a write-side operation and requires human approval.",
             "session_key": session_key,
             "request_id": request_id,
@@ -58,7 +60,7 @@ class ToolApprovalGuard:
             agent_name=agent_name,
             allowed=False,
             success=False,
-            error="human_approval_required",
+            error=HUMAN_APPROVAL_REQUIRED,
             needs_human_approval=True,
             approval_payload=approval_payload,
             pending_tool_call=pending_tool_call,

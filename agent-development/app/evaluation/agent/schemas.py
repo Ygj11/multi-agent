@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-"""Agent 行为级 Eval 的用例、轨迹和报告模型。"""
+"""Agent 行为级 Eval 的用例、轨迹和报告模型。
+负责数据结构校验
+"""
 
 from typing import Any, Literal
 

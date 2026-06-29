@@ -3,6 +3,7 @@ import pytest
 from app.adapters.request_adapter import RequestAdapter
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.schemas.entities import ConversationWindow, EntityBag
+from app.schemas.enums.query import RewriteType
 from app.schemas.message import ChatMessage, ChatRequest
 
 
@@ -75,7 +76,7 @@ async def test_intent_recognition_result_does_not_expose_entities():
         original_query="退保失败，保单号9200100000458846",
         rewritten_query="退保失败，保单号9200100000458846",
         entities={"policy_no": "9200100000458846"},
-        rewrite_type="direct",
+        rewrite_type=RewriteType.DIRECT,
         conversation_window=_window({"policy_no": "9200100000458846"}),
     )
 
@@ -90,7 +91,7 @@ async def test_intent_recognition_requires_entities_projection():
         await IntentRecognitionNode(llm_provider=None).recognize(
             original_query="退保失败，保单号9200100000458846",
             rewritten_query="退保失败，保单号9200100000458846",
-            rewrite_type="direct",
+            rewrite_type=RewriteType.DIRECT,
             conversation_window=_window({"policy_no": "9200100000458846"}),
         )
 
@@ -101,7 +102,7 @@ async def test_intent_recognition_requires_conversation_window():
             original_query="退保失败，保单号9200100000458846",
             rewritten_query="退保失败，保单号9200100000458846",
             entities={"policy_no": "9200100000458846"},
-            rewrite_type="direct",
+            rewrite_type=RewriteType.DIRECT,
         )
 
 

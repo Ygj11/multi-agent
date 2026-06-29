@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+from app.schemas.enums.task_completion import TaskCompletionStatus
 from app.verification.task_completion.schemas import RepairPlan, TaskCompletionVerificationResult
 
 
@@ -26,7 +27,7 @@ class RepairPlanSanitizer:
                 reason="task_completion_verifier_low_confidence",
                 evidence_ids=result.evidence_ids,
             )
-        if result.status != "CONTINUE":
+        if result.status is not TaskCompletionStatus.CONTINUE:
             return result
         plan = result.repair_plan
         if plan is None:
@@ -52,7 +53,7 @@ class RepairPlanSanitizer:
     @staticmethod
     def _handoff(*, reason: str, evidence_ids: list[str] | None = None) -> TaskCompletionVerificationResult:
         return TaskCompletionVerificationResult(
-            status="HUMAN_HANDOFF",
+            status=TaskCompletionStatus.HUMAN_HANDOFF,
             completed=False,
             summary="任务完成度验收无法安全生成修复计划，建议人工接管。",
             completed_items=[],

@@ -16,6 +16,7 @@ from app.config.settings import get_settings
 from app.observability.logger import log_event, preview_text
 from app.runtime.session_locks import SessionExecutionLockTimeout
 from app.schemas.approval import ApprovalCallbackRequest, ApprovalCallbackResponse
+from app.schemas.enums.observability import RuntimeEvent
 from app.schemas.message import ChatRequest, ChatResponse
 
 
@@ -49,7 +50,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
     async def chat(request: ChatRequest, principal: Principal | None = Depends(get_current_principal)) -> ChatResponse:
         """聊天接口：请求适配 -> LangGraph 执行 -> 响应适配。"""
         log_event(
-            "request_received",
+            RuntimeEvent.REQUEST_RECEIVED,
             tenant_id=request.tenant_id,
             user_id=request.user_id,
             node="api_chat",
@@ -66,7 +67,7 @@ def create_app(sqlite_db_path: str | Path | None = None) -> FastAPI:
             state = await orchestrator.run(inbound)
             response = response_adapter.adapt(state)
             log_event(
-                "response_returned",
+                RuntimeEvent.RESPONSE_RETURNED,
                 request_id=response.request_id,
                 trace_id=state.get("trace_id"),
                 session_key=response.session_key,

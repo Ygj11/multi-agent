@@ -26,6 +26,10 @@ from app.evaluation.agent.schemas import (
     AgentEvalSuite,
     AgentEvalTrace,
 )
+from app.schemas.enums.approval import ApprovalStatus
+from app.schemas.enums.graph import GraphNode
+from app.schemas.enums.task_completion import TaskCompletionStatus
+from app.schemas.enums.verification import VerificationAction
 from app.schemas.approval import ApprovalCallbackRequest
 from app.schemas.message import ChatRequest
 
@@ -306,17 +310,19 @@ class AgentEvalRunner:
     ):
         graph_path = state.get("graph_path") or []
         pre_answer = state.get("pre_answer_verification_result") if isinstance(state.get("pre_answer_verification_result"), dict) else {}
-        if state.get("approval_required") and state.get("approval_status") == "pending":
+        if state.get("approval_required") and state.get("approval_status") == ApprovalStatus.PENDING:
             return "approval_pending"
-        if callback_statuses and callback_statuses[-1] == "completed":
+        if callback_statuses and callback_statuses[-1] == ApprovalStatus.COMPLETED:
             return "approval_completed"
-        if "regenerate_compliant_answer" in graph_path or (pre_answer.get("action") == "retry" and "fallback_answer" in graph_path):
+        if GraphNode.REGENERATE_COMPLIANT_ANSWER in graph_path or (
+            pre_answer.get("action") == VerificationAction.RETRY and GraphNode.FALLBACK_ANSWER in graph_path
+        ):
             return "compliance_blocked"
-        if final_completion_status == "NEED_USER" or state.get("clarification_source") == "task_completion_verification":
+        if final_completion_status == TaskCompletionStatus.NEED_USER or state.get("clarification_source") == "task_completion_verification":
             return "need_user"
-        if final_completion_status == "HUMAN_HANDOFF" or state.get("manual_intervention_required"):
+        if final_completion_status == TaskCompletionStatus.HUMAN_HANDOFF or state.get("manual_intervention_required"):
             return "human_handoff"
-        if final_completion_status == "FAILED" or state.get("error"):
+        if final_completion_status == TaskCompletionStatus.FAILED or state.get("error"):
             return "failed"
         return "answered"
 

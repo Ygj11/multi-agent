@@ -8,16 +8,14 @@ timeout、结果 schema、数据分级、操作类型、风险等级和审批策
 """
 
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.enums.tool import DataClassification, RiskLevel, ToolOperation
+
 
 DEFAULT_TOOL_CONTRACTS_PATH = Path(__file__).with_name("tool_contracts.yaml")
-DataClassification = Literal["public", "internal", "confidential", "sensitive"]
-ToolOperation = Literal["read", "write", "notify", "execute", "search", "delete", "ddl"]
-RiskLevel = Literal["low", "medium", "high"]
 
 
 class RetryPolicy(BaseModel):
@@ -57,7 +55,7 @@ class ToolContract(BaseModel):
     result_schema: str | None = None
     approval_policy_id: str | None = None
     idempotency_key_fields: list[str] = Field(default_factory=list)
-    data_classification: DataClassification = "internal"
+    data_classification: DataClassification = DataClassification.INTERNAL
     operation: ToolOperation | None = None
     risk_level: RiskLevel | None = None
 

@@ -29,6 +29,8 @@ from app.runtime.failure_codes import (
     LLM_STATUS_PROVIDER_ERROR,
     LLM_STATUS_SUCCESS,
 )
+from app.schemas.enums.llm import LLMScene
+from app.schemas.enums.query import RewriteType
 from app.schemas.entities import ConversationWindow, EntityBag, EntityMention
 from app.schemas.query_rewrite import QueryRewriteResult
 
@@ -185,7 +187,7 @@ class QueryRewriteNode:
                   ↓ EntityResolver
         最终 canonical entity_bag
         """
-        prompt_trace = self.prompt_loader.scene_trace("query_rewrite")
+        prompt_trace = self.prompt_loader.scene_trace(str(LLMScene.QUERY_REWRITE))
         if not self._should_use_llm_json():
             return None, LLMAttempt(
                 llm_status=LLM_STATUS_DISABLED,
@@ -197,12 +199,12 @@ class QueryRewriteNode:
                 messages=[
                     {
                         "role": "system",
-                        "content": self.prompt_loader.render_scene_system("query_rewrite"),
+                        "content": self.prompt_loader.render_scene_system(str(LLMScene.QUERY_REWRITE)),
                     },
                     {
                         "role": "user",
                         "content": self.prompt_loader.render_scene_user(
-                            "query_rewrite",
+                            str(LLMScene.QUERY_REWRITE),
                             original_query=original_query,
                             current_entities=current_bag.to_compact_dict(),
                             conversation_window=window.model_dump(),
@@ -210,7 +212,7 @@ class QueryRewriteNode:
                     },
                 ],
                 tools=None,
-                scene="query_rewrite",
+                scene=LLMScene.QUERY_REWRITE,
                 request_id=request_id,
                 trace_id=trace_id,
                 session_key=session_key,
@@ -616,19 +618,19 @@ class QueryRewriteNode:
         return f"还缺少 {display}，请补充后我再继续处理。"
 
     @staticmethod
-    def _rewrite_type(reference: ContextReferenceResult, need_clarification: bool) -> str:
+    def _rewrite_type(reference: ContextReferenceResult, need_clarification: bool) -> RewriteType:
         if need_clarification:
-            return "clarification_required"
+            return RewriteType.CLARIFICATION_REQUIRED
         if reference.turn_type == "clarification_reply":
             """表示上一轮 assistant 明确在等用户补实体，本轮用户是在回答这个澄清问题。"""
-            return "clarification_reply"
+            return RewriteType.CLARIFICATION_REPLY
         if reference.turn_type == "follow_up_question":
             """表示普通追问，需要沿用上一轮上下文，但不是补缺失实体。"""
-            return "contextual_follow_up"
+            return RewriteType.CONTEXTUAL_FOLLOW_UP
         if reference.turn_type == "new_request":
             """表示当前轮出现了新的强锚点，默认开启一个新请求帧，不继承历史实体。"""
-            return "new_request"
-        return "direct"
+            return RewriteType.NEW_REQUEST
+        return RewriteType.DIRECT
 
     @staticmethod
     def _build_rewritten_query(

@@ -3,6 +3,7 @@ import json
 from app.llm.schemas import LLMResponse
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.schemas.entities import ConversationWindow, EntityBag
+from app.schemas.enums.query import RewriteType
 
 
 def _window(entities: dict | None = None) -> dict:
@@ -42,7 +43,7 @@ async def test_intent_llm_json_primary_path():
         "退保失败，保单号9200100000458846",
         "退保失败，保单号9200100000458846",
         entities={"policy_no": "9200100000458846"},
-        rewrite_type="direct",
+        rewrite_type=RewriteType.DIRECT,
         conversation_window=_window({"policy_no": "9200100000458846"}),
     )
 
@@ -78,7 +79,7 @@ async def test_intent_llm_rejects_legacy_entity_missing_and_followup_fields():
         "退保失败，保单号9200100000458846",
         "退保失败，保单号9200100000458846",
         entities={"policy_no": "9200100000458846"},
-        rewrite_type="direct",
+        rewrite_type=RewriteType.DIRECT,
         conversation_window=_window({"policy_no": "9200100000458846"}),
     )
 
@@ -110,7 +111,7 @@ async def test_intent_llm_does_not_clarify_only_because_execution_parameter_is_m
         "退保失败，帮我排查",
         "退保失败，帮我排查",
         entities={},
-        rewrite_type="new_request",
+        rewrite_type=RewriteType.NEW_REQUEST,
         conversation_window=_window(),
         agent_card_summaries=[
             {
@@ -145,7 +146,7 @@ async def test_intent_invalid_json_fallback_business_cases():
             query,
             query,
             entities=entities,
-            rewrite_type="direct",
+            rewrite_type=RewriteType.DIRECT,
             conversation_window=_window(entities),
         )
         assert result.intent == intent
@@ -173,7 +174,7 @@ async def test_intent_llm_prompt_contains_dynamic_candidate_space():
         "refund failed for policy 9200100000458846",
         "refund failed for policy 9200100000458846",
         entities={"policy_no": "9200100000458846"},
-        rewrite_type="new_request",
+        rewrite_type=RewriteType.NEW_REQUEST,
         conversation_window=_window({"policy_no": "9200100000458846"}),
         agent_card_summaries=[
                 {
@@ -216,7 +217,7 @@ async def test_intent_llm_invalid_intent_falls_back_to_rules():
         "退保失败，保单 9200100000458846",
         "退保失败，保单 9200100000458846",
         entities={"policy_no": "9200100000458846"},
-        rewrite_type="new_request",
+        rewrite_type=RewriteType.NEW_REQUEST,
         conversation_window=_window({"policy_no": "9200100000458846"}),
         agent_card_summaries=[
                 {
@@ -255,7 +256,7 @@ async def test_intent_llm_invalid_sub_intent_is_not_accepted():
         "Need troubleshooting help",
         "Need troubleshooting help",
         entities={},
-        rewrite_type="direct",
+        rewrite_type=RewriteType.DIRECT,
         conversation_window=_window(),
         agent_card_summaries=[
                 {
@@ -290,7 +291,7 @@ async def test_intent_llm_capability_is_not_accepted_as_sub_intent():
         "Need log analysis",
         "Need log analysis",
         entities={},
-        rewrite_type="direct",
+        rewrite_type=RewriteType.DIRECT,
         conversation_window=_window(),
         agent_card_summaries=[
             {

@@ -6,7 +6,9 @@ from typing import Any
 
 from app.verification.task_completion.evidence_collector import VerificationEvidenceCollector
 from app.verification.task_completion.service import TaskCompletionVerifierService
-from app.verification.task_completion.schemas import TaskCompletionVerificationResult
+from app.verification.task_completion.schemas import TaskCompletionVerificationContext, TaskCompletionVerificationResult
+from app.schemas.enums.execution import ExecutionMode
+from app.schemas.enums.task_completion import TaskCompletionStatus
 
 
 class TaskCompletionGraphHandler:
@@ -18,25 +20,29 @@ class TaskCompletionGraphHandler:
         evidence_collector: VerificationEvidenceCollector,
         verifier_service: TaskCompletionVerifierService,
         max_repair_rounds: int = 2,
+        refresh_evidence_before_verify: bool = False,
     ) -> None:
         self.evidence_collector = evidence_collector
         self.verifier_service = verifier_service
         self.max_repair_rounds = max_repair_rounds
+        self.refresh_evidence_before_verify = refresh_evidence_before_verify
 
     async def collect_verification_evidence(self, state: dict[str, Any]) -> dict[str, Any]:
         context, selected_skill_version = await self.evidence_collector.collect(state)
         return {
+            "task_completion_verification_context": context.model_dump(mode="json"),
             "verification_evidence": [item.model_dump() for item in context.evidence],
             "selected_skill_version": selected_skill_version,
         }
 
     async def verify_task_completion(self, state: dict[str, Any]) -> dict[str, Any]:
-        context, selected_skill_version = await self.evidence_collector.collect(state)
+        context, selected_skill_version = await self._verification_context(state)
         result = await self.verifier_service.verify(context)
         result = self._apply_repair_guards(state, result)
         history = self._append_history(state, result)
         updates: dict[str, Any] = {
             "task_completion_verification_result": result.model_dump(),
+            "task_completion_verification_context": context.model_dump(mode="json"),
             "verification_evidence": [item.model_dump() for item in context.evidence],
             "selected_skill_version": selected_skill_version,
             "repair_history": history,
@@ -48,9 +54,18 @@ class TaskCompletionGraphHandler:
             updates["repair_no_progress_count"] = int(state.get("repair_no_progress_count") or 0) + 1 if same else 0
         return updates
 
+    async def _verification_context(self, state: dict[str, Any]) -> tuple[TaskCompletionVerificationContext, str | None]:
+        if self.refresh_evidence_before_verify:
+            return await self.evidence_collector.collect(state)
+        raw_context = state.get("task_completion_verification_context")
+        if isinstance(raw_context, dict):
+            context = TaskCompletionVerificationContext.model_validate(raw_context)
+            return context, state.get("selected_skill_version") or context.selected_skill_version
+        return await self.evidence_collector.collect(state)
+
     def build_repair_task(self, state: dict[str, Any]) -> dict[str, Any]:
         return {
-            "execution_mode": "repair",
+            "execution_mode": str(ExecutionMode.REPAIR),
             "repair_round": int(state.get("repair_round") or 0) + 1,
         }
 
@@ -82,7 +97,7 @@ class TaskCompletionGraphHandler:
         state: dict[str, Any],
         result: TaskCompletionVerificationResult,
     ) -> TaskCompletionVerificationResult:
-        if result.status != "CONTINUE":
+        if result.status is not TaskCompletionStatus.CONTINUE:
             return result
         if int(state.get("repair_round") or 0) >= self.max_repair_rounds:
             return self._handoff("task_completion_max_repair_rounds_reached", result.evidence_ids)
@@ -112,7 +127,7 @@ class TaskCompletionGraphHandler:
     @staticmethod
     def _handoff(reason: str, evidence_ids: list[str]) -> TaskCompletionVerificationResult:
         return TaskCompletionVerificationResult(
-            status="HUMAN_HANDOFF",
+            status=TaskCompletionStatus.HUMAN_HANDOFF,
             completed=False,
             summary="任务完成度验收未能安全继续自动修复。",
             completed_items=[],

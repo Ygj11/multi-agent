@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.enums.execution import ExecutionMode
+
 
 class OrchestratorContext(BaseModel):
     """主 Agent 协调用的轻量父上下文。
@@ -46,7 +48,7 @@ class SubAgentContext(BaseModel):
     skill_selection_reason: str | None = None
     skill_selection_fallback: bool = False
     skill_selection_source: str | None = None
-    execution_mode: str = "initial"
+    execution_mode: ExecutionMode = ExecutionMode.INITIAL
     repair_plan: dict[str, Any] | None = None
     previous_answer: str | None = None
     previous_evidence: list[dict[str, Any]] = Field(default_factory=list)

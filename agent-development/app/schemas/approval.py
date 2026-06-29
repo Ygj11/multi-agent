@@ -3,23 +3,11 @@ from __future__ import annotations
 """Human approval schemas for write-side tools."""
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-ApprovalStatus = Literal[
-    "created",
-    "pending",
-    "approved",
-    "executing",
-    "rejected",
-    "expired",
-    "submit_failed",
-    "completed",
-    "failed",
-    "manual_intervention_required",
-]
+from app.schemas.enums.approval import ApprovalCallbackStatus, ApprovalStatus
 
 
 class ApprovalRequest(BaseModel):
@@ -54,7 +42,7 @@ class ApprovalRequest(BaseModel):
     risk_level: str = "high"
     arguments: dict[str, Any] = Field(default_factory=dict)
     reason: str
-    status: ApprovalStatus = "created"
+    status: ApprovalStatus = ApprovalStatus.CREATED
     callback_url: str | None = None
     pending_state: dict[str, Any] = Field(default_factory=dict)
     pending_messages: list[dict[str, Any]] = Field(default_factory=list)
@@ -76,7 +64,7 @@ class ApprovalSubmitResult(BaseModel):
 
     accepted: bool
     external_approval_id: str | None = None
-    status: ApprovalStatus = "pending"
+    status: ApprovalStatus = ApprovalStatus.PENDING
     error: str | None = None
     raw_response: dict[str, Any] | None = None
 
@@ -86,7 +74,7 @@ class ApprovalCallbackRequest(BaseModel):
 
     approval_id: str
     external_approval_id: str | None = None
-    status: Literal["approved", "rejected"]
+    status: ApprovalCallbackStatus
     approver: str | None = None
     comment: str | None = None
     decided_at: str | None = None

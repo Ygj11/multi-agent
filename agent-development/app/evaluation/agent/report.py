@@ -11,6 +11,7 @@ from app.evaluation.agent.schemas import (
     AgentEvalReport,
     AgentEvalSuiteResult,
 )
+from app.schemas.enums.task_completion import TaskCompletionStatus
 
 
 def compute_metrics(results: list[AgentEvalCaseResult]) -> AgentEvalMetrics:
@@ -24,26 +25,32 @@ def compute_metrics(results: list[AgentEvalCaseResult]) -> AgentEvalMetrics:
     first_pass = sum(
         1
         for item in results
-        if item.trace.final_task_completion_status == "PASS" and item.trace.repair_round == 0
+        if item.trace.final_task_completion_status == TaskCompletionStatus.PASS and item.trace.repair_round == 0
     )
     repair_attempts = sum(1 for item in results if item.trace.repair_round > 0)
     repair_success = sum(
         1
         for item in results
-        if item.trace.repair_round > 0 and item.trace.final_task_completion_status == "PASS"
+        if item.trace.repair_round > 0 and item.trace.final_task_completion_status == TaskCompletionStatus.PASS
     )
     human_handoff = sum(1 for item in results if item.trace.final_outcome == "human_handoff")
     need_user = sum(1 for item in results if item.trace.final_outcome == "need_user")
-    final_pass = sum(1 for item in results if item.trace.final_task_completion_status == "PASS")
+    final_pass = sum(1 for item in results if item.trace.final_task_completion_status == TaskCompletionStatus.PASS)
     duplicate_count = sum(1 for item in results if item.trace.state_summary.get("duplicate_tool_call_count", 0) > 0)
     verifier_expected = [item for item in results if item.expected_final_verifier_status]
-    expected_pass = [item for item in verifier_expected if item.expected_final_verifier_status == "PASS"]
-    expected_incomplete = [item for item in verifier_expected if item.expected_final_verifier_status != "PASS"]
-    false_pass = sum(1 for item in expected_incomplete if item.trace.final_task_completion_status == "PASS")
+    expected_pass = [item for item in verifier_expected if item.expected_final_verifier_status == TaskCompletionStatus.PASS]
+    expected_incomplete = [item for item in verifier_expected if item.expected_final_verifier_status != TaskCompletionStatus.PASS]
+    false_pass = sum(1 for item in expected_incomplete if item.trace.final_task_completion_status == TaskCompletionStatus.PASS)
+    incomplete_statuses = {
+        TaskCompletionStatus.CONTINUE,
+        TaskCompletionStatus.NEED_USER,
+        TaskCompletionStatus.HUMAN_HANDOFF,
+        TaskCompletionStatus.FAILED,
+    }
     false_continue = sum(
         1
         for item in expected_pass
-        if item.trace.final_task_completion_status in {"CONTINUE", "NEED_USER", "HUMAN_HANDOFF", "FAILED"}
+        if item.trace.final_task_completion_status in incomplete_statuses
     )
 
     return AgentEvalMetrics(
@@ -53,12 +60,12 @@ def compute_metrics(results: list[AgentEvalCaseResult]) -> AgentEvalMetrics:
         first_pass_completion_rate=first_pass / total,
         first_pass_failure_rate=(total - first_pass) / total,
         verifier_pass_accuracy=(
-            sum(1 for item in expected_pass if item.trace.final_task_completion_status == "PASS") / len(expected_pass)
+            sum(1 for item in expected_pass if item.trace.final_task_completion_status == TaskCompletionStatus.PASS) / len(expected_pass)
             if expected_pass
             else 0.0
         ),
         verifier_incomplete_detection_rate=(
-            sum(1 for item in expected_incomplete if item.trace.final_task_completion_status != "PASS") / len(expected_incomplete)
+            sum(1 for item in expected_incomplete if item.trace.final_task_completion_status != TaskCompletionStatus.PASS) / len(expected_incomplete)
             if expected_incomplete
             else 0.0
         ),

@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.schemas.entities import EntityBag
+from app.schemas.enums.query import RewriteType
 
 
 class QueryRewriteResult(BaseModel):
@@ -19,7 +20,7 @@ class QueryRewriteResult(BaseModel):
     original_query: str
     rewritten_query: str
     is_follow_up: bool = False
-    rewrite_type: str = "direct"
+    rewrite_type: RewriteType = RewriteType.DIRECT
     entities: dict[str, Any] = Field(default_factory=dict)
     inherited_entities: dict[str, Any] = Field(default_factory=dict)
     missing_required_entities: list[str] = Field(default_factory=list)

@@ -3,6 +3,7 @@ from __future__ import annotations
 """Tool argument validation guard."""
 
 from app.schemas.tool import ToolResult
+from app.tools.error_codes import MISSING_REQUIRED_ARGUMENT
 
 
 class ToolArgumentGuard:
@@ -25,6 +26,6 @@ class ToolArgumentGuard:
             agent_name=agent_name,
             allowed=True,
             success=False,
-            error=f"missing_required_argument:{','.join(missing)}",
+            error=f"{MISSING_REQUIRED_ARGUMENT}:{','.join(missing)}",
             missing_required_arguments=missing,
         )

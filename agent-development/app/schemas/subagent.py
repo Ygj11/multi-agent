@@ -6,6 +6,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.enums.execution import ExecutionMode
+from app.schemas.enums.tool import RiskLevel
+
 
 class SubAgentTask(BaseModel):
     """主 Agent 分配给子 Agent 的结构化任务。
@@ -24,7 +27,7 @@ class SubAgentTask(BaseModel):
     trace_id: str | None = None
     auth_context: dict[str, Any] | None = None
     entities: dict[str, Any] = Field(default_factory=dict)
-    execution_mode: str = "initial"
+    execution_mode: ExecutionMode = ExecutionMode.INITIAL
     pinned_skill_id: str | None = None
     repair_plan: dict[str, Any] | None = None
     previous_answer: str | None = None
@@ -51,7 +54,7 @@ class SubAgentResult(BaseModel):
     confidence: float = 0.8
     needs_human_approval: bool = False
     approval_payloads: list[dict[str, Any]] = Field(default_factory=list)
-    risk_level: str = "low"
+    risk_level: RiskLevel = RiskLevel.LOW
     metadata: dict[str, Any] = Field(default_factory=dict)
     selected_skill_id: str | None = None
     selected_skill_metadata: dict[str, Any] | None = None

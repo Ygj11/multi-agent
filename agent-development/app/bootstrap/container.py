@@ -302,6 +302,7 @@ def build_app_container(settings: Settings, sqlite_db_path: str | Path | None = 
         evidence_collector=task_completion_evidence_collector,
         verifier_service=task_completion_verifier_service,
         max_repair_rounds=settings.task_completion_max_repair_rounds,
+        refresh_evidence_before_verify=settings.task_completion_refresh_evidence_before_verify,
     )
 
     graph = AgentGraphFactory(

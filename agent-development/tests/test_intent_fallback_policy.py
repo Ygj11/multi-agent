@@ -1,6 +1,7 @@
 from app.query.intent_fallback_policy import IntentFallbackPolicy
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.schemas.entities import ConversationWindow, EntityBag
+from app.schemas.enums.query import RewriteType
 
 
 def _window(entities: dict | None = None) -> dict:
@@ -32,7 +33,7 @@ async def test_intent_recognition_rule_fallback_records_policy_trace():
         original_query="保全任务完成，保单9200100000458846没有更新？",
         rewritten_query="保全任务完成，保单9200100000458846没有更新？",
         entities={"policy_no": "9200100000458846"},
-        rewrite_type="new_request",
+        rewrite_type=RewriteType.NEW_REQUEST,
         conversation_window=_window({"policy_no": "9200100000458846"}),
     )
 

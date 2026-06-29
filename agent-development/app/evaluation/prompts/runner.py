@@ -21,6 +21,8 @@ from app.llm.output_schemas import SCHEMA_REGISTRY, parse_llm_json_schema
 from app.prompts.manifest import PromptManifest
 from app.prompts.loader import PromptLoader
 from app.query.intent_taxonomy_loader import IntentTaxonomyLoader
+from app.schemas.enums.llm import LLMScene
+from app.schemas.enums.query import RewriteType
 
 
 PROMPT_EVALUATION_ROOT = Path(__file__).resolve().parent
@@ -179,27 +181,27 @@ class PromptEvalRunner:
         rewritten_query = str(payload.get("rewritten_query") or payload.get("query") or query)
         entities = payload.get("entities") if isinstance(payload.get("entities"), dict) else {}
 
-        if scene == "query_rewrite":
+        if scene == LLMScene.QUERY_REWRITE:
             return {
                 **payload,
                 "original_query": query,
                 "current_entities": payload.get("current_entities") or entities,
                 "conversation_window": payload.get("conversation_window") or self._conversation_window(payload),
             }
-        if scene == "intent_recognition":
+        if scene == LLMScene.INTENT_RECOGNITION:
             return {
                 **payload,
                 "original_query": query,
                 "rewritten_query": rewritten_query,
                 "entities": entities,
-                "rewrite_type": payload.get("rewrite_type") or "direct",
+                "rewrite_type": payload.get("rewrite_type") or str(RewriteType.DIRECT),
                 "conversation_window": payload.get("conversation_window") or self._conversation_window(payload),
                 "intent_taxonomy": payload.get("intent_taxonomy") or self._intent_taxonomy(),
                 "allowed_intents": payload.get("allowed_intents") or self._allowed_intents(),
                 "candidate_sub_intents": payload.get("candidate_sub_intents") or self._candidate_sub_intents(),
                 "agent_card_summaries": payload.get("agent_card_summaries") or self._agent_card_summaries(),
             }
-        if scene == "agent_selection":
+        if scene == LLMScene.AGENT_SELECTION:
             return {
                 **payload,
                 "query": payload.get("query") or rewritten_query,
@@ -209,7 +211,7 @@ class PromptEvalRunner:
                 "entities": entities,
                 "candidates": payload.get("candidates") or [],
             }
-        if scene == "skill_selection":
+        if scene == LLMScene.SKILL_SELECTION:
             return {
                 **payload,
                 "agent_name": payload.get("agent_name") or self._agent_name(payload),
@@ -220,7 +222,7 @@ class PromptEvalRunner:
                 "entities": entities,
                 "candidates": payload.get("candidates") or [],
             }
-        if scene == "subagent_reasoning":
+        if scene == LLMScene.SUBAGENT_REASONING:
             return {
                 **payload,
                 "agent_name": payload.get("agent_name") or self._agent_name(payload),

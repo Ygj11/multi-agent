@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 from app.adapters.request_adapter import RequestAdapter
+from app.runtime.handlers.task_completion_handler import TaskCompletionGraphHandler
 from app.schemas.message import ChatMessage, ChatRequest
-from app.verification.task_completion.schemas import RepairPlan, TaskCompletionVerificationResult
+from app.verification.task_completion.schemas import (
+    RepairPlan,
+    TaskCompletionVerificationContext,
+    TaskCompletionVerificationResult,
+    VerificationEvidence,
+)
 
 
 def _pos_request(session_id: str = "s-task-completion") -> ChatRequest:
@@ -105,3 +111,125 @@ def test_task_completion_schema_requires_repair_plan_for_continue():
         assert "repair_plan" in str(exc)
     else:
         raise AssertionError("CONTINUE without repair_plan should fail")
+
+
+async def test_verify_task_completion_reuses_collected_context_by_default():
+    class Collector:
+        def __init__(self):
+            self.calls = 0
+
+        async def collect(self, state):
+            self.calls += 1
+            return (
+                TaskCompletionVerificationContext(
+                    session_key="s001",
+                    original_query="原始问题",
+                    rewritten_query="改写问题",
+                    selected_agent="pos_query_agent",
+                    selected_skill_id="pos_query_agent.realtime_query",
+                    skill_content="SOP",
+                    answer="answer",
+                    evidence=[
+                        VerificationEvidence(
+                            evidence_id=f"ev-{self.calls}",
+                            source_type="tool",
+                            source_name="mock",
+                            summary=f"evidence-{self.calls}",
+                        )
+                    ],
+                ),
+                f"v{self.calls}",
+            )
+
+    class Verifier:
+        def __init__(self):
+            self.contexts = []
+
+        async def verify(self, context):
+            self.contexts.append(context)
+            return TaskCompletionVerificationResult(
+                status="PASS",
+                completed=True,
+                summary=context.evidence[0].summary,
+                confidence=0.9,
+            )
+
+    collector = Collector()
+    verifier = Verifier()
+    handler = TaskCompletionGraphHandler(evidence_collector=collector, verifier_service=verifier)
+    state = {
+        "selected_skill_id": "pos_query_agent.realtime_query",
+        "subagent_result": {"answer": "answer"},
+        "repair_history": [],
+    }
+
+    collected = await handler.collect_verification_evidence(state)
+    state.update(collected)
+    verified = await handler.verify_task_completion(state)
+
+    assert collector.calls == 1
+    assert verifier.contexts[0].evidence[0].summary == "evidence-1"
+    assert verified["selected_skill_version"] == "v1"
+
+
+async def test_verify_task_completion_refreshes_evidence_when_explicitly_enabled():
+    class Collector:
+        def __init__(self):
+            self.calls = 0
+
+        async def collect(self, state):
+            self.calls += 1
+            return (
+                TaskCompletionVerificationContext(
+                    session_key="s001",
+                    original_query="原始问题",
+                    rewritten_query="改写问题",
+                    selected_agent="pos_query_agent",
+                    selected_skill_id="pos_query_agent.realtime_query",
+                    skill_content="SOP",
+                    answer="answer",
+                    evidence=[
+                        VerificationEvidence(
+                            evidence_id=f"ev-{self.calls}",
+                            source_type="tool",
+                            source_name="mock",
+                            summary=f"evidence-{self.calls}",
+                        )
+                    ],
+                ),
+                f"v{self.calls}",
+            )
+
+    class Verifier:
+        def __init__(self):
+            self.contexts = []
+
+        async def verify(self, context):
+            self.contexts.append(context)
+            return TaskCompletionVerificationResult(
+                status="PASS",
+                completed=True,
+                summary=context.evidence[0].summary,
+                confidence=0.9,
+            )
+
+    collector = Collector()
+    verifier = Verifier()
+    handler = TaskCompletionGraphHandler(
+        evidence_collector=collector,
+        verifier_service=verifier,
+        refresh_evidence_before_verify=True,
+    )
+    state = {
+        "selected_skill_id": "pos_query_agent.realtime_query",
+        "subagent_result": {"answer": "answer"},
+        "repair_history": [],
+    }
+
+    collected = await handler.collect_verification_evidence(state)
+    state.update(collected)
+    verified = await handler.verify_task_completion(state)
+
+    assert collector.calls == 2
+    assert verifier.contexts[0].evidence[0].summary == "evidence-2"
+    assert verified["selected_skill_version"] == "v2"

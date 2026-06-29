@@ -88,3 +88,5 @@ temp/
 /agent-development/opt/*
 !/agent-development/opt/
 !/agent-development/opt/*.md
+
+agent-devalopment.zip

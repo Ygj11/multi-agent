@@ -10,6 +10,7 @@ from app.llm.model_config import get_llm_model
 from app.llm.schemas import LLMResponse
 from app.observability.logger import log_event, preview_text
 from app.runtime.async_client_lifecycle import AsyncClientLifecycle, AsyncClientLifecycleClosedError
+from app.schemas.enums.observability import RuntimeEvent
 
 try:
     from openai import AsyncOpenAI
@@ -142,7 +143,7 @@ class OpenSDKLLMProvider:
                 latency_ms=int((perf_counter() - started) * 1000),
             )
         log_event(
-            "llm_chat_finished",
+            RuntimeEvent.LLM_CHAT_FINISHED,
             request_id=request_id,
             trace_id=trace_id,
             session_key=session_key,

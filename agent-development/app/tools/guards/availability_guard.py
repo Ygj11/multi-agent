@@ -3,6 +3,7 @@ from __future__ import annotations
 """Tool existence and AgentCard visibility guards."""
 
 from app.schemas.tool import ToolResult
+from app.tools.error_codes import TOOL_NOT_AVAILABLE_FOR_AGENT, TOOL_NOT_FOUND
 
 
 class ToolAvailabilityGuard:
@@ -20,7 +21,7 @@ class ToolAvailabilityGuard:
             agent_name=agent_name,
             allowed=False,
             success=False,
-            error="tool_not_found",
+            error=TOOL_NOT_FOUND,
         )
 
     def check_visible(self, *, agent_name: str, tool_name: str, agent_card) -> ToolResult | None:
@@ -31,5 +32,5 @@ class ToolAvailabilityGuard:
             agent_name=agent_name,
             allowed=False,
             success=False,
-            error="tool_not_available_for_agent",
+            error=TOOL_NOT_AVAILABLE_FOR_AGENT,
         )

@@ -3,7 +3,7 @@ from __future__ import annotations
 """可复用的 LLM 工具调用循环。"""
 
 import json
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,9 @@ from app.llm.base import LLMProvider
 from app.llm.tool_call_parser import normalize_tool_call
 from app.observability.logger import log_event
 from app.schemas.agent_card import AgentCard
+from app.schemas.enums.llm import LLMScene
+from app.schemas.enums.observability import RuntimeEvent
+from app.schemas.enums.tool import ToolStoppedReason
 from app.tools.executor import ToolExecutor
 
 
@@ -19,15 +22,7 @@ class ToolCallingRunResult(BaseModel):
 
     final_answer: str
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
-    stopped_reason: Literal[
-        "final",
-        "error",
-        "max_iterations",
-        "human_approval_required",
-        "max_consecutive_tool_failures",
-        "max_same_tool_failures",
-        "max_duplicate_tool_calls",
-    ]
+    stopped_reason: ToolStoppedReason
     iterations: int
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]] = Field(default_factory=list)
@@ -80,7 +75,7 @@ class ToolCallingRunner:
         limit = max_iterations or self.max_iterations
         visible_tool_names = [self._tool_name(tool) for tool in tools]
         log_event(
-            "tool_calling_runner_started",
+            RuntimeEvent.TOOL_CALLING_RUNNER_STARTED,
             request_id=request_id,
             trace_id=trace_id,
             session_key=session_key,
@@ -100,7 +95,7 @@ class ToolCallingRunner:
             response = await self.llm_provider.chat(
                 messages=messages,
                 tools=tools,
-                scene="subagent_reasoning",
+                scene=LLMScene.SUBAGENT_REASONING,
                 request_id=request_id,
                 trace_id=trace_id,
                 session_key=session_key,
@@ -110,7 +105,7 @@ class ToolCallingRunner:
                 return ToolCallingRunResult(
                     final_answer="",
                     tool_calls=executed_calls,
-                    stopped_reason="error",
+                    stopped_reason=ToolStoppedReason.ERROR,
                     iterations=iteration,
                     messages=messages,
                     tools=tools,
@@ -155,7 +150,7 @@ class ToolCallingRunner:
                         )
                         if consecutive_failures >= self.max_consecutive_tool_failures:
                             return self._stop_for_guardrail(
-                                reason="max_consecutive_tool_failures",
+                                reason=ToolStoppedReason.MAX_CONSECUTIVE_TOOL_FAILURES,
                                 executed_calls=executed_calls,
                                 iteration=iteration,
                                 messages=messages,
@@ -171,7 +166,7 @@ class ToolCallingRunner:
                             "agent_name": agent_name,
                             "allowed": False,
                             "success": False,
-                            "error": "max_duplicate_tool_calls",
+                            "error": str(ToolStoppedReason.MAX_DUPLICATE_TOOL_CALLS),
                             "arguments": normalized.arguments,
                             "tool_call_id": normalized.id,
                         }
@@ -185,7 +180,7 @@ class ToolCallingRunner:
                             }
                         )
                         return self._stop_for_guardrail(
-                            reason="max_duplicate_tool_calls",
+                            reason=ToolStoppedReason.MAX_DUPLICATE_TOOL_CALLS,
                             executed_calls=executed_calls,
                             iteration=iteration,
                             messages=messages,
@@ -214,7 +209,7 @@ class ToolCallingRunner:
                     else:
                         consecutive_failures += 1
                         same_tool_failure_counts[tool_call_key] = same_tool_failure_counts.get(tool_call_key, 0) + 1
-                    if tool_result.needs_human_approval or tool_result.error == "human_approval_required":
+                    if tool_result.needs_human_approval or tool_result.error == ToolStoppedReason.HUMAN_APPROVAL_REQUIRED:
                         pending_tool_call = dumped.get("pending_tool_call") or {
                             "name": normalized.name,
                             "arguments": normalized.arguments,
@@ -226,11 +221,11 @@ class ToolCallingRunner:
                         return ToolCallingRunResult(
                             final_answer="",
                             tool_calls=executed_calls,
-                            stopped_reason="human_approval_required",
+                            stopped_reason=ToolStoppedReason.HUMAN_APPROVAL_REQUIRED,
                             iterations=iteration,
                             messages=messages,
                             tools=tools,
-                            error="human_approval_required",
+                            error=str(ToolStoppedReason.HUMAN_APPROVAL_REQUIRED),
                             needs_human_approval=True,
                             approval_payload=dumped.get("approval_payload"),
                             pending_tool_call=pending_tool_call,
@@ -245,7 +240,7 @@ class ToolCallingRunner:
                     )
                     if consecutive_failures >= self.max_consecutive_tool_failures:
                         return self._stop_for_guardrail(
-                            reason="max_consecutive_tool_failures",
+                            reason=ToolStoppedReason.MAX_CONSECUTIVE_TOOL_FAILURES,
                             executed_calls=executed_calls,
                             iteration=iteration,
                             messages=messages,
@@ -253,7 +248,7 @@ class ToolCallingRunner:
                         )
                     if same_tool_failure_counts[tool_call_key] >= self.max_same_tool_failures:
                         return self._stop_for_guardrail(
-                            reason="max_same_tool_failures",
+                            reason=ToolStoppedReason.MAX_SAME_TOOL_FAILURES,
                             executed_calls=executed_calls,
                             iteration=iteration,
                             messages=messages,
@@ -265,7 +260,7 @@ class ToolCallingRunner:
             return ToolCallingRunResult(
                 final_answer=response.content or "",
                 tool_calls=executed_calls,
-                stopped_reason="final",
+                stopped_reason=ToolStoppedReason.FINAL,
                 iterations=iteration,
                 messages=messages,
                 tools=tools,
@@ -275,7 +270,7 @@ class ToolCallingRunner:
         return ToolCallingRunResult(
             final_answer="",
             tool_calls=executed_calls,
-            stopped_reason="max_iterations",
+            stopped_reason=ToolStoppedReason.MAX_ITERATIONS,
             iterations=limit,
             messages=messages,
             tools=tools,
@@ -296,7 +291,7 @@ class ToolCallingRunner:
     @staticmethod
     def _stop_for_guardrail(
         *,
-        reason: Literal["max_consecutive_tool_failures", "max_same_tool_failures", "max_duplicate_tool_calls"],
+        reason: ToolStoppedReason,
         executed_calls: list[dict[str, Any]],
         iteration: int,
         messages: list[dict[str, Any]],
@@ -309,5 +304,5 @@ class ToolCallingRunner:
             iterations=iteration,
             messages=messages,
             tools=tools,
-            error=reason,
+            error=str(reason),
         )

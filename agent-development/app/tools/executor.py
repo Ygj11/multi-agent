@@ -16,6 +16,9 @@ from app.evidence.builder import EvidenceBuilder
 from app.evidence.store import EvidenceStore
 from app.mcp.errors import MCPServerUnavailableError, MCPToolError, MCPToolTimeoutError
 from app.schemas.agent_card import AgentCard
+from app.schemas.enums.observability import RuntimeEvent
+from app.schemas.enums.tool import RiskLevel, ToolOperation, ToolSource, UnknownMCPToolPolicy
+from app.schemas.enums.verification import VerificationAction, VerificationStage
 from app.approval.store import SQLiteApprovalStore
 from app.schemas.tool import ToolResult
 from app.tools.error_codes import (
@@ -54,7 +57,7 @@ class ToolExecutor:
         resource_access_service: ResourceAccessService | None = None,
         verification_service: VerificationService | None = None,
         evidence_store: EvidenceStore | None = None,
-        unknown_mcp_tool_policy: str = "allow",
+        unknown_mcp_tool_policy: str = str(UnknownMCPToolPolicy.ALLOW),
     ) -> None:
         self.registry = registry
         self.log_store = log_store
@@ -275,7 +278,7 @@ class ToolExecutor:
                         result={"detail": schema_error},
                     )
         except asyncio.TimeoutError as exc:
-            error_code = MCP_TOOL_TIMEOUT if getattr(definition, "source", None) == "mcp" else TOOL_TIMEOUT
+            error_code = MCP_TOOL_TIMEOUT if getattr(definition, "source", None) == ToolSource.MCP else TOOL_TIMEOUT
             result = ToolResult(name=tool_name, agent_name=agent_name, allowed=True, success=False, error=error_code)
             result.result = {"detail": str(exc) or error_code}
         except MCPServerUnavailableError as exc:
@@ -303,7 +306,7 @@ class ToolExecutor:
         tool_name: str,
     ) -> Any:
         """根据 ToolDefinition source 分发到 MCP 或本地 callable。"""
-        if definition.source == "mcp":
+        if definition.source == ToolSource.MCP:
             if self.mcp_client_manager is None:
                 raise MCPServerUnavailableError("mcp_client_manager_not_configured")
             # MCP 工具调用链路：
@@ -382,7 +385,7 @@ class ToolExecutor:
         result.duration_ms = duration_ms
         finished_at = self._now()
         log_event(
-            "tool_execution_finished",
+            RuntimeEvent.TOOL_EXECUTION_FINISHED,
             request_id=request_id,
             trace_id=trace_id,
             session_key=session_key,
@@ -415,7 +418,7 @@ class ToolExecutor:
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms,
-                source=definition.source if definition else None,
+                source=str(definition.source) if definition else None,
                 server_name=definition.server_name if definition else None,
                 approval_id=approval_id or result.approval_id,
             )
@@ -433,7 +436,7 @@ class ToolExecutor:
                 await self.evidence_store.save(evidence)
             except Exception as exc:
                 log_event(
-                    "evidence_save_failed",
+                    RuntimeEvent.EVIDENCE_SAVE_FAILED,
                     request_id=request_id,
                     trace_id=trace_id,
                     session_key=session_key,
@@ -519,7 +522,7 @@ class ToolExecutor:
             return None
         verification = await self.verification_service.verify(
             VerificationInput(
-                stage="pre_tool",
+                stage=VerificationStage.PRE_TOOL,
                 request_id=request_id,
                 trace_id=trace_id,
                 session_key=session_key,
@@ -531,7 +534,7 @@ class ToolExecutor:
                 evidence=evidence,
             )
         )
-        if verification.action in {"block", "manual"} or not verification.passed:
+        if verification.action in {VerificationAction.BLOCK, VerificationAction.MANUAL} or not verification.passed:
             return ToolResult(
                 name=tool_name,
                 agent_name=agent_name,
@@ -579,9 +582,9 @@ class ToolExecutor:
 
     def _mcp_policy_denial(self, *, definition, agent_name: str, tool_name: str) -> ToolResult | None:
         """按未知 MCP 工具策略拒绝没有显式风险/操作声明的 MCP 工具。"""
-        if getattr(definition, "source", None) != "mcp":
+        if getattr(definition, "source", None) != ToolSource.MCP:
             return None
-        if self._mcp_unknown_policy_action(definition) != "deny":
+        if self._mcp_unknown_policy_action(definition) is not UnknownMCPToolPolicy.DENY:
             return None
         return ToolResult(
             name=tool_name,
@@ -589,7 +592,7 @@ class ToolExecutor:
             allowed=False,
             success=False,
             error=MCP_TOOL_POLICY_DENIED,
-            result={"policy": self.unknown_mcp_tool_policy, "reason": "unknown_mcp_tool_policy"},
+            result={"policy": str(self.unknown_mcp_tool_policy), "reason": "unknown_mcp_tool_policy"},
         )
 
     def _requires_approval(self, definition, tool_name: str) -> bool:
@@ -597,17 +600,22 @@ class ToolExecutor:
         contract = getattr(definition, "contract", None)
         if getattr(contract, "approval_policy_id", None):
             return True
-        operation = str(getattr(definition, "operation", "") or "").lower()
-        risk_level = str(getattr(definition, "risk_level", "") or "").lower()
-        if getattr(definition, "source", None) == "mcp" and self._mcp_unknown_policy_action(definition) == "approval":
+        operation = getattr(definition, "operation", None)
+        risk_level = getattr(definition, "risk_level", None)
+        if getattr(definition, "source", None) == ToolSource.MCP and self._mcp_unknown_policy_action(definition) is UnknownMCPToolPolicy.APPROVAL:
             return True
-        return bool(getattr(definition, "is_write", False)) or operation in {"write", "notify", "delete", "ddl"} or risk_level == "high"
+        return bool(getattr(definition, "is_write", False)) or operation in {
+            ToolOperation.WRITE,
+            ToolOperation.NOTIFY,
+            ToolOperation.DELETE,
+            ToolOperation.DDL,
+        } or risk_level is RiskLevel.HIGH
 
-    def _mcp_unknown_policy_action(self, definition) -> str:
-        if getattr(definition, "source", None) != "mcp":
-            return "allow"
+    def _mcp_unknown_policy_action(self, definition) -> UnknownMCPToolPolicy:
+        if getattr(definition, "source", None) != ToolSource.MCP:
+            return UnknownMCPToolPolicy.ALLOW
         if self._mcp_has_explicit_execution_policy(definition):
-            return "allow"
+            return UnknownMCPToolPolicy.ALLOW
         return self.unknown_mcp_tool_policy
 
     @staticmethod
@@ -623,11 +631,12 @@ class ToolExecutor:
         )
 
     @staticmethod
-    def _normalize_unknown_mcp_tool_policy(value: str) -> str:
-        policy = (value or "allow").strip().lower()
-        if policy not in {"allow", "approval", "deny"}:
-            raise ValueError("UNKNOWN_MCP_TOOL_POLICY must be one of: allow, approval, deny")
-        return policy
+    def _normalize_unknown_mcp_tool_policy(value: str) -> UnknownMCPToolPolicy:
+        policy = (value or str(UnknownMCPToolPolicy.ALLOW)).strip().lower()
+        try:
+            return UnknownMCPToolPolicy(policy)
+        except ValueError as exc:
+            raise ValueError("UNKNOWN_MCP_TOOL_POLICY must be one of: allow, approval, deny") from exc
 
     @classmethod
     def _validate_approved_tool_request(

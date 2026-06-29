@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.enums.tool import RiskLevel
+
 
 class MemoryPolicy(BaseModel):
     """Controls how much conversation memory an agent receives."""
@@ -124,7 +126,7 @@ class AgentSelectionResult(BaseModel):
     confidence: float
     reason: str
     required_context: list[str] = Field(default_factory=list)
-    risk_level: Literal["low", "medium", "high"] = "low"
+    risk_level: RiskLevel = RiskLevel.LOW
     candidates: list[AgentCandidate] = Field(default_factory=list)
     fallback: bool = False
     selection_method: Literal["rule", "llm_router", "fallback"] = "rule"

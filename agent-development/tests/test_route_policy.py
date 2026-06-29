@@ -1,4 +1,5 @@
 from app.runtime.route_policy import RoutePolicy
+from app.schemas.enums.graph import TaskCompletionRoute
 from app.verification.schemas import VerificationResult
 
 
@@ -23,3 +24,14 @@ def test_route_policy_verification_routes():
     assert RoutePolicy.route_verification({"pre_answer_verification_result": passed.model_dump(), "retry_count": 0}) == "passed"
     assert RoutePolicy.route_verification({"pre_answer_verification_result": retry.model_dump(), "retry_count": 0}) == "retry"
     assert RoutePolicy.route_verification({"pre_answer_verification_result": retry.model_dump(), "retry_count": 1}) == "fallback"
+
+
+def test_route_policy_task_completion_does_not_repair_invalid_status_case():
+    assert (
+        RoutePolicy.route_task_completion({"task_completion_verification_result": {"status": "pass"}})
+        is TaskCompletionRoute.FAILED
+    )
+    assert (
+        RoutePolicy.route_task_completion({"task_completion_verification_result": {"status": "UNKNOWN"}})
+        is TaskCompletionRoute.FAILED
+    )

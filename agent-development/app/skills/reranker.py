@@ -21,6 +21,7 @@ from app.runtime.failure_codes import (
     LLM_STATUS_SUCCESS,
     SKILL_RERANK_UNUSABLE,
 )
+from app.schemas.enums.llm import LLMScene
 from app.schemas.skill import SkillMetadata, SkillSelectionContext
 from app.skills.scorer import ScoredSkill
 
@@ -96,7 +97,7 @@ class SkillLLMReranker:
         context: SkillSelectionContext,
         scored: list[ScoredSkill],
     ) -> SkillRerankResult | None:
-        prompt_trace = self.prompt_loader.scene_trace("skill_selection")
+        prompt_trace = self.prompt_loader.scene_trace(str(LLMScene.SKILL_SELECTION))
         if self.llm_provider is None:
             self.last_attempt = LLMAttempt(
                 llm_status=LLM_STATUS_DISABLED,
@@ -113,12 +114,12 @@ class SkillLLMReranker:
                 messages=[
                     {
                         "role": "system",
-                        "content": self.prompt_loader.render_scene_system("skill_selection"),
+                        "content": self.prompt_loader.render_scene_system(str(LLMScene.SKILL_SELECTION)),
                     },
                     {
                         "role": "user",
                         "content": self.prompt_loader.render_scene_user(
-                            "skill_selection",
+                            str(LLMScene.SKILL_SELECTION),
                             agent_name=agent_name,
                             original_query=context.original_query,
                             rewritten_query=context.rewritten_query,
@@ -130,7 +131,7 @@ class SkillLLMReranker:
                     },
                 ],
                 tools=None,
-                scene="skill_selection",
+                scene=LLMScene.SKILL_SELECTION,
                 request_id=context.request_id,
                 trace_id=context.trace_id,
                 session_key=context.session_key,

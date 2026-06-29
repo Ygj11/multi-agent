@@ -19,6 +19,8 @@ from typing import Literal
 
 from dotenv import load_dotenv
 
+from app.schemas.enums.tool import UnknownMCPToolPolicy
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = PROJECT_ROOT / ".env"
@@ -128,7 +130,7 @@ class Settings:
     # Knowledge and MCP
     enable_mcp_client: bool = True
     mcp_servers_json: str | None = None
-    unknown_mcp_tool_policy: str = "allow"
+    unknown_mcp_tool_policy: str = str(UnknownMCPToolPolicy.ALLOW)
     enable_knowledge_api: bool = False
     knowledge_api_url: str | None = None
     knowledge_api_timeout: float = 10.0
@@ -189,6 +191,10 @@ class Settings:
     task_completion_min_verifier_confidence: float = 0.55
     task_completion_enable_llm: bool = False
     task_completion_enable_state_probes: bool = True
+    # 默认复用 collect_verification_evidence 节点生成的 canonical context/evidence，
+    # 避免 verify_task_completion 再次收集。只有当业务需要在验收前重新查询最新
+    # 状态探针结果时，才显式设置 TASK_COMPLETION_REFRESH_EVIDENCE_BEFORE_VERIFY=true。
+    task_completion_refresh_evidence_before_verify: bool = False
     task_completion_fail_closed: bool = True
 
     # Runtime observability
@@ -506,8 +512,8 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
         unknown_mcp_tool_policy=_choice(
             "UNKNOWN_MCP_TOOL_POLICY",
             os.getenv("UNKNOWN_MCP_TOOL_POLICY"),
-            {"allow", "approval", "deny"},
-            "allow",
+            {str(item) for item in UnknownMCPToolPolicy},
+            str(UnknownMCPToolPolicy.ALLOW),
         ),
         enable_knowledge_api=_as_bool(os.getenv("ENABLE_KNOWLEDGE_API"), False),
         knowledge_api_url=os.getenv("KNOWLEDGE_API_URL") or None,
@@ -562,6 +568,10 @@ def get_settings(dotenv_path: Path | None = None) -> Settings:
         task_completion_min_verifier_confidence=float(os.getenv("TASK_COMPLETION_MIN_VERIFIER_CONFIDENCE", "0.55")),
         task_completion_enable_llm=_as_bool(os.getenv("TASK_COMPLETION_ENABLE_LLM"), task_completion_llm_default),
         task_completion_enable_state_probes=_as_bool(os.getenv("TASK_COMPLETION_ENABLE_STATE_PROBES"), True),
+        task_completion_refresh_evidence_before_verify=_as_bool(
+            os.getenv("TASK_COMPLETION_REFRESH_EVIDENCE_BEFORE_VERIFY"),
+            False,
+        ),
         task_completion_fail_closed=_as_bool(os.getenv("TASK_COMPLETION_FAIL_CLOSED"), True),
         log_graph_node_events=_as_bool(
             os.getenv("LOG_GRAPH_NODE_EVENTS"),

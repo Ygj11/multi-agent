@@ -15,6 +15,7 @@ from app.integrations.pos_api_client import PosAPIClient
 from app.llm.schemas import LLMResponse
 from app.query.intent_recognition_node import IntentRecognitionNode
 from app.schemas.entities import ConversationWindow, EntityBag
+from app.schemas.enums.query import RewriteType
 from app.skills.catalog import SkillCatalog
 from app.subagents.tool_calling_runner import ToolCallingRunner
 from app.tools.agent_tools import register_agent_private_tools
@@ -192,7 +193,7 @@ async def test_pos_intent_rule_fallback_for_approval_text():
         original_query="帮我做保全批文查询，受理号 930010412672222",
         rewritten_query="帮我做保全批文查询，受理号 930010412672222",
         entities={"apply_seq": "930010412672222"},
-        rewrite_type="new_request",
+        rewrite_type=RewriteType.NEW_REQUEST,
         conversation_window=_window({"apply_seq": "930010412672222"}),
         agent_card_summaries=[card.model_dump() for card in AgentCardLoader(CARDS_ROOT).list_available_agents()],
     )

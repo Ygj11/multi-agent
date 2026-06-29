@@ -20,6 +20,7 @@ from app.runtime.failure_codes import (
     LLM_STATUS_PROVIDER_ERROR,
     LLM_STATUS_SUCCESS,
 )
+from app.schemas.enums.llm import LLMScene
 from app.schemas.agent_card import AgentCandidate, AgentSelectionResult
 
 
@@ -51,7 +52,7 @@ class LLMRouter:
         session_key: str | None = None,
     ) -> AgentSelectionResult | None:
         """Return LLM-selected candidate or None when the router output is unusable."""
-        prompt_trace = self.prompt_loader.scene_trace("agent_selection")
+        prompt_trace = self.prompt_loader.scene_trace(str(LLMScene.AGENT_SELECTION))
         if self.llm_provider is None:
             self.last_attempt = LLMAttempt(
                 llm_status=LLM_STATUS_DISABLED,
@@ -87,12 +88,12 @@ class LLMRouter:
                 messages=[
                     {
                         "role": "system",
-                        "content": self.prompt_loader.render_scene_system("agent_selection"),
+                        "content": self.prompt_loader.render_scene_system(str(LLMScene.AGENT_SELECTION)),
                     },
                     {
                         "role": "user",
                         "content": self.prompt_loader.render_scene_user(
-                            "agent_selection",
+                            str(LLMScene.AGENT_SELECTION),
                             query=query,
                             intent=intent,
                             sub_intent=sub_intent,
@@ -103,7 +104,7 @@ class LLMRouter:
                     },
                 ],
                 tools=None,
-                scene="agent_selection",
+                scene=LLMScene.AGENT_SELECTION,
                 request_id=request_id,
                 trace_id=trace_id,
                 session_key=session_key,

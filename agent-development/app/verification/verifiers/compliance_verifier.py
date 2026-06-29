@@ -16,6 +16,8 @@ import re
 
 from app.llm.base import LLMProvider
 from app.prompts.loader import PromptLoader, default_prompt_loader
+from app.schemas.enums.llm import LLMScene
+from app.schemas.enums.verification import VerificationAction, VerificationSeverity, VerificationStage
 from app.verification.schemas import VerificationInput, VerificationResult
 
 
@@ -23,7 +25,7 @@ class ComplianceVerifier:
     """检查最终答案是否可以外发。"""
 
     name = "compliance"
-    stages = ["pre_answer"]
+    stages = [VerificationStage.PRE_ANSWER]
 
     def __init__(
         self,
@@ -42,7 +44,7 @@ class ComplianceVerifier:
                     {"role": "user", "content": answer},
                 ],
                 tools=None,
-                scene="final_compliance",
+                scene=LLMScene.FINAL_COMPLIANCE,
                 request_id=input.request_id,
                 trace_id=input.trace_id,
                 session_key=input.session_key,
@@ -96,8 +98,8 @@ class ComplianceVerifier:
                 passed=False,
                 stage=input.stage,
                 verifier_name=self.name,
-                severity="blocking",
-                action="retry",
+                severity=VerificationSeverity.BLOCKING,
+                action=VerificationAction.RETRY,
                 code="compliance_violation",
                 reason="; ".join(item["message"] for item in redactions),
                 patched_output=sanitized,
@@ -108,8 +110,8 @@ class ComplianceVerifier:
                 passed=True,
                 stage=input.stage,
                 verifier_name=self.name,
-                severity="warning",
-                action="patch",
+                severity=VerificationSeverity.WARNING,
+                action=VerificationAction.PATCH,
                 patched_output=sanitized,
                 redactions=redactions,
             )
@@ -117,7 +119,7 @@ class ComplianceVerifier:
             passed=True,
             stage=input.stage,
             verifier_name=self.name,
-            severity="warning" if redactions else "info",
-            action="allow",
+            severity=VerificationSeverity.WARNING if redactions else VerificationSeverity.INFO,
+            action=VerificationAction.ALLOW,
             redactions=redactions,
         )

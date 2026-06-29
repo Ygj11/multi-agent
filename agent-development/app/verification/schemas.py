@@ -11,13 +11,11 @@ from __future__ import annotations
 例如 PASS / CONTINUE / NEED_USER；这里表达的是运行时安全策略动作。
 """
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-VerificationStage = Literal["request_access", "agent_access", "pre_skill", "pre_tool", "post_tool", "pre_answer"]
-VerificationAction = Literal["allow", "patch", "block", "manual", "retry"]
+from app.schemas.enums.verification import VerificationAction, VerificationSeverity, VerificationStage
 
 
 class VerificationInput(BaseModel):
@@ -64,8 +62,8 @@ class VerificationResult(BaseModel):
     passed: bool
     stage: str
     verifier_name: str
-    severity: Literal["info", "warning", "error", "blocking"] = "info"
-    action: VerificationAction = "allow"
+    severity: VerificationSeverity = VerificationSeverity.INFO
+    action: VerificationAction = VerificationAction.ALLOW
     code: str | None = None
     reason: str | None = None
     patched_output: Any | None = None

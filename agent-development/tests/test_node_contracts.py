@@ -1,13 +1,9 @@
-import inspect
-import re
-
-from app.runtime.graph import AgentGraphFactory
 from app.runtime.node_contracts import NODE_CONTRACTS, validate_node_contracts
+from app.schemas.enums.graph import GraphNode
 
 
 def test_all_graph_nodes_have_contracts():
-    source = inspect.getsource(AgentGraphFactory.build)
-    graph_nodes = set(re.findall(r'graph\.add_node\("([^"]+)"', source))
+    graph_nodes = {str(node) for node in GraphNode}
 
     assert graph_nodes
     assert graph_nodes == set(NODE_CONTRACTS)

@@ -20,6 +20,8 @@ from app.schemas.approval import (
     ApprovalResumeResult,
     ApprovalSubmitResult,
 )
+from app.schemas.enums.approval import ApprovalCallbackStatus, ApprovalEventType, ApprovalStatus
+from app.schemas.enums.verification import VerificationAction, VerificationStage
 from app.session.message_store import MessageStore
 from app.verification.schemas import VerificationInput
 from app.verification.service import VerificationService
@@ -101,7 +103,7 @@ class ApprovalService:
         resume_state_payload = {
             **resume_state,
             "approval_id": approval_id,
-            "approval_status": "created",
+            "approval_status": str(ApprovalStatus.CREATED),
             "parent_approval_id": parent_approval_id,
             "root_approval_id": root_id,
             "approval_depth": approval_depth,
@@ -146,20 +148,20 @@ class ApprovalService:
     async def submit_to_external_approval_system(self, approval_request: ApprovalRequest) -> ApprovalSubmitResult:
         result = await self.client.submit_approval_request(approval_request)
         if result.accepted:
-            approval_request.status = "pending"
+            approval_request.status = ApprovalStatus.PENDING
             approval_request.external_approval_id = result.external_approval_id
             await self.store.update(
                 approval_request,
-                event_type="submitted",
+                event_type=str(ApprovalEventType.SUBMITTED),
                 payload=result.model_dump(),
             )
             return result
 
-        approval_request.status = "submit_failed"
+        approval_request.status = ApprovalStatus.SUBMIT_FAILED
         approval_request.error = result.error or "approval_submit_failed"
         await self.store.update(
             approval_request,
-            event_type="submit_failed",
+            event_type=str(ApprovalEventType.SUBMIT_FAILED),
             payload=result.model_dump(),
         )
         return result
@@ -182,7 +184,7 @@ class ApprovalService:
         if approval_request is None:
             raise KeyError(callback.approval_id)
 
-        if approval_request.status in {"completed", "rejected", "manual_intervention_required"}:
+        if approval_request.status in {ApprovalStatus.COMPLETED, ApprovalStatus.REJECTED, ApprovalStatus.MANUAL_INTERVENTION_REQUIRED}:
             return ApprovalCallbackHandleResult(
                 approval_request=approval_request,
                 resumed=False,
@@ -196,7 +198,7 @@ class ApprovalService:
         approval_request.comment = callback.comment
         approval_request.decided_at = callback.decided_at or self._now()
 
-        if callback.status == "rejected":
+        if callback.status is ApprovalCallbackStatus.REJECTED:
             final_answer = await self._finalize_rejected(approval_request)
             return ApprovalCallbackHandleResult(
                 approval_request=approval_request,
@@ -204,10 +206,10 @@ class ApprovalService:
                 final_answer=final_answer,
             )
 
-        approval_request.status = "approved"
+        approval_request.status = ApprovalStatus.APPROVED
         await self.store.update(
             approval_request,
-            event_type="approved",
+            event_type=str(ApprovalEventType.APPROVED),
             payload=callback.model_dump(),
         )
         resume = await self.resume_graph_after_approval(approval_request)
@@ -232,7 +234,7 @@ class ApprovalService:
         )
 
         if has_next_approval:
-            refreshed.status = "completed"
+            refreshed.status = ApprovalStatus.COMPLETED
             refreshed.next_approval_id = new_approval_id
             refreshed.error = None
             refreshed.final_answer = final_answer
@@ -243,22 +245,22 @@ class ApprovalService:
             }
             await self.store.update(
                 refreshed,
-                event_type="completed_with_next_approval",
+                event_type=str(ApprovalEventType.COMPLETED_WITH_NEXT_APPROVAL),
                 payload={"next_approval_id": new_approval_id, "final_answer": final_answer},
             )
         elif state.get("manual_intervention_required"):
-            refreshed.status = "manual_intervention_required"
-            refreshed.error = "manual_intervention_required"
+            refreshed.status = ApprovalStatus.MANUAL_INTERVENTION_REQUIRED
+            refreshed.error = str(ApprovalStatus.MANUAL_INTERVENTION_REQUIRED)
             refreshed.final_answer = final_answer
             refreshed.result = {"graph_path": state.get("graph_path", []), "manual_intervention_required": True}
             await self.store.update(
                 refreshed,
-                event_type="manual_intervention_required",
+                event_type=str(ApprovalEventType.MANUAL_INTERVENTION_REQUIRED),
                 payload={"final_answer": final_answer},
             )
             await self._notify_result_callback_if_needed(refreshed, state=state)
         else:
-            refreshed.status = "completed"
+            refreshed.status = ApprovalStatus.COMPLETED
             refreshed.error = state.get("error")
             refreshed.final_answer = final_answer
             refreshed.result = {
@@ -267,7 +269,7 @@ class ApprovalService:
             }
             await self.store.update(
                 refreshed,
-                event_type="completed",
+                event_type=str(ApprovalEventType.COMPLETED),
                 payload={"final_answer": final_answer, "error": refreshed.error},
             )
             await self._notify_result_callback_if_needed(refreshed, state=state)
@@ -286,12 +288,12 @@ class ApprovalService:
             raw_answer=raw_answer,
             subagent_result={"approval_status": "rejected"},
         )
-        approval_request.status = "rejected"
+        approval_request.status = ApprovalStatus.REJECTED
         approval_request.final_answer = final_answer
-        approval_request.result = {"approval_status": "rejected"}
+        approval_request.result = {"approval_status": str(ApprovalStatus.REJECTED)}
         await self.store.update(
             approval_request,
-            event_type="rejected",
+            event_type=str(ApprovalEventType.REJECTED),
             payload={"final_answer": final_answer, "approver": approval_request.approver, "comment": approval_request.comment},
         )
         await self._notify_result_callback_if_needed(approval_request, state=None)
@@ -340,14 +342,14 @@ class ApprovalService:
                 "url": callback_url,
                 **delivery,
             }
-            event_type = "result_callback_delivered"
+            event_type = str(ApprovalEventType.RESULT_CALLBACK_DELIVERED)
         except Exception as exc:
             callback_result = {
                 "delivered": False,
                 "url": callback_url,
                 "error": str(exc),
             }
-            event_type = "result_callback_failed"
+            event_type = str(ApprovalEventType.RESULT_CALLBACK_FAILED)
 
         approval_request.result = {
             **(approval_request.result or {}),
@@ -385,7 +387,7 @@ class ApprovalService:
     ) -> str:
         verification = await self.verification_service.verify(
             VerificationInput(
-                stage="pre_answer",
+                stage=VerificationStage.PRE_ANSWER,
                 request_id=approval_request.request_id,
                 trace_id=approval_request.trace_id,
                 session_key=approval_request.session_key,
@@ -398,9 +400,9 @@ class ApprovalService:
                 metadata={"approval_id": approval_request.approval_id, "approval_status": approval_request.status},
             )
         )
-        if verification.action == "patch" and isinstance(verification.patched_output, str):
+        if verification.action is VerificationAction.PATCH and isinstance(verification.patched_output, str):
             final_answer = verification.patched_output
-        elif verification.action in {"allow", "patch"} and verification.passed:
+        elif verification.action in {VerificationAction.ALLOW, VerificationAction.PATCH} and verification.passed:
             final_answer = raw_answer
         else:
             final_answer = "当前回复未通过最终验证，已拦截原始内容。请补充更具体的业务问题，我会在不暴露敏感信息的前提下重新说明。"

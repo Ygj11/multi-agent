@@ -10,6 +10,7 @@ from app.config.settings import get_settings
 from app.llm.base import LLMProvider
 from app.observability.logger import log_event, preview_text
 from app.prompts.loader import PromptLoader, default_prompt_loader
+from app.schemas.enums.llm import LLMScene
 from app.storage.sqlite import SQLiteDatabase
 
 
@@ -146,7 +147,7 @@ class ShortTermMemoryManager:
                     },
                 ],
                 tools=None,
-                scene="summary",
+                scene=LLMScene.SUMMARY,
                 request_id=request_id,
                 trace_id=trace_id,
                 session_key=session_key,

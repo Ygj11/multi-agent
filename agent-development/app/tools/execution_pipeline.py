@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.auth.principal import Principal
 from app.schemas.agent_card import AgentCard
+from app.schemas.enums.tool import ToolOperation
 from app.schemas.tool import ToolResult
 from app.tools.guards.approval_guard import ToolApprovalGuard
 from app.tools.guards.argument_guard import ToolArgumentGuard
@@ -96,7 +97,7 @@ class ToolExecutionPipeline:
             definition=definition,
             principal=principal_obj,
             arguments=context.arguments,
-            action=str(getattr(definition, "operation", "read")),
+            action=str(getattr(definition, "operation", ToolOperation.READ)),
         )
         if auth_error is not None:
             return auth_error

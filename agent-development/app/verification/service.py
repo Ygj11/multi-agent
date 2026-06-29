@@ -15,6 +15,7 @@ Authorization 仍然独立且确定性地判断“能不能做”；Verification
 """
 
 from app.verification.base import BaseVerifier
+from app.schemas.enums.verification import VerificationAction, VerificationSeverity
 from app.verification.schemas import VerificationInput, VerificationResult
 
 
@@ -45,7 +46,7 @@ class VerificationService:
             try:
                 result = await verifier.verify(current_input)
                 results.append(result)
-                if result.action == "patch" and isinstance(result.patched_output, str):
+                if result.action is VerificationAction.PATCH and isinstance(result.patched_output, str):
                     current_input = current_input.model_copy(update={"answer": result.patched_output})
             except Exception as exc:  # fail closed
                 results.append(
@@ -53,8 +54,8 @@ class VerificationService:
                         passed=False,
                         stage=current_input.stage,
                         verifier_name=getattr(verifier, "name", verifier.__class__.__name__),
-                        severity="blocking",
-                        action="block",
+                        severity=VerificationSeverity.BLOCKING,
+                        action=VerificationAction.BLOCK,
                         code="verifier_exception",
                         reason=str(exc),
                     )
@@ -65,20 +66,20 @@ class VerificationService:
         if not results:
             return VerificationResult(passed=True, stage=input.stage, verifier_name="aggregate")
         for result in results:
-            if result.action in {"block", "manual"} or result.severity == "blocking":
+            if result.action in {VerificationAction.BLOCK, VerificationAction.MANUAL} or result.severity is VerificationSeverity.BLOCKING:
                 return result
         patched = None
         redactions: list[dict] = []
         for result in results:
             redactions.extend(result.redactions)
-            if result.action == "patch" and result.patched_output is not None:
+            if result.action is VerificationAction.PATCH and result.patched_output is not None:
                 patched = result.patched_output
         if patched is not None:
             return VerificationResult(
                 passed=True,
                 stage=input.stage,
                 verifier_name="aggregate",
-                action="patch",
+                action=VerificationAction.PATCH,
                 patched_output=patched,
                 redactions=redactions,
             )

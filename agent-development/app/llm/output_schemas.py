@@ -2,12 +2,15 @@ from __future__ import annotations
 
 """Strict structured output schemas for LLM decision prompts."""
 
-from typing import Any, Literal, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.schemas.enums.llm import LLMStructuredErrorCode, LLMStructuredParseStatus
+from app.schemas.enums.query import RewriteType
+from app.schemas.enums.task_completion import TaskCompletionStatus
 from app.utils.json_utils import parse_json_object
-from app.verification.task_completion.schemas import RepairPlan, TaskCompletionStatus
+from app.verification.task_completion.schemas import RepairPlan
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -21,7 +24,7 @@ class LLMStructuredParseResult(BaseModel):
     raw: dict[str, Any] | None = None
     error_code: str | None = None
     error_detail: str | None = None
-    parse_status: Literal["success", "json_parse_failed", "schema_validation_failed"] = "success"
+    parse_status: LLMStructuredParseStatus = LLMStructuredParseStatus.SUCCESS
     schema_name: str
 
 
@@ -32,7 +35,7 @@ class _StrictOutput(BaseModel):
 class QueryRewriteLLMOutput(_StrictOutput):
     is_follow_up: bool
     rewritten_query: str
-    rewrite_type: Literal["direct", "contextual_follow_up", "clarification_reply", "new_request", "clarification_required"]
+    rewrite_type: RewriteType
     entities: dict[str, Any] = Field(
         default_factory=dict,
         description="仅放当前用户消息提供或语义暗示的实体候选，不放历史继承实体。",
@@ -101,9 +104,9 @@ def parse_llm_json_schema(text: str | None, schema: type[T]) -> LLMStructuredPar
             success=False,
             data=None,
             raw=None,
-            error_code="llm_json_parse_failed",
+            error_code=str(LLMStructuredErrorCode.JSON_PARSE_FAILED),
             error_detail="response content is not a JSON object",
-            parse_status="json_parse_failed",
+            parse_status=LLMStructuredParseStatus.JSON_PARSE_FAILED,
             schema_name=schema_name,
         )
     try:
@@ -113,9 +116,9 @@ def parse_llm_json_schema(text: str | None, schema: type[T]) -> LLMStructuredPar
             success=False,
             data=None,
             raw=raw,
-            error_code="llm_schema_validation_failed",
+            error_code=str(LLMStructuredErrorCode.SCHEMA_VALIDATION_FAILED),
             error_detail=str(exc),
-            parse_status="schema_validation_failed",
+            parse_status=LLMStructuredParseStatus.SCHEMA_VALIDATION_FAILED,
             schema_name=schema_name,
         )
     return LLMStructuredParseResult(

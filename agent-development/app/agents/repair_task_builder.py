@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.schemas.agent_card import AgentCard
+from app.schemas.enums.execution import ExecutionMode
 from app.schemas.runtime import OrchestratorContext
 from app.schemas.subagent import SubAgentTask
 
@@ -34,7 +35,7 @@ class RepairTaskBuilder:
             request_id=state.get("request_id"),
             trace_id=state.get("trace_id"),
             auth_context=orchestrator_context.auth_context,
-            execution_mode="repair",
+            execution_mode=ExecutionMode.REPAIR,
             pinned_skill_id=state.get("selected_skill_id"),
             repair_plan=plan,
             previous_answer=str(subagent_result.get("answer") or state.get("answer") or ""),
@@ -43,7 +44,7 @@ class RepairTaskBuilder:
             repair_round=int(state.get("repair_round") or 0),
             do_not_repeat=list(plan.get("do_not_repeat") or []),
             metadata={
-                "execution_mode": "repair",
+                "execution_mode": str(ExecutionMode.REPAIR),
                 "pinned_skill_id": state.get("selected_skill_id"),
                 "repair_round": int(state.get("repair_round") or 0),
             },

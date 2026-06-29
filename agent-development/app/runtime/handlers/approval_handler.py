@@ -11,6 +11,9 @@ from app.agents.card_loader import AgentCardLoader
 from app.runtime.state_projector import project_approval_resume_state
 from app.schemas.agent_card import AgentCard
 from app.schemas.approval import ApprovalRequest
+from app.schemas.enums.approval import ApprovalEventType, ApprovalStatus
+from app.schemas.enums.graph import AfterApprovalCreateRoute, ApprovalRequiredRoute
+from app.schemas.enums.tool import RiskLevel, ToolOperation, ToolStoppedReason
 from app.subagents.tool_calling_runner import ToolCallingRunner
 from app.tools.executor import ToolExecutor
 
@@ -125,7 +128,7 @@ class ApprovalGraphHandler:
         if not tool_result.success:
             subagent_result = self._build_resume_subagent_result(
                 state=state,
-                stopped_reason="error",
+                stopped_reason=ToolStoppedReason.ERROR,
                 final_answer=tool_result.error or "approved_tool_execution_failed",
                 tool_calls=[dumped_tool_result],
                 needs_human_approval=False,
@@ -152,7 +155,7 @@ class ApprovalGraphHandler:
                 auth_context=auth_context,
                 evidence=[dumped_tool_result],
             )
-            needs_approval = run_result.needs_human_approval or run_result.stopped_reason == "human_approval_required"
+            needs_approval = run_result.needs_human_approval or run_result.stopped_reason is ToolStoppedReason.HUMAN_APPROVAL_REQUIRED
             answer = (
                 "This operation requires human approval and has not been executed."
                 if needs_approval
@@ -202,10 +205,10 @@ class ApprovalGraphHandler:
         ):
             return {
                 "approval_required": False,
-                "approval_status": "manual_intervention_required",
+                "approval_status": str(ApprovalStatus.MANUAL_INTERVENTION_REQUIRED),
                 "manual_intervention_required": True,
                 "answer": "连续写操作审批次数已超过上限，当前操作未执行，请人工接管后继续处理。",
-                "error": "manual_intervention_required",
+                "error": str(ApprovalStatus.MANUAL_INTERVENTION_REQUIRED),
             }
 
         payload = (state.get("approval_payloads") or [{}])[0]
@@ -251,8 +254,8 @@ class ApprovalGraphHandler:
             tool_required_scopes=payload.get("required_scopes") or [],
             agent_name=payload.get("agent_name") or state.get("selected_agent") or "unknown",
             tool_name=payload.get("tool_name") or pending_tool_call.get("name") or "unknown",
-            operation_type=payload.get("operation_type") or "write",
-            risk_level=payload.get("risk_level") or "high",
+            operation_type=payload.get("operation_type") or str(ToolOperation.WRITE),
+            risk_level=payload.get("risk_level") or str(RiskLevel.HIGH),
             arguments=payload.get("arguments") or pending_tool_call.get("arguments") or {},
             reason=payload.get("reason") or "Write-side tool call requires human approval.",
             resume_state=resume_state.model_dump(mode="json"),
@@ -263,13 +266,13 @@ class ApprovalGraphHandler:
         if current_approval_id:
             parent = await self.approval_service.store.get(current_approval_id)
             if parent is not None:
-                parent.status = "completed"
+                parent.status = ApprovalStatus.COMPLETED
                 parent.next_approval_id = approval_request.approval_id
                 parent.error = None
                 parent.result = {**(parent.result or {}), "next_approval_id": approval_request.approval_id}
                 await self.approval_service.store.update(
                     parent,
-                    event_type="next_approval_created",
+                    event_type=str(ApprovalEventType.NEXT_APPROVAL_CREATED),
                     payload={"next_approval_id": approval_request.approval_id},
                 )
 
@@ -309,23 +312,23 @@ class ApprovalGraphHandler:
                 approval_request.error = submit_result.get("error") or "approval_submit_failed"
                 await self.approval_service.store.update(
                     approval_request,
-                    event_type="submit_failed_answer_prepared",
+                    event_type=str(ApprovalEventType.SUBMIT_FAILED_ANSWER_PREPARED),
                     payload={"answer": answer, "error": approval_request.error},
                 )
         else:
             answer = f"该操作需要人工审批，审批请求已提交，approval_id={approval_id}。当前操作尚未执行。"
         return {
             "answer": answer,
-            "approval_status": state.get("approval_status") or "pending",
+            "approval_status": state.get("approval_status") or str(ApprovalStatus.PENDING),
         }
 
     @staticmethod
-    def human_route(state: dict[str, Any]) -> str:
-        return "required" if state.get("approval_required") else "not_required"
+    def human_route(state: dict[str, Any]) -> ApprovalRequiredRoute:
+        return ApprovalRequiredRoute.REQUIRED if state.get("approval_required") else ApprovalRequiredRoute.NOT_REQUIRED
 
     @staticmethod
-    def after_create_route(state: dict[str, Any]) -> str:
-        return "manual" if state.get("manual_intervention_required") else "submit"
+    def after_create_route(state: dict[str, Any]) -> AfterApprovalCreateRoute:
+        return AfterApprovalCreateRoute.MANUAL if state.get("manual_intervention_required") else AfterApprovalCreateRoute.SUBMIT
 
     @staticmethod
     def _thread_id(state: dict[str, Any]) -> str:
@@ -360,7 +363,7 @@ class ApprovalGraphHandler:
     def _build_resume_subagent_result(
         *,
         state: dict[str, Any],
-        stopped_reason: str,
+        stopped_reason: ToolStoppedReason | str,
         final_answer: str,
         tool_calls: list[dict[str, Any]],
         needs_human_approval: bool,
@@ -384,10 +387,10 @@ class ApprovalGraphHandler:
             "confidence": 0.3 if needs_human_approval or error else 0.88,
             "needs_human_approval": needs_human_approval,
             "approval_payloads": [approval_payload] if approval_payload else [],
-            "risk_level": "high" if needs_human_approval else "low",
+            "risk_level": str(RiskLevel.HIGH if needs_human_approval else RiskLevel.LOW),
             "metadata": {
                 "tool_calling_runner": {
-                    "stopped_reason": stopped_reason,
+                    "stopped_reason": str(stopped_reason),
                     "iterations": None,
                     "error": error,
                     "pending_tool_call": pending_tool_call,

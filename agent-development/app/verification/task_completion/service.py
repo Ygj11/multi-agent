@@ -9,6 +9,10 @@ from app.llm.base import LLMProvider
 from app.llm.output_schemas import TaskCompletionLLMOutput, parse_llm_json_schema
 from app.observability.logger import log_event, preview_text
 from app.prompts.loader import PromptLoader, default_prompt_loader
+from app.schemas.enums.llm import LLMScene
+from app.schemas.enums.observability import RuntimeEvent
+from app.schemas.enums.task_completion import TaskCompletionStatus
+from app.schemas.enums.tool import ToolStoppedReason
 from app.skills.catalog import SkillCatalog
 from app.verification.task_completion.repair_plan_sanitizer import RepairPlanSanitizer
 from app.verification.task_completion.schemas import (
@@ -55,7 +59,7 @@ class TaskCompletionVerifierService:
         response = await self.llm_provider.chat(
             messages=messages,
             tools=None,
-            scene="task_completion_verifier",
+            scene=LLMScene.TASK_COMPLETION_VERIFIER,
             request_id=context.request_id,
             trace_id=context.trace_id,
             session_key=context.session_key,
@@ -75,7 +79,7 @@ class TaskCompletionVerifierService:
             repaired = await self.llm_provider.chat(
                 messages=repair_messages,
                 tools=None,
-                scene="task_completion_verifier",
+                scene=LLMScene.TASK_COMPLETION_VERIFIER,
                 request_id=context.request_id,
                 trace_id=context.trace_id,
                 session_key=context.session_key,
@@ -124,16 +128,16 @@ class TaskCompletionVerifierService:
             "repair_history": self._json(context.repair_history),
         }
         return [
-            {"role": "system", "content": self.prompt_loader.render_scene_system("task_completion_verifier", **variables)},
-            {"role": "user", "content": self.prompt_loader.render_scene_user("task_completion_verifier", **variables)},
+            {"role": "system", "content": self.prompt_loader.render_scene_system(str(LLMScene.TASK_COMPLETION_VERIFIER), **variables)},
+            {"role": "user", "content": self.prompt_loader.render_scene_user(str(LLMScene.TASK_COMPLETION_VERIFIER), **variables)},
         ]
 
     def _heuristic_result(self, context: TaskCompletionVerificationContext, *, reason: str) -> TaskCompletionVerificationResult:
         if self._has_pending_approval(context):
             return self._handoff("approval_pending_skip_completion_expected", context=context)
-        if self._has_success_evidence(context) and (context.stopped_reason in {None, "", "final"}):
+        if self._has_success_evidence(context) and (context.stopped_reason in {None, "", ToolStoppedReason.FINAL}):
             return TaskCompletionVerificationResult(
-                status="PASS",
+                status=TaskCompletionStatus.PASS,
                 completed=True,
                 summary="已基于成功工具结果和证据摘要完成任务验收。",
                 completed_items=["tool_evidence_available"],
@@ -146,7 +150,7 @@ class TaskCompletionVerifierService:
                 llm_status="skipped",
                 fallback_reason=reason,
             )
-        if context.stopped_reason == "final" and not context.tool_calls:
+        if context.stopped_reason == ToolStoppedReason.FINAL and not context.tool_calls:
             return self._handoff("no_tool_evidence_for_skill_task", context=context)
         return self._handoff(reason, context=context)
 
@@ -158,7 +162,7 @@ class TaskCompletionVerifierService:
 
     @staticmethod
     def _has_pending_approval(context: TaskCompletionVerificationContext) -> bool:
-        return context.stopped_reason == "human_approval_required" or any(
+        return context.stopped_reason == ToolStoppedReason.HUMAN_APPROVAL_REQUIRED or any(
             item.get("needs_human_approval") for item in context.tool_calls if isinstance(item, dict)
         )
 
@@ -208,7 +212,7 @@ class TaskCompletionVerifierService:
         llm_status: str | None = None,
     ) -> TaskCompletionVerificationResult:
         log_event(
-            "task_completion_handoff",
+            RuntimeEvent.TASK_COMPLETION_HANDOFF,
             request_id=context.request_id,
             trace_id=context.trace_id,
             session_key=context.session_key,
@@ -217,7 +221,7 @@ class TaskCompletionVerifierService:
             data={"reason": reason, "selected_skill_id": context.selected_skill_id},
         )
         return TaskCompletionVerificationResult(
-            status="HUMAN_HANDOFF",
+            status=TaskCompletionStatus.HUMAN_HANDOFF,
             completed=False,
             summary="当前证据不足以安全确认任务已完成，建议人工接管。",
             completed_items=[],

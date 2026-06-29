@@ -122,6 +122,16 @@ def test_task_completion_llm_requires_real_llm_provider():
     assert any(issue.code == "task_completion_llm_without_provider" for issue in issues)
 
 
+def test_task_completion_refresh_evidence_before_verify_setting(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("TASK_COMPLETION_REFRESH_EVIDENCE_BEFORE_VERIFY=true\n", encoding="utf-8")
+
+    with patch.dict(os.environ, {}, clear=True):
+        settings = get_settings(dotenv_path=env_file)
+
+    assert settings.task_completion_refresh_evidence_before_verify is True
+
+
 def test_effective_switches_explain_composed_configuration():
     settings = Settings(
         auth_mode="required",

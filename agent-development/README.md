@@ -848,6 +848,7 @@ http://127.0.0.1:8000
 | `TASK_COMPLETION_ENABLE_LLM` | 是否让 Completion Verifier 调用真实 LLM；默认跟真实 LLM 开关联动 |
 | `TASK_COMPLETION_MAX_REPAIR_ROUNDS` | 自动 repair 最大轮次，默认 2 |
 | `TASK_COMPLETION_ENABLE_STATE_PROBES` | 是否启用只读业务状态探针，默认 true |
+| `TASK_COMPLETION_REFRESH_EVIDENCE_BEFORE_VERIFY` | 是否在验收前重新收集证据；默认 false，通常复用 `collect_verification_evidence` 的结果 |
 
 ### 配置组合校验
 

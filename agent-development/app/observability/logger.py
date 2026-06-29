@@ -8,6 +8,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from app.schemas.enums.observability import RuntimeEvent
+
 
 LOGGER_NAME = "agent_runtime"
 SENSITIVE_KEYS = {
@@ -50,7 +52,7 @@ def get_runtime_logger() -> logging.Logger:
 
 
 def log_event(
-    event: str,
+    event: str | RuntimeEvent,
     *,
     level: str = "INFO",
     request_id: str | None = None,
@@ -66,7 +68,7 @@ def log_event(
     payload = {
         "timestamp": datetime.now(UTC).isoformat(),
         "level": level.upper(),
-        "event": event,
+        "event": str(event),
         "request_id": request_id,
         "trace_id": trace_id,
         "session_key": session_key,

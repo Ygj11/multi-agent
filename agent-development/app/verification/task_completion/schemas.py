@@ -10,8 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
-TaskCompletionStatus = Literal["PASS", "CONTINUE", "NEED_USER", "HUMAN_HANDOFF", "FAILED"]
+from app.schemas.enums.task_completion import TaskCompletionStatus
 
 
 class VerificationEvidence(BaseModel):
@@ -83,11 +82,11 @@ class TaskCompletionVerificationResult(BaseModel):
 
     @model_validator(mode="after")
     def _status_consistency(self) -> "TaskCompletionVerificationResult":
-        if self.status == "PASS" and not self.completed:
+        if self.status is TaskCompletionStatus.PASS and not self.completed:
             raise ValueError("PASS result must set completed=true")
-        if self.status != "PASS" and self.completed:
+        if self.status is not TaskCompletionStatus.PASS and self.completed:
             raise ValueError("non-PASS result must set completed=false")
-        if self.status == "CONTINUE" and self.repair_plan is None:
+        if self.status is TaskCompletionStatus.CONTINUE and self.repair_plan is None:
             raise ValueError("CONTINUE result requires repair_plan")
         return self
 

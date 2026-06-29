@@ -37,6 +37,16 @@ from app.runtime.handlers.task_completion_handler import TaskCompletionGraphHand
 from app.runtime.handlers.verification_handler import VerificationHandler
 from app.schemas.agent_card import AgentCard, AgentSelectionResult
 from app.schemas.entities import EntityBag
+from app.schemas.enums.graph import (
+    AfterApprovalCreateRoute,
+    ApprovalRequiredRoute,
+    ClarificationRoute,
+    EntryRoute,
+    GraphNode,
+    TaskCompletionRoute,
+    VerificationRoute,
+)
+from app.schemas.enums.observability import RuntimeEvent
 from app.schemas.runtime import OrchestratorContext
 from app.session.message_store import MessageStore
 from app.session.session_manager import SessionManager
@@ -129,110 +139,125 @@ class AgentGraphFactory:
         但外层 Graph 不把这些动态步骤摊平成节点，便于保持全局生命周期可控。
         """
         graph = StateGraph(AgentGraphState)
-        graph.add_node("route_entry", self.route_entry)
-        graph.add_node("load_session", self.load_session)
-        graph.add_node("resume_approved_tool", self.resume_approved_tool)
-        graph.add_node("save_user_message", self.save_user_message)
-        graph.add_node("query_rewrite", self.query_rewrite)
-        graph.add_node("intent_recognition", self.intent_recognition)
-        graph.add_node("build_orchestrator_context", self.build_orchestrator_context)
-        graph.add_node("select_agent", self.select_agent)
-        graph.add_node("dispatch_agent", self.dispatch_agent)
-        graph.add_node("build_clarification_answer", self.build_clarification_answer)
-        graph.add_node("check_human_approval_required", self.check_human_approval_required)
-        graph.add_node("collect_verification_evidence", self.collect_verification_evidence)
-        graph.add_node("verify_task_completion", self.verify_task_completion)
-        graph.add_node("build_repair_task", self.build_repair_task)
-        graph.add_node("dispatch_repair_agent", self.dispatch_repair_agent)
-        graph.add_node("build_verification_clarification", self.build_verification_clarification)
-        graph.add_node("build_handoff_answer", self.build_handoff_answer)
-        graph.add_node("create_approval_request", self.create_approval_request)
-        graph.add_node("submit_approval_request", self.submit_approval_request)
-        graph.add_node("pause_for_approval", self.pause_for_approval)
-        graph.add_node("pre_answer_verify", self.pre_answer_verify)
-        graph.add_node("regenerate_compliant_answer", self.regenerate_compliant_answer)
-        graph.add_node("fallback_answer", self.fallback_answer)
-        graph.add_node("save_assistant_message", self.save_assistant_message)
-        graph.add_node("compress_short_memory", self.compress_short_memory)
-        graph.add_node("finalize_response", self.finalize_response)
+        graph.add_node(GraphNode.ROUTE_ENTRY.value, self.route_entry)
+        graph.add_node(GraphNode.LOAD_SESSION.value, self.load_session)
+        graph.add_node(GraphNode.RESUME_APPROVED_TOOL.value, self.resume_approved_tool)
+        graph.add_node(GraphNode.SAVE_USER_MESSAGE.value, self.save_user_message)
+        graph.add_node(GraphNode.QUERY_REWRITE.value, self.query_rewrite)
+        graph.add_node(GraphNode.INTENT_RECOGNITION.value, self.intent_recognition)
+        graph.add_node(GraphNode.BUILD_ORCHESTRATOR_CONTEXT.value, self.build_orchestrator_context)
+        graph.add_node(GraphNode.SELECT_AGENT.value, self.select_agent)
+        graph.add_node(GraphNode.DISPATCH_AGENT.value, self.dispatch_agent)
+        graph.add_node(GraphNode.BUILD_CLARIFICATION_ANSWER.value, self.build_clarification_answer)
+        graph.add_node(GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value, self.check_human_approval_required)
+        graph.add_node(GraphNode.COLLECT_VERIFICATION_EVIDENCE.value, self.collect_verification_evidence)
+        graph.add_node(GraphNode.VERIFY_TASK_COMPLETION.value, self.verify_task_completion)
+        graph.add_node(GraphNode.BUILD_REPAIR_TASK.value, self.build_repair_task)
+        graph.add_node(GraphNode.DISPATCH_REPAIR_AGENT.value, self.dispatch_repair_agent)
+        graph.add_node(GraphNode.BUILD_VERIFICATION_CLARIFICATION.value, self.build_verification_clarification)
+        graph.add_node(GraphNode.BUILD_HANDOFF_ANSWER.value, self.build_handoff_answer)
+        graph.add_node(GraphNode.CREATE_APPROVAL_REQUEST.value, self.create_approval_request)
+        graph.add_node(GraphNode.SUBMIT_APPROVAL_REQUEST.value, self.submit_approval_request)
+        graph.add_node(GraphNode.PAUSE_FOR_APPROVAL.value, self.pause_for_approval)
+        graph.add_node(GraphNode.PRE_ANSWER_VERIFY.value, self.pre_answer_verify)
+        graph.add_node(GraphNode.REGENERATE_COMPLIANT_ANSWER.value, self.regenerate_compliant_answer)
+        graph.add_node(GraphNode.FALLBACK_ANSWER.value, self.fallback_answer)
+        graph.add_node(GraphNode.SAVE_ASSISTANT_MESSAGE.value, self.save_assistant_message)
+        graph.add_node(GraphNode.COMPRESS_SHORT_MEMORY.value, self.compress_short_memory)
+        graph.add_node(GraphNode.FINALIZE_RESPONSE.value, self.finalize_response)
 
-        graph.set_entry_point("route_entry") # start节点
+        graph.set_entry_point(GraphNode.ROUTE_ENTRY.value) # start节点
         graph.add_conditional_edges(
-            "route_entry",
+            GraphNode.ROUTE_ENTRY.value,
             self.entry_route,
-            {"resume": "resume_approved_tool", "normal": "load_session"},
+            {
+                EntryRoute.RESUME: GraphNode.RESUME_APPROVED_TOOL.value,
+                EntryRoute.NORMAL: GraphNode.LOAD_SESSION.value,
+            },
         )
-        graph.add_edge("resume_approved_tool", "check_human_approval_required") # 有没有写工具需要审批
-        graph.add_edge("load_session", "save_user_message")
-        graph.add_edge("save_user_message", "query_rewrite")
+        graph.add_edge(GraphNode.RESUME_APPROVED_TOOL.value, GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value) # 有没有写工具需要审批
+        graph.add_edge(GraphNode.LOAD_SESSION.value, GraphNode.SAVE_USER_MESSAGE.value)
+        graph.add_edge(GraphNode.SAVE_USER_MESSAGE.value, GraphNode.QUERY_REWRITE.value)
         graph.add_conditional_edges(
-            "query_rewrite", # 从哪个节点开始分支
+            GraphNode.QUERY_REWRITE.value, # 从哪个节点开始分支
             self.clarification_route, # 用哪个函数判断路线
-            {"clarify": "build_clarification_answer", "continue": "intent_recognition"},
+            {
+                ClarificationRoute.CLARIFY: GraphNode.BUILD_CLARIFICATION_ANSWER.value,
+                ClarificationRoute.CONTINUE: GraphNode.INTENT_RECOGNITION.value,
+            },
         )
         graph.add_conditional_edges(
-            "intent_recognition",
+            GraphNode.INTENT_RECOGNITION.value,
             self.clarification_route,
-            {"clarify": "build_clarification_answer", "continue": "build_orchestrator_context"},
+            {
+                ClarificationRoute.CLARIFY: GraphNode.BUILD_CLARIFICATION_ANSWER.value,
+                ClarificationRoute.CONTINUE: GraphNode.BUILD_ORCHESTRATOR_CONTEXT.value,
+            },
         )
-        graph.add_edge("build_orchestrator_context", "select_agent")
+        graph.add_edge(GraphNode.BUILD_ORCHESTRATOR_CONTEXT.value, GraphNode.SELECT_AGENT.value)
         graph.add_conditional_edges(
-            "select_agent",
+            GraphNode.SELECT_AGENT.value,
             self.clarification_route,
-            {"clarify": "build_clarification_answer", "continue": "dispatch_agent"},
+            {
+                ClarificationRoute.CLARIFY: GraphNode.BUILD_CLARIFICATION_ANSWER.value,
+                ClarificationRoute.CONTINUE: GraphNode.DISPATCH_AGENT.value,
+            },
         )
-        graph.add_edge("dispatch_agent", "check_human_approval_required") # 有没有写工具需要审批
-        graph.add_edge("build_clarification_answer", "pre_answer_verify")
+        graph.add_edge(GraphNode.DISPATCH_AGENT.value, GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value) # 有没有写工具需要审批
+        graph.add_edge(GraphNode.BUILD_CLARIFICATION_ANSWER.value, GraphNode.PRE_ANSWER_VERIFY.value)
         graph.add_conditional_edges(
-            "check_human_approval_required",
+            GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value,
             self.human_approval_route,
             {
-                "required": "create_approval_request",
-                "not_required": "collect_verification_evidence",
-                "skip_completion": "pre_answer_verify",
+                ApprovalRequiredRoute.REQUIRED: GraphNode.CREATE_APPROVAL_REQUEST.value,
+                ApprovalRequiredRoute.NOT_REQUIRED: GraphNode.COLLECT_VERIFICATION_EVIDENCE.value,
+                ApprovalRequiredRoute.SKIP_COMPLETION: GraphNode.PRE_ANSWER_VERIFY.value,
             },
         )
-        graph.add_edge("collect_verification_evidence", "verify_task_completion")
+        graph.add_edge(GraphNode.COLLECT_VERIFICATION_EVIDENCE.value, GraphNode.VERIFY_TASK_COMPLETION.value)
         graph.add_conditional_edges(
-            "verify_task_completion",
+            GraphNode.VERIFY_TASK_COMPLETION.value,
             self.task_completion_route,
             {
-                "passed": "pre_answer_verify",
-                "continue": "build_repair_task",
-                "need_user": "build_verification_clarification",
-                "handoff": "build_handoff_answer",
-                "failed": "fallback_answer",
+                TaskCompletionRoute.PASSED: GraphNode.PRE_ANSWER_VERIFY.value,
+                TaskCompletionRoute.CONTINUE: GraphNode.BUILD_REPAIR_TASK.value,
+                TaskCompletionRoute.NEED_USER: GraphNode.BUILD_VERIFICATION_CLARIFICATION.value,
+                TaskCompletionRoute.HANDOFF: GraphNode.BUILD_HANDOFF_ANSWER.value,
+                TaskCompletionRoute.FAILED: GraphNode.FALLBACK_ANSWER.value,
             },
         )
-        graph.add_edge("build_repair_task", "dispatch_repair_agent")
-        graph.add_edge("dispatch_repair_agent", "check_human_approval_required") # 有没有写工具需要审批
-        graph.add_edge("build_verification_clarification", "pre_answer_verify")
-        graph.add_edge("build_handoff_answer", "pre_answer_verify")
+        graph.add_edge(GraphNode.BUILD_REPAIR_TASK.value, GraphNode.DISPATCH_REPAIR_AGENT.value)
+        graph.add_edge(GraphNode.DISPATCH_REPAIR_AGENT.value, GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value) # 有没有写工具需要审批
+        graph.add_edge(GraphNode.BUILD_VERIFICATION_CLARIFICATION.value, GraphNode.PRE_ANSWER_VERIFY.value)
+        graph.add_edge(GraphNode.BUILD_HANDOFF_ANSWER.value, GraphNode.PRE_ANSWER_VERIFY.value)
         graph.add_conditional_edges(
-            "create_approval_request",
+            GraphNode.CREATE_APPROVAL_REQUEST.value,
             self.after_create_approval_route,
-            {"submit": "submit_approval_request", "manual": "pre_answer_verify"},
+            {
+                AfterApprovalCreateRoute.SUBMIT: GraphNode.SUBMIT_APPROVAL_REQUEST.value,
+                AfterApprovalCreateRoute.MANUAL: GraphNode.PRE_ANSWER_VERIFY.value,
+            },
         )
-        graph.add_edge("submit_approval_request", "pause_for_approval")
-        graph.add_edge("pause_for_approval", "pre_answer_verify")
+        graph.add_edge(GraphNode.SUBMIT_APPROVAL_REQUEST.value, GraphNode.PAUSE_FOR_APPROVAL.value)
+        graph.add_edge(GraphNode.PAUSE_FOR_APPROVAL.value, GraphNode.PRE_ANSWER_VERIFY.value)
         graph.add_conditional_edges(
-            "pre_answer_verify",
+            GraphNode.PRE_ANSWER_VERIFY.value,
             self.compliance_route,
             {
-                "passed": "save_assistant_message",
-                "retry": "regenerate_compliant_answer",
-                "fallback": "fallback_answer",
+                VerificationRoute.PASSED: GraphNode.SAVE_ASSISTANT_MESSAGE.value,
+                VerificationRoute.RETRY: GraphNode.REGENERATE_COMPLIANT_ANSWER.value,
+                VerificationRoute.FALLBACK: GraphNode.FALLBACK_ANSWER.value,
             },
         )
-        graph.add_edge("regenerate_compliant_answer", "pre_answer_verify")
-        graph.add_edge("fallback_answer", "save_assistant_message")
-        graph.add_edge("save_assistant_message", "compress_short_memory")
-        graph.add_edge("compress_short_memory", "finalize_response")
-        graph.add_edge("finalize_response", END)
+        graph.add_edge(GraphNode.REGENERATE_COMPLIANT_ANSWER.value, GraphNode.PRE_ANSWER_VERIFY.value)
+        graph.add_edge(GraphNode.FALLBACK_ANSWER.value, GraphNode.SAVE_ASSISTANT_MESSAGE.value)
+        graph.add_edge(GraphNode.SAVE_ASSISTANT_MESSAGE.value, GraphNode.COMPRESS_SHORT_MEMORY.value)
+        graph.add_edge(GraphNode.COMPRESS_SHORT_MEMORY.value, GraphNode.FINALIZE_RESPONSE.value)
+        graph.add_edge(GraphNode.FINALIZE_RESPONSE.value, END)
         return graph.compile(checkpointer=self.checkpointer)
 
     async def route_entry(self, state: AgentGraphState) -> dict[str, Any]:
-        return {"graph_path": self._append_path(state, "route_entry")}
+        return {"graph_path": self._append_path(state, GraphNode.ROUTE_ENTRY)}
 
     def entry_route(self, state: AgentGraphState) -> str:
         """
@@ -242,24 +267,27 @@ class AgentGraphFactory:
         return RoutePolicy.route_entry(state)
 
     async def load_session(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "load_session")
+        node = GraphNode.LOAD_SESSION
+        self._log_node_enter(state, node)
         session = await self.session_manager.load_session(state["session_key"])
-        self._log_node_exit(state, "load_session")
+        self._log_node_exit(state, node)
         return {
             "recent_messages": session["recent_messages"],
             "short_summary": session["short_summary"],
             "retry_count": state.get("retry_count", 0),
-            "graph_path": self._append_path(state, "load_session"),
+            "graph_path": self._append_path(state, node),
         }
 
     async def save_user_message(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "save_user_message")
+        node = GraphNode.SAVE_USER_MESSAGE
+        self._log_node_enter(state, node)
         updates = await self.message_commit_handler.save_user_message(state)
-        self._log_node_exit(state, "save_user_message")
-        return {**updates, "graph_path": self._append_path(state, "save_user_message")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def query_rewrite(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "query_rewrite")
+        node = GraphNode.QUERY_REWRITE
+        self._log_node_enter(state, node)
         result = await self.query_rewrite_node.rewrite(
             original_query=state["original_query"],
             recent_messages=state.get("recent_messages", []),
@@ -268,7 +296,7 @@ class AgentGraphFactory:
             request_id=state.get("request_id"),
             trace_id=state.get("trace_id"),
         )
-        self._log_node_exit(state, "query_rewrite")
+        self._log_node_exit(state, node)
         # 实体状态只能通过 build_entity_state_updates 同步写回：
         # entity_bag 是 canonical state，entities 只是由它派生的兼容视图。
         # Graph 节点不得各自用 dict merge 维护第二份实体状态。
@@ -286,11 +314,12 @@ class AgentGraphFactory:
             "query_rewrite_decision_trace": result.decision_trace,
             "query_rewrite_llm_status": result.llm_status,
             "query_rewrite_fallback_reason": result.fallback_reason,
-            "graph_path": self._append_path(state, "query_rewrite"),
+            "graph_path": self._append_path(state, node),
         }
 
     async def intent_recognition(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "intent_recognition")
+        node = GraphNode.INTENT_RECOGNITION
+        self._log_node_enter(state, node)
         agent_summaries = [self._agent_card_summary(card) for card in self.agent_card_loader.list_available_agents()]
         result = await self.intent_recognition_node.recognize(
             original_query=state["original_query"],
@@ -303,7 +332,7 @@ class AgentGraphFactory:
             trace_id=state.get("trace_id"),
             session_key=state.get("session_key"),
         )
-        self._log_node_exit(state, "intent_recognition")
+        self._log_node_exit(state, node)
         # IntentRecognitionNode 只返回 intent/sub_intent 与澄清信息。
         # canonical 实体已由 query_rewrite 写入，意图识别节点不能再次修改 entity_bag。
         return {
@@ -316,11 +345,12 @@ class AgentGraphFactory:
             "intent_decision_trace": result.decision_trace,
             "intent_llm_status": result.llm_status,
             "intent_fallback_reason": result.fallback_reason,
-            "graph_path": self._append_path(state, "intent_recognition"),
+            "graph_path": self._append_path(state, node),
         }
 
     async def build_orchestrator_context(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "build_orchestrator_context")
+        node = GraphNode.BUILD_ORCHESTRATOR_CONTEXT
+        self._log_node_enter(state, node)
         context = await self.context_builder.build_for_orchestrator(
             original_query=state["original_query"],
             rewritten_query=state.get("rewritten_query", state["original_query"]),
@@ -333,16 +363,17 @@ class AgentGraphFactory:
             short_summary=state.get("short_summary"),
             auth_context=state.get("auth_context"),
         )
-        self._log_node_exit(state, "build_orchestrator_context")
+        self._log_node_exit(state, node)
         # OrchestratorContext 是给后续路由和子 Agent 的结构化父上下文，
         # 不是 Prompt 拼接字符串。后续节点应优先消费这里的字段，避免重复查库和重复解析。
         return {
             "orchestrator_context": context.model_dump(),
-            "graph_path": self._append_path(state, "build_orchestrator_context"),
+            "graph_path": self._append_path(state, node),
         }
 
     async def select_agent(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "select_agent")
+        node = GraphNode.SELECT_AGENT
+        self._log_node_enter(state, node)
         selection = await self.agent_selection_node.select(
             intent=state.get("intent", "unknown"),
             sub_intent=state.get("sub_intent"),
@@ -359,7 +390,7 @@ class AgentGraphFactory:
         # 检查 agent 可用性，通过 agent card 的 access_policy 进行检查，配合AuthContext.Principal
         access_decision = self._check_agent_access(state, selected_card)
         if not access_decision.get("allowed", True):
-            self._log_node_exit(state, "select_agent")
+            self._log_node_exit(state, node)
             return {
                 "agent_selection_summary": self._agent_selection_summary(selection),
                 "selected_agent": selection.selected_agent,
@@ -370,9 +401,9 @@ class AgentGraphFactory:
                 "agent_selection_decision_trace": selection.decision_trace,
                 "agent_selection_llm_status": selection.llm_status,
                 "agent_selection_fallback_reason": selection.fallback_reason,
-                "graph_path": self._append_path(state, "select_agent"),
+                "graph_path": self._append_path(state, node),
             }
-        self._log_node_exit(state, "select_agent")
+        self._log_node_exit(state, node)
         return {
             "agent_selection_summary": self._agent_selection_summary(selection),
             "selected_agent": selection.selected_agent,
@@ -382,7 +413,7 @@ class AgentGraphFactory:
             "agent_selection_decision_trace": selection.decision_trace,
             "agent_selection_llm_status": selection.llm_status,
             "agent_selection_fallback_reason": selection.fallback_reason,
-            "graph_path": self._append_path(state, "select_agent"),
+            "graph_path": self._append_path(state, node),
         }
 
     async def dispatch_agent(self, state: AgentGraphState) -> dict[str, Any]:
@@ -410,7 +441,8 @@ class AgentGraphFactory:
         → create_approval_request
         → pause_for_approval
         ”"""
-        self._log_node_enter(state, "dispatch_agent")
+        node = GraphNode.DISPATCH_AGENT
+        self._log_node_enter(state, node)
         context = OrchestratorContext(**state["orchestrator_context"])
         selected_card = self._selected_agent_card(state)
         task = self.task_assembler.assemble(
@@ -421,11 +453,11 @@ class AgentGraphFactory:
             trace_id=state["trace_id"],
         )
         result = await self.dispatch_agent_node.dispatch(task, context)
-        self._log_node_exit(state, "dispatch_agent")
+        self._log_node_exit(state, node)
         updates: dict[str, Any] = {
             "subagent_result": result.model_dump(),
             "answer": result.answer,
-            "graph_path": self._append_path(state, "dispatch_agent"),
+            "graph_path": self._append_path(state, node),
         }
         updates.update(self._skill_pin_updates(result.model_dump(), execution_mode="initial"))
         result_metadata = result.metadata or {}
@@ -442,55 +474,61 @@ class AgentGraphFactory:
 
     async def resume_approved_tool(self, state: AgentGraphState) -> dict[str, Any]:
         """Resume a paused tool loop after one pending write tool was approved."""
-        self._log_node_enter(state, "resume_approved_tool")
+        node = GraphNode.RESUME_APPROVED_TOOL
+        self._log_node_enter(state, node)
         updates = await self.approval_handler.resume_approved_tool(state)
         subagent_result = updates.get("subagent_result") if isinstance(updates.get("subagent_result"), dict) else {}
         updates.update(self._skill_pin_updates(subagent_result, execution_mode=state.get("execution_mode") or "initial"))
-        self._log_node_exit(state, "resume_approved_tool")
-        return {**updates, "graph_path": self._append_path(state, "resume_approved_tool")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def check_human_approval_required(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "check_human_approval_required")
+        node = GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED
+        self._log_node_enter(state, node)
         updates = self.approval_handler.check_required(state)
-        self._log_node_exit(state, "check_human_approval_required")
-        return {**updates, "graph_path": self._append_path(state, "check_human_approval_required")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
-    def human_approval_route(self, state: AgentGraphState) -> str:
+    def human_approval_route(self, state: AgentGraphState) -> ApprovalRequiredRoute:
         if state.get("approval_required"):
-            return "required"
+            return ApprovalRequiredRoute.REQUIRED
         if self._should_skip_task_completion(state):
-            return "skip_completion"
-        return "not_required"
+            return ApprovalRequiredRoute.SKIP_COMPLETION
+        return ApprovalRequiredRoute.NOT_REQUIRED
 
     async def collect_verification_evidence(self, state: AgentGraphState) -> dict[str, Any]:
+        node = GraphNode.COLLECT_VERIFICATION_EVIDENCE
         if self.task_completion_handler is None:
-            return {"graph_path": self._append_path(state, "collect_verification_evidence")}
-        self._log_node_enter(state, "collect_verification_evidence")
+            return {"graph_path": self._append_path(state, node)}
+        self._log_node_enter(state, node)
         updates = await self.task_completion_handler.collect_verification_evidence(state)
-        self._log_node_exit(state, "collect_verification_evidence")
-        return {**updates, "graph_path": self._append_path(state, "collect_verification_evidence")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def verify_task_completion(self, state: AgentGraphState) -> dict[str, Any]:
+        node = GraphNode.VERIFY_TASK_COMPLETION
         if self.task_completion_handler is None:
-            return {"graph_path": self._append_path(state, "verify_task_completion")}
-        self._log_node_enter(state, "verify_task_completion")
+            return {"graph_path": self._append_path(state, node)}
+        self._log_node_enter(state, node)
         updates = await self.task_completion_handler.verify_task_completion(state)
-        self._log_node_exit(state, "verify_task_completion")
-        return {**updates, "graph_path": self._append_path(state, "verify_task_completion")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     def task_completion_route(self, state: AgentGraphState) -> str:
         return RoutePolicy.route_task_completion(state)
 
     async def build_repair_task(self, state: AgentGraphState) -> dict[str, Any]:
+        node = GraphNode.BUILD_REPAIR_TASK
         if self.task_completion_handler is None:
-            return {"graph_path": self._append_path(state, "build_repair_task")}
-        self._log_node_enter(state, "build_repair_task")
+            return {"graph_path": self._append_path(state, node)}
+        self._log_node_enter(state, node)
         updates = self.task_completion_handler.build_repair_task(state)
-        self._log_node_exit(state, "build_repair_task")
-        return {**updates, "graph_path": self._append_path(state, "build_repair_task")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def dispatch_repair_agent(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "dispatch_repair_agent")
+        node = GraphNode.DISPATCH_REPAIR_AGENT
+        self._log_node_enter(state, node)
         context = self._orchestrator_context_from_state(state)
         selected_card = self._selected_agent_card(state)
         task = self.repair_task_builder.build(
@@ -507,7 +545,7 @@ class AgentGraphFactory:
             "answer": result.answer,
             "previous_subagent_results": prior_results[-5:],
             "execution_mode": "repair",
-            "graph_path": self._append_path(state, "dispatch_repair_agent"),
+            "graph_path": self._append_path(state, node),
         }
         updates.update(self._skill_pin_updates(result.model_dump(), execution_mode="repair"))
         result_metadata = result.metadata or {}
@@ -520,101 +558,113 @@ class AgentGraphFactory:
                     "missing_required_entities": result_metadata.get("missing_required_entities") or [],
                 }
             )
-        self._log_node_exit(state, "dispatch_repair_agent")
+        self._log_node_exit(state, node)
         return updates
 
     async def build_verification_clarification(self, state: AgentGraphState) -> dict[str, Any]:
+        node = GraphNode.BUILD_VERIFICATION_CLARIFICATION
         if self.task_completion_handler is None:
-            return {"graph_path": self._append_path(state, "build_verification_clarification")}
-        self._log_node_enter(state, "build_verification_clarification")
+            return {"graph_path": self._append_path(state, node)}
+        self._log_node_enter(state, node)
         updates = self.task_completion_handler.build_verification_clarification(state)
-        self._log_node_exit(state, "build_verification_clarification")
-        return {**updates, "graph_path": self._append_path(state, "build_verification_clarification")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def build_handoff_answer(self, state: AgentGraphState) -> dict[str, Any]:
+        node = GraphNode.BUILD_HANDOFF_ANSWER
         if self.task_completion_handler is None:
-            return {"graph_path": self._append_path(state, "build_handoff_answer")}
-        self._log_node_enter(state, "build_handoff_answer")
+            return {"graph_path": self._append_path(state, node)}
+        self._log_node_enter(state, node)
         updates = self.task_completion_handler.build_handoff_answer(state)
-        self._log_node_exit(state, "build_handoff_answer")
-        return {**updates, "graph_path": self._append_path(state, "build_handoff_answer")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     def after_create_approval_route(self, state: AgentGraphState) -> str:
         return RoutePolicy.route_after_create_approval(state)
 
     async def create_approval_request(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "create_approval_request")
+        node = GraphNode.CREATE_APPROVAL_REQUEST
+        self._log_node_enter(state, node)
         updates = await self.approval_handler.create_request(state)
-        self._log_node_exit(state, "create_approval_request")
-        return {**updates, "graph_path": self._append_path(state, "create_approval_request")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def submit_approval_request(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "submit_approval_request")
+        node = GraphNode.SUBMIT_APPROVAL_REQUEST
+        self._log_node_enter(state, node)
         updates = await self.approval_handler.submit_request(state)
-        self._log_node_exit(state, "submit_approval_request")
-        return {**updates, "graph_path": self._append_path(state, "submit_approval_request")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def pause_for_approval(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "pause_for_approval")
+        node = GraphNode.PAUSE_FOR_APPROVAL
+        self._log_node_enter(state, node)
         updates = await self.approval_handler.pause(state)
-        self._log_node_exit(state, "pause_for_approval")
-        return {**updates, "graph_path": self._append_path(state, "pause_for_approval")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def pre_answer_verify(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "pre_answer_verify")
+        node = GraphNode.PRE_ANSWER_VERIFY
+        self._log_node_enter(state, node)
         updates = await self.verification_handler.pre_answer_verify(state)
-        updates["graph_path"] = self._append_path(state, "pre_answer_verify")
-        self._log_node_exit(state, "pre_answer_verify")
+        updates["graph_path"] = self._append_path(state, node)
+        self._log_node_exit(state, node)
         return updates
 
     def compliance_route(self, state: AgentGraphState) -> str:
         return RoutePolicy.route_verification(state)
 
     async def regenerate_compliant_answer(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "regenerate_compliant_answer")
+        node = GraphNode.REGENERATE_COMPLIANT_ANSWER
+        self._log_node_enter(state, node)
         safe_answer = "已完成分析，但原始回复未通过最终验证。我已改写为不暴露原始工具输出或敏感字段的安全摘要。"
-        self._log_node_exit(state, "regenerate_compliant_answer")
+        self._log_node_exit(state, node)
         return {
             "answer": safe_answer,
             "retry_count": state.get("retry_count", 0) + 1,
-            "graph_path": self._append_path(state, "regenerate_compliant_answer"),
+            "graph_path": self._append_path(state, node),
         }
 
     async def fallback_answer(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "fallback_answer")
-        self._log_node_exit(state, "fallback_answer")
+        node = GraphNode.FALLBACK_ANSWER
+        self._log_node_enter(state, node)
+        self._log_node_exit(state, node)
         return {
             "answer": "当前回复未通过最终验证，已拦截原始内容。请补充更具体的业务问题，我会在不暴露敏感信息的前提下重新说明。",
-            "graph_path": self._append_path(state, "fallback_answer"),
+            "graph_path": self._append_path(state, node),
         }
 
     async def save_assistant_message(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "save_assistant_message")
+        node = GraphNode.SAVE_ASSISTANT_MESSAGE
+        self._log_node_enter(state, node)
         updates = await self.message_commit_handler.save_assistant_message(state)
-        self._log_node_exit(state, "save_assistant_message")
-        return {**updates, "graph_path": self._append_path(state, "save_assistant_message")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def build_clarification_answer(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "build_clarification_answer")
+        node = GraphNode.BUILD_CLARIFICATION_ANSWER
+        self._log_node_enter(state, node)
         updates = self.clarification_handler.build_answer(state)
-        self._log_node_exit(state, "build_clarification_answer")
-        return {**updates, "graph_path": self._append_path(state, "build_clarification_answer")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     # 路由函数
     def clarification_route(self, state: AgentGraphState) -> str:
         return RoutePolicy.route_clarification(state)
 
     async def compress_short_memory(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "compress_short_memory")
+        node = GraphNode.COMPRESS_SHORT_MEMORY
+        self._log_node_enter(state, node)
         updates = await self.memory_commit_handler.compress_short_memory(state)
-        self._log_node_exit(state, "compress_short_memory")
-        return {**updates, "graph_path": self._append_path(state, "compress_short_memory")}
+        self._log_node_exit(state, node)
+        return {**updates, "graph_path": self._append_path(state, node)}
 
     async def finalize_response(self, state: AgentGraphState) -> dict[str, Any]:
-        self._log_node_enter(state, "finalize_response")
+        node = GraphNode.FINALIZE_RESPONSE
+        self._log_node_enter(state, node)
         log_event(
-            "response_finalized",
-            **self._log_context(state, "finalize_response"),
+            RuntimeEvent.RESPONSE_FINALIZED,
+            **self._log_context(state, node),
             message="Graph response finalized",
             data={
                 "intent": state.get("intent"),
@@ -622,42 +672,42 @@ class AgentGraphFactory:
                 "answer_preview": preview_text(state.get("answer", "")),
             },
         )
-        self._log_node_exit(state, "finalize_response")
-        return {"graph_path": self._append_path(state, "finalize_response")}
+        self._log_node_exit(state, node)
+        return {"graph_path": self._append_path(state, node)}
 
     @staticmethod
-    def _append_path(state: AgentGraphState, node: str) -> list[str]:
-        return [*state.get("graph_path", []), node]
+    def _append_path(state: AgentGraphState, node: GraphNode | str) -> list[str]:
+        return [*state.get("graph_path", []), str(node)]
 
     @staticmethod
-    def _log_context(state: AgentGraphState, node: str) -> dict[str, Any]:
+    def _log_context(state: AgentGraphState, node: GraphNode | str) -> dict[str, Any]:
         return {
             "request_id": state.get("request_id"),
             "trace_id": state.get("trace_id"),
             "session_key": state.get("session_key"),
             "user_id": state.get("user_id"),
             "tenant_id": state.get("tenant_id"),
-            "node": node,
+            "node": str(node),
         }
 
-    def _log_node_enter(self, state: AgentGraphState, node: str) -> None:
+    def _log_node_enter(self, state: AgentGraphState, node: GraphNode | str) -> None:
         if not self._should_log_graph_node_events():
             return
         log_event(
-            "langgraph_node_enter",
+            RuntimeEvent.LANGGRAPH_NODE_ENTER,
             **self._log_context(state, node),
             message=f"Enter LangGraph node {node}",
-            data={"node": node},
+            data={"node": str(node)},
         )
 
-    def _log_node_exit(self, state: AgentGraphState, node: str) -> None:
+    def _log_node_exit(self, state: AgentGraphState, node: GraphNode | str) -> None:
         if not self._should_log_graph_node_events():
             return
         log_event(
-            "langgraph_node_exit",
+            RuntimeEvent.LANGGRAPH_NODE_EXIT,
             **self._log_context(state, node),
             message=f"Exit LangGraph node {node}",
-            data={"node": node},
+            data={"node": str(node)},
         )
 
     def _check_agent_access(self, state: AgentGraphState, card: AgentCard) -> dict[str, Any]:

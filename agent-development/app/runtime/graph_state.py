@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from app.schemas.enums.query import RewriteType
+
 
 GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
     "request_id": {"owner": "request_identity", "source": "RequestAdapter / AgentOrchestrator", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
@@ -79,6 +81,12 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
         "persistence": "none",
     },
     "verification_evidence": {"owner": "completion_evidence", "source": "collect_verification_evidence", "kind": "runtime", "persistence": "none"},
+    "task_completion_verification_context": {
+        "owner": "completion_evidence",
+        "source": "collect_verification_evidence",
+        "kind": "runtime",
+        "persistence": "none",
+    },
     "repair_plan": {"owner": "repair_control", "source": "verify_task_completion", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "repair_round": {"owner": "repair_control", "source": "build_repair_task", "kind": "checkpoint", "persistence": "checkpoint_snapshot"},
     "repair_history": {"owner": "repair_audit", "source": "verify_task_completion", "kind": "resume", "persistence": "resume_state"},
@@ -116,8 +124,15 @@ GRAPH_STATE_FIELD_AUTHORITY: dict[str, dict[str, str]] = {
 
 
 class AgentGraphState(TypedDict, total=False):
-    """贯穿 LangGraph 节点的共享状态。"""
+    """贯穿 LangGraph 节点的共享状态。
 
+    字段的 owner/source/persistence 以 `GRAPH_STATE_FIELD_AUTHORITY` 为准。
+    这里保留字段类型和关键分组，不把 State Key 机械抽成常量，避免只是移动字符串。
+    写入 State 的复杂 Pydantic 模型应使用 `model_dump(mode="json")`，
+    读取时在边界处 `model_validate(...)` 恢复强类型。
+    """
+
+    # 请求身份与会话身份：由 RequestAdapter / Orchestrator 初始化，贯穿全链路。
     request_id: str
     trace_id: str
     tenant_id: str
@@ -129,9 +144,11 @@ class AgentGraphState(TypedDict, total=False):
     auth_context: dict[str, Any] | None
     result_callback_url: str | None
 
+    # 问题理解阶段：Query Rewrite 负责 rewritten_query/entity_bag，
+    # Intent Recognition 只负责 intent/sub_intent，不再维护第二份实体状态。
     original_query: str
     rewritten_query: str
-    rewrite_type: str
+    rewrite_type: RewriteType
     query_rewrite_decision_trace: dict[str, Any]
     query_rewrite_llm_status: str | None
     query_rewrite_fallback_reason: str | None
@@ -150,9 +167,11 @@ class AgentGraphState(TypedDict, total=False):
     clarification_source: str | None
     missing_required_entities: list[str]
 
+    # 会话上下文快照：用于 Query Rewrite / Intent / ContextBuilder，不长期进入 checkpoint。
     recent_messages: list[dict[str, Any]]
     short_summary: str | None
 
+    # 路由与执行：Agent/Skill pinning、子 Agent 结果、任务完成度验收和 Repair 控制。
     orchestrator_context: dict[str, Any]
     agent_selection_summary: dict[str, Any]
     agent_selection_decision_trace: dict[str, Any]
@@ -164,6 +183,7 @@ class AgentGraphState(TypedDict, total=False):
     subagent_result: dict[str, Any] | None
     task_completion_verification_result: dict[str, Any] | None
     verification_evidence: list[dict[str, Any]]
+    task_completion_verification_context: dict[str, Any] | None
     repair_plan: dict[str, Any] | None
     repair_round: int
     repair_history: list[dict[str, Any]]
@@ -173,6 +193,8 @@ class AgentGraphState(TypedDict, total=False):
     original_subagent_result: dict[str, Any] | None
     previous_subagent_results: list[dict[str, Any]]
     pre_answer_verification_result: dict[str, Any] | None
+
+    # 审批链路：pending_* 是恢复工具循环所需快照；approval_id/status 是对外摘要。
     approval_required: bool
     approval_payloads: list[dict[str, Any]]
     approval_id: str | None
@@ -188,8 +210,11 @@ class AgentGraphState(TypedDict, total=False):
     next_approval_id: str | None
     approval_depth: int
     manual_intervention_required: bool
+
+    # 最终外发：retry_count 是最终合规重试次数，不是任务 Repair 轮次。
     retry_count: int
     answer: str
 
+    # 诊断字段：graph_path 保留稳定节点名字符串，便于日志和 checkpoint 排查。
     error: str | None
     graph_path: list[str]

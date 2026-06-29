@@ -12,6 +12,8 @@ from app.prompts.loader import PromptLoader, default_prompt_loader
 from app.runtime.context_builder import ContextBuilder
 from app.observability.logger import log_event, preview_text
 from app.schemas.agent_card import AgentCard
+from app.schemas.enums.execution import ExecutionMode
+from app.schemas.enums.tool import RiskLevel, ToolStoppedReason
 from app.schemas.runtime import OrchestratorContext, SubAgentContext
 from app.schemas.subagent import SubAgentResult, SubAgentTask
 from app.tools.executor import ToolExecutor
@@ -62,7 +64,7 @@ class BaseSubAgent(ABC):
                 task_id=task.task_id,
                 answer=sub_context.clarification_question or "请补充必要信息后我再继续处理。",
                 confidence=0.4,
-                risk_level="low",
+                risk_level=RiskLevel.LOW,
                 metadata={
                     "clarification": True,
                     "clarification_source": "skill_selection" if sub_context.no_skill_blocked else "skill_required_entities",
@@ -88,7 +90,7 @@ class BaseSubAgent(ABC):
                 answer=sub_context.clarification_question
                 or "当前 Agent 没有匹配到可执行的业务技能，暂不继续调用工具。请补充更明确的业务场景或联系管理员配置对应 Skill。",
                 confidence=0.2,
-                risk_level="low",
+                risk_level=RiskLevel.LOW,
                 metadata={
                     "no_skill_blocked": True,
                     "no_skill_policy": sub_context.no_skill_policy,
@@ -269,7 +271,7 @@ class BaseSubAgent(ABC):
     ) -> SubAgentResult:
         """Convert a generic tool loop result into the SubAgentResult contract."""
         evidence = [self._tool_call_to_evidence(item) for item in run_result.tool_calls]
-        needs_approval = run_result.needs_human_approval or run_result.stopped_reason == "human_approval_required"
+        needs_approval = run_result.needs_human_approval or run_result.stopped_reason is ToolStoppedReason.HUMAN_APPROVAL_REQUIRED
         answer = (
             "该操作需要人工审批，当前尚未执行。"
             if needs_approval
@@ -285,13 +287,13 @@ class BaseSubAgent(ABC):
             tool_calls=run_result.tool_calls,
             recommendation=None,
             responsibility=None,
-            confidence=0.88 if run_result.stopped_reason == "final" else 0.3,
+            confidence=0.88 if run_result.stopped_reason is ToolStoppedReason.FINAL else 0.3,
             needs_human_approval=needs_approval,
             approval_payloads=[run_result.approval_payload] if run_result.approval_payload else [],
-            risk_level="high" if needs_approval else "medium" if run_result.stopped_reason != "final" else "low",
+            risk_level=RiskLevel.HIGH if needs_approval else RiskLevel.MEDIUM if run_result.stopped_reason is not ToolStoppedReason.FINAL else RiskLevel.LOW,
             metadata={
                 "tool_calling_runner": {
-                    "stopped_reason": run_result.stopped_reason,
+                    "stopped_reason": str(run_result.stopped_reason),
                     "iterations": run_result.iterations,
                     "error": run_result.error,
                     "visible_tools": self.get_available_tool_names(agent_card),
@@ -340,7 +342,7 @@ class BaseSubAgent(ABC):
             return result
 
         missing_tool_arguments = self._missing_tool_arguments(run_result)
-        if not missing_tool_arguments and run_result.stopped_reason != "final":
+        if not missing_tool_arguments and run_result.stopped_reason is not ToolStoppedReason.FINAL:
             return result
 
         skill_name = str((sub_context.selected_skill_metadata or {}).get("name") or sub_context.selected_skill_id or "当前业务")
@@ -377,7 +379,7 @@ class BaseSubAgent(ABC):
             update={
                 "answer": question,
                 "confidence": 0.4,
-                "risk_level": "low",
+                "risk_level": RiskLevel.LOW,
                 "metadata": metadata,
             }
         )
@@ -429,7 +431,7 @@ class BaseSubAgent(ABC):
 
     @staticmethod
     def _repair_context_for_prompt(sub_context: SubAgentContext) -> str:
-        if sub_context.execution_mode != "repair":
+        if sub_context.execution_mode != ExecutionMode.REPAIR:
             return "无"
         payload = {
             "repair_round": sub_context.repair_round,

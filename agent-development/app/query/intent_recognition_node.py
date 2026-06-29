@@ -28,6 +28,8 @@ from app.runtime.failure_codes import (
     LLM_STATUS_PROVIDER_ERROR,
     LLM_STATUS_SUCCESS,
 )
+from app.schemas.enums.llm import LLMScene
+from app.schemas.enums.query import RewriteType
 from app.schemas.entities import ConversationWindow
 from app.schemas.intent import IntentResult
 
@@ -52,7 +54,7 @@ class IntentRecognitionNode:
         original_query: str,
         rewritten_query: str,
         entities: dict[str, Any] | None = None,
-        rewrite_type: str | None = None,
+        rewrite_type: RewriteType | None = None,
         conversation_window: dict[str, Any] | None = None,
         agent_card_summaries: list[dict[str, Any]] | None = None,
         request_id: str | None = None,
@@ -94,14 +96,14 @@ class IntentRecognitionNode:
         original_query: str,
         rewritten_query: str,
         entities: dict[str, Any],
-        rewrite_type: str,
+        rewrite_type: RewriteType,
         window: ConversationWindow,
         agent_card_summaries: list[dict[str, Any]],
         request_id: str | None,
         trace_id: str | None,
         session_key: str | None,
     ) -> tuple[IntentResult | None, LLMAttempt]:
-        prompt_trace = self.prompt_loader.scene_trace("intent_recognition")
+        prompt_trace = self.prompt_loader.scene_trace(str(LLMScene.INTENT_RECOGNITION))
         if not self._should_use_llm_json():
             return None, LLMAttempt(
                 llm_status=LLM_STATUS_DISABLED,
@@ -117,16 +119,16 @@ class IntentRecognitionNode:
                 messages=[
                     {
                         "role": "system",
-                        "content": self.prompt_loader.render_scene_system("intent_recognition"),
+                        "content": self.prompt_loader.render_scene_system(str(LLMScene.INTENT_RECOGNITION)),
                     },
                     {
                         "role": "user",
                         "content": self.prompt_loader.render_scene_user(
-                            "intent_recognition",
+                            str(LLMScene.INTENT_RECOGNITION),
                             original_query=original_query,
                             rewritten_query=rewritten_query,
                             entities=entities,
-                            rewrite_type=rewrite_type,
+                            rewrite_type=str(rewrite_type),
                             conversation_window=window.model_dump(),
                             intent_taxonomy=intent_taxonomy,
                             allowed_intents=allowed_intents,
@@ -136,7 +138,7 @@ class IntentRecognitionNode:
                     },
                 ],
                 tools=None,
-                scene="intent_recognition",
+                scene=LLMScene.INTENT_RECOGNITION,
                 request_id=request_id,
                 trace_id=trace_id,
                 session_key=session_key,
@@ -238,7 +240,7 @@ class IntentRecognitionNode:
         original_query: str,
         rewritten_query: str,
         entities: dict[str, Any],
-        rewrite_type: str,
+        rewrite_type: RewriteType,
         llm_attempt: LLMAttempt,
     ) -> IntentResult:
         """LLM 不可用、输出非法或置信不足时的确定性意图兜底。
@@ -296,7 +298,7 @@ class IntentRecognitionNode:
                 "source": "intent_recognition",
                 "method": "rule_fallback",
                 **self.intent_fallback_policy.trace(),
-                "rewrite_type": rewrite_type,
+                "rewrite_type": str(rewrite_type),
                 "matched_keywords": decision.matched_keywords,
                 "matched_entity_hints": decision.matched_entity_hints,
                 **llm_attempt.trace(source="intent_recognition"),

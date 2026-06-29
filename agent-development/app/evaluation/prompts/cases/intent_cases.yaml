@@ -1,3 +1,21 @@
+# 18个cases
+# 主要覆盖：
+#
+# 故障排查；
+# 保全可办项目；
+# 退保失败；
+# 保全完成后处理；
+# 退保试算；
+# 批文查询；
+# 保单标准信息；
+# 提交前校验；
+# 上下文追问；
+# 澄清回复；
+# unknown；
+# 小闲聊；
+# 父 intent 明确但 sub_intent 不确定；
+# 多个 sub_intent 歧义时澄清；
+# 缺少执行参数不能降低明确意图置信度。
 suite: intent_taxonomy_v1
 scene: intent_recognition
 cases:

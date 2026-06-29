@@ -7,6 +7,7 @@ from uuid import uuid4
 from app.auth.principal import AuthContext, Principal
 from app.config.settings import get_settings
 from app.observability.logger import log_event, preview_text
+from app.schemas.enums.observability import RuntimeEvent
 from app.schemas.message import ChatRequest, InboundMessage
 
 
@@ -59,7 +60,7 @@ class RequestAdapter:
         trace_id = f"trace_{uuid4().hex}"
 
         log_event(
-            "request_adapted",
+            RuntimeEvent.REQUEST_ADAPTED,
             request_id=request_id,
             trace_id=trace_id,
             session_key=session_key,

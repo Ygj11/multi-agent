@@ -1,6 +1,7 @@
 from app.llm.output_schemas import SCHEMA_REGISTRY
 from app.prompts.loader import PromptLoader
 from app.prompts.manifest import PromptManifest, PROMPTS_ROOT
+from app.schemas.enums.query import RewriteType
 
 
 def test_prompt_manifest_loads_and_validates_assets():
@@ -42,7 +43,7 @@ def test_prompt_loader_renders_scene_templates_and_trace():
         original_query="保全任务完成但没有更新",
         rewritten_query="保全任务完成但没有更新",
         entities={"policy_no": "9200100000458846"},
-        rewrite_type="new_request",
+        rewrite_type=RewriteType.NEW_REQUEST,
         conversation_window={},
         intent_taxonomy=[],
         allowed_intents=["troubleshooting"],

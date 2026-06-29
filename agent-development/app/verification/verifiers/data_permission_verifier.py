@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from app.auth.principal import Principal
+from app.schemas.enums.verification import VerificationAction, VerificationSeverity, VerificationStage
 from app.verification.policies.field_visibility_policy import FieldVisibilityPolicy, FieldVisibilityRule
 from app.verification.schemas import VerificationInput, VerificationResult
 
@@ -25,7 +26,7 @@ class DataPermissionVerifier:
     """按字段可见性策略过滤最终答案。"""
 
     name = "data_permission"
-    stages = ["pre_answer"]
+    stages = [VerificationStage.PRE_ANSWER]
 
     def __init__(self, policy: FieldVisibilityPolicy | None = None) -> None:
         self.policy = policy or FieldVisibilityPolicy.load()
@@ -62,8 +63,8 @@ class DataPermissionVerifier:
                 passed=True,
                 stage=input.stage,
                 verifier_name=self.name,
-                severity="warning",
-                action="patch",
+                severity=VerificationSeverity.WARNING,
+                action=VerificationAction.PATCH,
                 code="data_permission_redacted",
                 patched_output=sanitized,
                 redactions=redactions,
@@ -72,7 +73,7 @@ class DataPermissionVerifier:
             passed=True,
             stage=input.stage,
             verifier_name=self.name,
-            severity="warning" if redactions else "info",
+            severity=VerificationSeverity.WARNING if redactions else VerificationSeverity.INFO,
             redactions=redactions,
         )
 
