@@ -1,6 +1,38 @@
 from __future__ import annotations
 
-"""Agent Eval fixture 注入工具。"""
+"""Agent Eval fixture 注入工具。
+
+Fixture 可以理解成：测试用例事先准备好的输入、返回值和环境配置。
+
+Agent Eval 的测试夹具注入：不改主流程，只把外部审批、真实工具、真实业务状态查询替换成可控的假实现，用来稳定复现评测场景，给 Agent Eval 构造一个可控的测试环境。
+
+它不会把整个 Agent 系统都 Mock 掉，而是保留真实的：
+    LangGraph 主流程；
+    Agent 选择；
+    Skill 选择；
+    ToolCallingRunner；
+    ToolExecutor；
+    权限检查；
+    审批判断；
+    Verify-Repair Loop；
+    日志和状态更新。
+
+整体流程：
+    读取 Eval Case
+        ↓
+    解析 tool_fixtures / approval_fixture / business_state_fixtures
+        ↓
+    AgentEvalFixtureApplier.apply()
+        ↓
+    替换隔离容器中的外部依赖
+        ↓
+    运行真实 Agent Graph
+        ↓
+    收集工具调用、审批提交、验证结果
+        ↓
+    和 Eval Case 预期结果比较
+
+"""
 
 from typing import Any
 

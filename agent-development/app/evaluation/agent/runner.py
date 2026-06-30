@@ -81,6 +81,9 @@ class AgentEvalRunner:
         return suites
 
     async def run(self, suite_name: str | None = None, case_id: str | None = None) -> AgentEvalReport:
+        """agent eval
+
+        """
         suites = self.load_suites()
         if suite_name:
             suites = [suite for suite in suites if suite.suite == suite_name]
@@ -93,10 +96,12 @@ class AgentEvalRunner:
                 cases = [case for case in cases if case.case_id == case_id]
             if case_id and not cases:
                 continue
+            # 执行单个 case
             results = [await self.run_case(suite.suite, case) for case in cases]
             suite_results.append(build_suite_result(suite.suite, results))
         if case_id and not suite_results:
             raise ValueError(f"agent eval case not found: {case_id}")
+        # 把所有 Suite 结果汇总成最终 AgentEvalReport
         return build_report(suite_results)
 
     async def run_case(self, suite: str, case: AgentEvalCase) -> AgentEvalCaseResult:

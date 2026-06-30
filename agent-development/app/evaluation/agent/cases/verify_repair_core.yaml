@@ -2,7 +2,7 @@ suite: verify_repair_core
 description: Core task-completion verify and repair behavior.
 cases:
   - case_id: aftercare_first_pass
-    description: 首轮子 Agent 有工具证据，Completion Verifier 直接 PASS。
+    description: 首轮子 Agent 有工具证据，无需审批、无需 Repair。
     input:
       tenant_id: tenant
       channel: web
@@ -11,6 +11,7 @@ cases:
       messages:
         - role: user
           content: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028"
+    # 脚本规定 Fake LLM 的输出，对应的是 QueryRewriteLLMOutput，而不是原声的llm返回的response.content
     llm_scripted_responses:
       - scene: query_rewrite
         response:
@@ -54,6 +55,7 @@ cases:
             confidence: 0.9
             reasoning_summary: "query_endo_task_record 有成功证据。"
             evidence_ids: []
+    # Fixture 只替换工具最终 Callable
     tool_fixtures:
       - tool_name: query_endo_task_record
         expected_arguments: {apply_seq: "930021042875719"}

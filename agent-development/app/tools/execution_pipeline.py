@@ -127,6 +127,7 @@ class ToolExecutionPipeline:
             return mcp_policy_error
 
         # 6. 写操作、高风险操作或明确审批策略命中时，返回 pending approval，不执行工具。
+        # 如果需要审批，这里不执行工具，而是返回 ToolResult(needs_human_approval=True, error="human_approval_required")
         if self.approval_guard.requires_approval(definition, context.tool_name):
             return self.approval_guard.build_result(
                 agent_name=context.agent_name,

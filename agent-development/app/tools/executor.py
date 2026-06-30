@@ -596,7 +596,23 @@ class ToolExecutor:
         )
 
     def _requires_approval(self, definition, tool_name: str) -> bool:
-        """集中判断工具是否需要人工审批。"""
+        """集中判断工具是否需要人工审批。
+        1、
+        approval_policy_id 来自 app/tools/tool_contracts.yaml，通过 ToolContractCatalog 加载，
+        再由 ToolRegistry._with_contract() 挂到 ToolDefinition.contract 上。当前 yaml 里还没有实际配置这个字段
+        它的意义不是“是否写操作”，而是“走哪套审批策略”。比如以后接公司审批中心，可能不同工具走不同审批流。
+
+        2、
+        operation = definition.operation
+        risk_level = definition.risk_level
+        来源：（1）工具注册时定义，register_private(... operation="notify", risk_level="high")；（2）tool_contracts.yaml
+
+        3、
+        动态发现的 MCP 工具风险未知，MCP server 返回的工具没有明确声明：
+        系统不知道这个 MCP 工具是不是写操作、高风险操作、DDL 操作
+        由配置控制，UNKNOWN_MCP_TOOL_POLICY=allow|approval|deny，执行，审批，拒绝
+
+        """
         contract = getattr(definition, "contract", None)
         if getattr(contract, "approval_policy_id", None):
             return True

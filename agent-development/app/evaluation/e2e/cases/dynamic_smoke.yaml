@@ -1,0 +1,41 @@
+suite: dynamic_smoke
+description: 真实 LLM 动态 E2E smoke cases。默认读取项目 .env；工具可使用 mock 或 staging real。
+cases:
+  - case_id: aftercare_dynamic_smoke
+    description: 保全完成后未更新的端到端动态评估样例。
+    transport: orchestrator
+    llm_mode: real
+    input:
+      tenant_id: tenant
+      channel: web
+      user_id: u1
+      session_id: dynamic_smoke_a
+      messages:
+        - role: user
+          content: "保全任务完成，保单9200100000458846没有更新，受理号930021042875719，保全项001028"
+    settings_overrides:
+      ENABLE_REAL_LLM: "true"
+      ENABLE_MCP_CLIENT: "false"
+      ENABLE_KNOWLEDGE_API: "false"
+      POS_TOOL_MODE: "mock"
+      TROUBLESHOOTING_TOOL_MODE: "mock"
+      ENABLE_TASK_COMPLETION_VERIFY: "true"
+      TASK_COMPLETION_ENABLE_LLM: "true"
+      TASK_COMPLETION_ENABLE_STATE_PROBES: "true"
+    expected:
+      selected_agent: troubleshooting_agent
+      selected_skill_id: troubleshooting_agent.endo_completion_aftercare
+      final_outcome: answered
+      graph_path_must_include:
+        - query_rewrite
+        - intent_recognition
+        - select_agent
+        - dispatch_agent
+        - pre_answer_verify
+        - save_assistant_message
+      tool_calls_must_include:
+        - query_endo_task_record
+      answer_must_include:
+        - 保全
+    tags: [dynamic, smoke, aftercare]
+    risk_level: medium

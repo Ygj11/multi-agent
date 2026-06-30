@@ -235,6 +235,7 @@ class QueryRewriteNode:
                     "model": response.model,
                 },
             )
+        # 对 llm 返回的内容，进行结果校验
         parsed = parse_llm_json_schema(response.content, QueryRewriteLLMOutput)
         parse_trace = {
             **prompt_trace,

@@ -15,9 +15,48 @@ from app.schemas.enums.task_completion import TaskCompletionStatus
 
 
 def compute_metrics(results: list[AgentEvalCaseResult]) -> AgentEvalMetrics:
-    """从 case 结果计算行为级指标。"""
+    """根据多个 Agent Eval Case 的执行结果计算行为级评测指标。
+    该方法主要评估以下几个方面：
+
+    1. Case 整体通过情况；
+    2. Agent 是否首次执行就完成任务；
+    3. Task Completion Verifier 的判断准确性；
+    4. Verify-Repair Loop 的触发频率和修复效果；
+    5. 人工接管、用户补充信息和最终失败情况；
+    6. 工具调用、LLM 调用、执行耗时等成本指标；
+    7. 无限循环、Agent 漂移、Skill 漂移和审批绕过等安全指标。
+
+    Args:
+        results:
+            已执行完成的 Agent Eval Case 结果列表。
+            每个结果中包含：
+            - Case 是否整体通过；
+            - Agent 执行 Trace；
+            - 预期的 Verifier 状态；
+            - 执行耗时；
+            - 工具及 LLM 调用记录；
+            - Repair 和审批等运行状态。
+    Returns:
+        汇总计算后的 AgentEvalMetrics。
+        所有 rate 类型指标的取值范围通常为 0.0～1.0。
+        当对应指标没有可计算样本时，返回 0.0， 避免除零错误。
+    """
+
     total = len(results)
+
+    # 整体评测通过的 Case 数量。
+    #
+    # item.passed 通常表示该 Case 的全部断言均通过，
+    # 不仅仅表示任务完成，还可能包括：
+    # - Agent 选择正确；
+    # - Skill 选择正确；
+    # - 工具和参数正确；
+    # - Graph Path 正确；
+    # - Verifier 状态符合预期；
+    # - 未出现审批绕过或漂移等问题。
     passed = sum(1 for item in results if item.passed)
+
+    # 整体评测失败的 Case 数量。
     failed = total - passed
     if total == 0:
         return AgentEvalMetrics()
