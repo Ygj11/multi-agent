@@ -16,9 +16,6 @@ Rules:
 - Do not reject a candidate only because required_entities are missing; missing entities can be clarified later by skill/entity checks.
 - If the candidates do not provide enough evidence, set need_clarification=true.
 
-Return strict JSON only with these keys:
-- selected_agent
-- confidence
-- reason
-- need_clarification
-- clarification_question
+Return strict JSON only according to this output contract:
+
+{output_contract}

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-"""MainGraph 任务完成度验收与修复节点处理器。"""
+"""MainGraph 任务完成度验收与修复节点处理器。
+
+Completion Verify 关注“子 Agent 是否真的按选中的 Skill SOP 完成了用户任务”，
+它和 pre_answer verification 不同：后者只关心最终答案能不能安全外发。
+"""
 
 from typing import Any
 
@@ -12,7 +16,11 @@ from app.schemas.enums.task_completion import TaskCompletionStatus
 
 
 class TaskCompletionGraphHandler:
-    """封装 Completion Verify 节点内部逻辑，避免 graph.py 承载业务细节。"""
+    """封装 Runtime Verify Loop 的节点内部逻辑。
+
+    Graph 只负责节点编排；这里负责把 state 转成验收上下文、调用 Verifier、
+    记录 repair 历史，并把 Verifier 的结果投影回 Graph State。
+    """
 
     def __init__(
         self,
@@ -28,6 +36,12 @@ class TaskCompletionGraphHandler:
         self.refresh_evidence_before_verify = refresh_evidence_before_verify
 
     async def collect_verification_evidence(self, state: dict[str, Any]) -> dict[str, Any]:
+        """生成本轮验收的 canonical context/evidence。
+
+        这个节点先于 verify_task_completion 执行，目的是把“验收需要看的东西”
+        固化到 state 中：完整 Skill 文本不长期放入 checkpoint，但会在这里被加载
+        并进入本次 Verifier prompt；工具大结果则通过 evidence/tool_log_id 摘要引用。
+        """
         context, selected_skill_version = await self.evidence_collector.collect(state)
         return {
             "task_completion_verification_context": context.model_dump(mode="json"),
@@ -36,6 +50,13 @@ class TaskCompletionGraphHandler:
         }
 
     async def verify_task_completion(self, state: dict[str, Any]) -> dict[str, Any]:
+        """执行任务完成度验收，并产出后续路由所需的结构化结果。
+
+        Verifier 返回 PASS 时只代表“任务完成度通过”，还要继续走 pre_answer_verify；
+        返回 CONTINUE 时必须带 RepairPlan，后续 build_repair_task 会让原子 Agent
+        固定原 selected_skill_id 继续执行；NEED_USER/HUMAN_HANDOFF/FAILED 则进入
+        对应的澄清、人工接管或降级答案路径。
+        """
         context, selected_skill_version = await self._verification_context(state)
         result = await self.verifier_service.verify(context)
         result = self._apply_repair_guards(state, result)
@@ -55,6 +76,12 @@ class TaskCompletionGraphHandler:
         return updates
 
     async def _verification_context(self, state: dict[str, Any]) -> tuple[TaskCompletionVerificationContext, str | None]:
+        """读取 collect 节点生成的验收上下文，必要时才重新收集。
+
+        默认复用 state 中的 context/evidence，避免 collect_verification_evidence 和
+        verify_task_completion 各自重新探测造成上下文漂移。只有显式开启
+        refresh_evidence_before_verify 时，才在验收前刷新状态探针证据。
+        """
         if self.refresh_evidence_before_verify:
             return await self.evidence_collector.collect(state)
         raw_context = state.get("task_completion_verification_context")
@@ -64,6 +91,11 @@ class TaskCompletionGraphHandler:
         return await self.evidence_collector.collect(state)
 
     def build_repair_task(self, state: dict[str, Any]) -> dict[str, Any]:
+        """标记下一轮进入 repair 模式。
+
+        真正的 SubAgentTask 在 RepairTaskBuilder 中构造；这里仅更新 Graph State 中
+        的 execution_mode/repair_round，让后续 dispatch_repair_agent 能知道这是续跑。
+        """
         return {
             "execution_mode": str(ExecutionMode.REPAIR),
             "repair_round": int(state.get("repair_round") or 0) + 1,
@@ -97,6 +129,11 @@ class TaskCompletionGraphHandler:
         state: dict[str, Any],
         result: TaskCompletionVerificationResult,
     ) -> TaskCompletionVerificationResult:
+        """对 Verifier 输出的 CONTINUE 做运行时保护。
+
+        Verifier 只能提出 RepairPlan，不能无限要求系统修复。这里集中处理最大修复
+        轮次和“连续相同计划”两类无进展保护，避免 Runtime Verify Loop 变成无限环。
+        """
         if result.status is not TaskCompletionStatus.CONTINUE:
             return result
         if int(state.get("repair_round") or 0) >= self.max_repair_rounds:

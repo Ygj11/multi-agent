@@ -108,6 +108,7 @@ class BaseSubAgent(ABC):
             self._log_runner_started(task)
             # 子 Agent prompt 只包含已选 Skill 内容、任务、摘要和轻量知识提示。
             # 未选中的 Skill 内容不会进入 prompt，避免 SOP 混淆和上下文膨胀。
+            # messages 是在构建系统和用户提示词
             messages = self.build_messages(
                 task=task,
                 parent_context=parent_context,

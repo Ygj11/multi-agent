@@ -11,7 +11,6 @@ Rules:
 - Treat intent_tags as compatibility and keyword evidence only; they are not the source of legal intent values.
 - If no skill is clearly suitable, choose the strongest rule candidate rather than inventing a new skill.
 
-Return strict JSON only with these keys:
-- selected_skill_id
-- confidence
-- reason
+Return strict JSON only according to this output contract:
+
+{output_contract}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 
 TClient = TypeVar("TClient")
@@ -35,7 +35,7 @@ class AsyncClientLifecycle(Generic[TClient]):
         self._close_client = close_client
         self._client = client
         self._owns_client = client is None or owns_client
-        self._is_client_closed = is_client_closed or (lambda value: bool(getattr(value, "is_closed", False)))
+        self._is_client_closed = is_client_closed or self._default_is_client_closed
         self._lock = asyncio.Lock()
         self._idle = asyncio.Event()
         self._idle.set()
@@ -127,3 +127,11 @@ class AsyncClientLifecycle(Generic[TClient]):
                 raise AsyncClientLifecycleClosedError("owned client was closed outside its lifecycle")
             raise AsyncClientLifecycleClosedError("injected client was closed by its owner")
         return self._client
+
+    @staticmethod
+    def _default_is_client_closed(value: Any) -> bool:
+        """兼容 is_closed 布尔属性和 is_closed() 方法两种 client API。"""
+        marker = getattr(value, "is_closed", False)
+        if callable(marker):
+            return bool(marker())
+        return bool(marker)

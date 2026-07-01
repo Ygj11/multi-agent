@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""Skill-aware 任务完成度 Verifier。"""
+"""Skill-aware 任务完成度 Verifier。
+
+这个 Verifier 是 Runtime Verify Loop 的判定者：它不执行工具、不改参数、不重新
+选择 Agent/Skill，只根据完整 Skill SOP、子 Agent 执行结果和证据判断任务是否
+完成；未完成时只能输出 RepairPlan，让原子 Agent 继续执行。
+"""
 
 import json
 from typing import Any
@@ -22,7 +27,12 @@ from app.verification.task_completion.schemas import (
 
 
 class TaskCompletionVerifierService:
-    """根据完整 Skill SOP、执行结果和证据判断任务是否完成。"""
+    """根据完整 Skill SOP、执行结果和证据判断任务是否完成。
+
+    返回值不是最终外发合规结果，而是任务完成度状态：
+    PASS 进入 pre_answer_verify，CONTINUE 进入 repair，NEED_USER/HUMAN_HANDOFF/FAILED
+    分别进入澄清、人工接管或降级路径。
+    """
 
     def __init__(
         self,
@@ -42,6 +52,12 @@ class TaskCompletionVerifierService:
         self.sanitizer = RepairPlanSanitizer(min_confidence=min_confidence)
 
     async def verify(self, context: TaskCompletionVerificationContext) -> TaskCompletionVerificationResult:
+        """执行一次任务完成度验收。
+
+        第一优先使用 LLM 读取完整 Skill 和证据做语义验收；LLM 不可用时使用保守
+        heuristic。无论来自 LLM 还是 heuristic，最后都必须经过 sanitizer，确保
+        RepairPlan 不会更换原 selected_agent 或 selected_skill_id。
+        """
         if not context.selected_skill_id:
             return self._handoff("selected_skill_id_missing", context=context)
         if self.enable_llm and self._should_call_llm():
@@ -55,6 +71,12 @@ class TaskCompletionVerifierService:
         )
 
     async def _verify_with_llm(self, context: TaskCompletionVerificationContext) -> TaskCompletionVerificationResult:
+        """调用 task_completion_verifier scene，并强校验结构化输出。
+
+        LLM 只负责“判断完成度和规划修复”，不会拿到 tools，也不能直接执行原任务。
+        如果首次输出不是 TaskCompletionLLMOutput，会给同一输入追加格式修复提示再试
+        一次；连续非法时 fail closed 到 HUMAN_HANDOFF，避免错误 repair 无限循环。
+        """
         messages = self._messages(context)
         response = await self.llm_provider.chat(
             messages=messages,
@@ -112,6 +134,12 @@ class TaskCompletionVerifierService:
             return self._heuristic_result(context, reason="task_completion_verifier_result_invalid")
 
     def _messages(self, context: TaskCompletionVerificationContext) -> list[dict[str, Any]]:
+        """把验收上下文渲染成 Verifier prompt。
+
+        prompt 中包含完整 Skill body、工具调用摘要和 evidence 摘要，因此 Verifier
+        能对照 SOP 判断“做没做完”；但这里不会暴露工具执行能力，避免 Verifier 变成
+        第二个业务 Agent。
+        """
         variables = {
             "original_query": context.original_query,
             "rewritten_query": context.rewritten_query,
@@ -133,6 +161,11 @@ class TaskCompletionVerifierService:
         ]
 
     def _heuristic_result(self, context: TaskCompletionVerificationContext, *, reason: str) -> TaskCompletionVerificationResult:
+        """LLM 不可用时的保守兜底验收。
+
+        只有存在成功工具结果/证据且 Tool Loop 正常结束时才允许 PASS；没有工具证据、
+        仍在审批 pending 或证据不足时走 handoff，避免把自由文本回答误判成完成。
+        """
         if self._has_pending_approval(context):
             return self._handoff("approval_pending_skip_completion_expected", context=context)
         if self._has_success_evidence(context) and (context.stopped_reason in {None, "", ToolStoppedReason.FINAL}):
@@ -211,6 +244,11 @@ class TaskCompletionVerifierService:
         context: TaskCompletionVerificationContext,
         llm_status: str | None = None,
     ) -> TaskCompletionVerificationResult:
+        """构造安全人工接管结果。
+
+        这是 fail-closed 出口：Verifier 输出非法、证据不足、pending approval 或超过
+        自动修复边界时，都不继续让 Agent 自由发挥，而是显式转人工接管。
+        """
         log_event(
             RuntimeEvent.TASK_COMPLETION_HANDOFF,
             request_id=context.request_id,

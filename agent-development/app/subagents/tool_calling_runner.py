@@ -90,8 +90,46 @@ class ToolCallingRunner:
 
         # 模型思考轮次，最多允许 LLM 思考 limit 轮。
         for iteration in range(1, limit + 1):
-            # 每一轮先把当前 messages 和可见工具 schema 交给 LLM。
-            # LLM 可以返回最终答案，也可以返回一个或多个 tool_calls。
+            """
+            每一轮先把当前 messages 和可见工具 schema 交给 LLM。
+            LLM 可以返回最终答案，也可以返回一个或多个 tool_calls。
+            
+            tools=tools:
+                会告诉 LLM：
+                有哪些工具；
+                每个工具叫什么；
+                工具用途；
+                参数有哪些；
+                哪些参数必填；
+                参数类型是什么。
+                example: tool schema
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "query_policy",
+                    "description": "根据保单号查询保单基本信息和当前状态。",
+                    "parameters": {
+                      "type": "object",
+                      "properties": {
+                        "policy_no": {
+                          "type": "string",
+                          "description": "需要查询的保单号，例如 9200100000458846。"
+                        },
+                        "include_customer": {
+                          "type": "boolean",
+                          "description": "是否同时返回投保人和被保人信息。",
+                          "default": false
+                        }
+                      },
+                      "required": [
+                        "policy_no"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                }
+                
+            """
             response = await self.llm_provider.chat(
                 messages=messages,
                 tools=tools,

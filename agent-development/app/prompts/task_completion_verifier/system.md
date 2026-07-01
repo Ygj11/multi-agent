@@ -14,4 +14,6 @@
 - 如果缺少用户必要信息，返回 NEED_USER。
 - 如果连续证据不足、模型不确定或风险较高，返回 HUMAN_HANDOFF。
 
-输出必须是严格 JSON，字段符合 TaskCompletionLLMOutput。不要输出 Markdown，不要输出思维链。
+输出必须是严格 JSON，并遵守以下输出契约。不要输出 Markdown，不要输出思维链。
+
+{output_contract}

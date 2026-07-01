@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.prompts.manifest import PromptManifest, PromptSceneManifest
+from app.prompts.output_contract import PromptOutputContractRenderer, default_output_contract_renderer
 
 
 PROMPTS_ROOT = Path(__file__).resolve().parent
@@ -20,9 +21,15 @@ class _SafeFormatDict(defaultdict):
 class PromptLoader:
     """Load prompt templates from app/prompts and render simple named variables."""
 
-    def __init__(self, root: Path = PROMPTS_ROOT, manifest: PromptManifest | None = None) -> None:
+    def __init__(
+        self,
+        root: Path = PROMPTS_ROOT,
+        manifest: PromptManifest | None = None,
+        output_contract_renderer: PromptOutputContractRenderer | None = None,
+    ) -> None:
         self.root = Path(root)
         self.manifest = manifest or PromptManifest.load(self.root / "manifest.yaml")
+        self.output_contract_renderer = output_contract_renderer or default_output_contract_renderer
 
     def load(self, relative_path: str) -> str:
         path = self._resolve(relative_path)
@@ -38,13 +45,13 @@ class PromptLoader:
         return self.manifest.scene(scene)
 
     def render_scene_system(self, scene: str, **variables: Any) -> str:
-        return self.render(self.scene(scene).system, **variables)
+        return self.render(self.scene(scene).system, **self._scene_variables(scene, variables))
 
     def render_scene_user(self, scene: str, **variables: Any) -> str:
         user_prompt = self.scene(scene).user
         if not user_prompt:
             raise FileNotFoundError(f"prompt scene has no user template: {scene}")
-        return self.render(user_prompt, **variables)
+        return self.render(user_prompt, **self._scene_variables(scene, variables))
 
     def scene_trace(self, scene: str) -> dict[str, Any]:
         return self.scene(scene).trace()
@@ -54,6 +61,15 @@ class PromptLoader:
         if not path.is_file() or not path.is_relative_to(self.root):
             raise FileNotFoundError(f"prompt template not found: {relative_path}")
         return path
+
+    def _scene_variables(self, scene: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """给 scene prompt 自动补齐输出契约变量，调用方仍可显式覆盖。"""
+        values = dict(variables)
+        values.setdefault(
+            "output_contract",
+            self.output_contract_renderer.render_for_scene(self.scene(scene)),
+        )
+        return values
 
     @staticmethod
     def _stringify(value: Any) -> str:

@@ -15,6 +15,17 @@ class FakeClient:
         self.is_closed = True
 
 
+class MethodClosedClient:
+    def __init__(self):
+        self.closed = False
+
+    def is_closed(self):
+        return self.closed
+
+    async def aclose(self):
+        self.closed = True
+
+
 @pytest.mark.asyncio
 async def test_concurrent_first_leases_create_exactly_one_client():
     created = []
@@ -108,3 +119,18 @@ async def test_explicitly_transferred_client_is_closed_once():
     await asyncio.gather(lifecycle.close(), lifecycle.close())
 
     assert external.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_is_closed_method_is_called_instead_of_treated_as_truthy():
+    created = []
+    lifecycle = AsyncClientLifecycle(
+        factory=lambda: created.append(MethodClosedClient()) or created[-1],
+        close_client=lambda client: client.aclose(),
+    )
+
+    async with lifecycle.lease() as first:
+        assert first.closed is False
+
+    async with lifecycle.lease() as second:
+        assert second is first

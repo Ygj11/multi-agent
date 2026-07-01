@@ -342,8 +342,8 @@ flowchart TD
 - `original_query` 只作为辅助审计和原始表达参考。
 - 合法 intent/sub_intent 来自 `app/config/intent_taxonomy.yaml`。
 - prompt 会传入 taxonomy、allowed intents、candidate sub intents 和 AgentCard 摘要。
-- LLM 输出必须满足 `IntentRecognitionLLMOutput`。
-- LLM 给出的 `entities` 只是候选 echo，当前节点不会把它写入 canonical `entity_bag`。
+- LLM 输出必须满足 `IntentRecognitionLLMOutput`，输出契约由 PromptLoader 根据 manifest 自动注入。
+- Intent Recognition 只读使用 Query Rewrite 生成的 `entities/entity_bag`，不再让 LLM 回显或修改实体。
 - LLM 不可用或输出非法时，使用 `app/query/intent_fallback_policy.yaml` 做规则 fallback。
 
 `intent_taxonomy.yaml` 中每个 intent / sub_intent 的 YAML key，例如
@@ -695,7 +695,7 @@ Observability 由 `request_id`、`trace_id`、`session_key`、`graph_path`、结
 | `app/agents/cards/*.yaml` | 子 Agent 能力、路由、工具、Skill、权限边界 |
 | `app/skills/**/SKILL.md` | Skill metadata 和业务 SOP |
 | `app/tools/tool_contracts.yaml` | 工具超时、结果 schema、审批策略、数据分类 |
-| `app/prompts/manifest.yaml` | LLM prompt scene、版本、输出 schema 和 eval suite |
+| `app/prompts/manifest.yaml` | LLM prompt scene、版本、输出 schema 和 eval suite；结构化 scene 会由 PromptLoader 根据 `output_schema` 自动注入输出契约 |
 | `.env` / `.env.example` | 本地运行、LLM、工具模式、审批、MCP、日志等环境配置 |
 
 ## 核心数据协议

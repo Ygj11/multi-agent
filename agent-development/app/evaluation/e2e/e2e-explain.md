@@ -114,6 +114,17 @@ cases:
 
 最终回答只做关键词和风险项断言；路由、工具和状态用确定性断言兜住。
 
+## Prompt 输出契约
+
+Dynamic E2E 使用真实项目 `PromptLoader` 渲染 prompt，因此 Query Rewrite、Intent Recognition、Agent Selection、Skill Selection 和 Task Completion Verifier 等结构化 LLM 场景都会看到自动注入的 `output_contract`。
+
+这意味着真实模型评测不是只验证自然语言 prompt，而是同时验证：
+
+- manifest 中声明的 `output_schema` 是否正确；
+- 注入后的契约是否足够约束模型输出；
+- 模型输出是否能通过 `parse_llm_json_schema` 的 Pydantic 强校验；
+- 非法输出是否会进入项目定义的 fallback、repair 或 handoff 路径。
+
 ## 和 CI 的关系
 
 Dynamic E2E 会调用真实模型，成本、耗时和输出稳定性都不同于 Fake eval。建议：

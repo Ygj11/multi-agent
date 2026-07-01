@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""任务完成度验收证据收集器。"""
+"""任务完成度验收证据收集器。
+
+Verifier 不能直接执行业务工具，因此它必须依赖这里收集到的只读证据来判断任务
+是否完成。证据来源包括子 Agent 返回的轻量 evidence、EvidenceStore 中持久化的
+工具摘要，以及可选的只读状态探针。
+"""
 
 import hashlib
 import json
@@ -16,7 +21,11 @@ from app.verification.task_completion.state_probes.base import BusinessStateProb
 
 
 class VerificationEvidenceCollector:
-    """把子 Agent 执行结果整理成 Verifier 可读的轻量证据上下文。"""
+    """把子 Agent 执行结果整理成 Verifier 可读的轻量证据上下文。
+
+    这里同时重新加载完整 Skill.md，因为 Skill SOP 是执行和验收的共同业务依据。
+    完整 Skill 文本只进入本次 Verifier prompt，不作为长期 Graph State 字段保存。
+    """
 
     def __init__(
         self,
@@ -32,11 +41,20 @@ class VerificationEvidenceCollector:
         self.enable_state_probes = enable_state_probes
 
     async def collect(self, state: dict[str, Any]) -> tuple[TaskCompletionVerificationContext, str | None]:
+        """从 Graph State 生成 TaskCompletionVerificationContext。
+
+        这个 context 是 Runtime Verify Loop 的“验收包”：包含用户任务、改写任务、
+        解析实体、原 selected_agent/selected_skill_id、完整 Skill、子 Agent 回答、
+        工具调用摘要、证据摘要、repair 历史和停止原因。
+        """
         selected_skill_id = str(state.get("selected_skill_id") or "")
+        # Verifier 必须按第一次选中的 Skill 验收，不能重新选择 Skill 或只看 metadata。
         skill = self.skill_catalog.load_skill_content(selected_skill_id)
         selected_skill_version = self._skill_version(skill.content)
         subagent_result = state.get("subagent_result") if isinstance(state.get("subagent_result"), dict) else {}
         tool_calls = list(subagent_result.get("tool_calls") or [])
+        # 子 Agent 返回的 evidence 是最近一轮执行的即时摘要；EvidenceStore 是
+        # ToolExecutor 持久化出来的可审计摘要，两者合并给 Verifier 交叉判断。
         evidence = self._evidence_from_subagent_result(subagent_result)
         evidence.extend(await self._evidence_from_store(state))
 
@@ -63,10 +81,16 @@ class VerificationEvidenceCollector:
             auth_context=state.get("auth_context") if isinstance(state.get("auth_context"), dict) else None,
         )
         if self.enable_state_probes:
+            # 状态探针只做只读验证，例如查询最终业务状态；它不是原任务工具执行入口。
             context.evidence.extend(await self._probe_evidence(context))
         return context, selected_skill_version
 
     async def _evidence_from_store(self, state: dict[str, Any]) -> list[VerificationEvidence]:
+        """把 EvidenceStore 中的持久化证据转成 Verifier 可读摘要。
+
+        Store 中只保存 summary 和 tool_log_id，不把完整工具原文塞进 prompt；
+        Verifier 需要的是“足以判断任务完成度的摘要”，不是无限制读取原始结果。
+        """
         if self.evidence_store is None or not state.get("request_id"):
             return []
         items = await self.evidence_store.list_by_request(str(state["request_id"]))
@@ -86,6 +110,11 @@ class VerificationEvidenceCollector:
 
     @staticmethod
     def _evidence_from_subagent_result(subagent_result: dict[str, Any]) -> list[VerificationEvidence]:
+        """读取子 Agent 本轮返回的轻量 evidence。
+
+        这类 evidence 主要服务于“本轮工具是否产生了有效观察”。它不能替代
+        ToolExecutor 的持久化日志，只是 Verifier prompt 中更短、更好读的摘要。
+        """
         result: list[VerificationEvidence] = []
         for item in subagent_result.get("evidence") or []:
             if not isinstance(item, dict):
@@ -105,6 +134,11 @@ class VerificationEvidenceCollector:
         return result
 
     async def _probe_evidence(self, context: TaskCompletionVerificationContext) -> list[VerificationEvidence]:
+        """运行可选的只读业务状态探针。
+
+        对写操作或异步状态变更，不能只相信“工具调用 success=true”；状态探针可以
+        提供最终业务状态证据。探针失败时应返回 unavailable 证据，而不是认定成功。
+        """
         evidence: list[VerificationEvidence] = []
         for probe in self.probes:
             if await probe.supports(context):

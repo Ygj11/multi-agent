@@ -117,3 +117,5 @@ cases:
     assert provider.calls == 2
     rendered = "\n".join(message["content"] for call in provider.messages for message in call)
     assert not re.search(r"\{[A-Za-z_][A-Za-z0-9_]*\}", rendered)
+    assert "Output contract: QueryRewriteLLMOutput" in rendered
+    assert "rewrite_type" in rendered

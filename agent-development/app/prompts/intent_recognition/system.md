@@ -62,10 +62,6 @@ need_clarification means the business intent or sub_intent cannot be safely clas
 Do not use need_clarification to ask for policy_no, request_id, apply_seq, phone number,
 or other tool execution parameters.
 
-Return strict JSON only with these keys:
-- intent
-- sub_intent
-- confidence
-- need_clarification
-- clarification_question
-- reason
+Return strict JSON only according to this output contract:
+
+{output_contract}

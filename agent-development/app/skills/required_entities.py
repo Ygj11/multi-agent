@@ -22,10 +22,27 @@ class RequiredEntityCheckResult:
 class RequiredEntityChecker:
     """基于 resolved EntityBag 检查 Skill.required_entities。
 
-    这里不做新的正则抽取，也不从任意文本里猜实体。compact entities 为空时，
-    只允许从 EntityBag 中唯一高置信值补齐；多值歧义或缺失都转澄清。
+    Query Rewrite 阶段已经负责实体抽取、上下文继承和冲突处理；这里不再做新的
+    正则抽取，也不从任意文本里猜实体，只负责在选中 Skill 后做最后一道必填实体门禁。
+
+    典型场景：
+    1. 当前轮缺失、EntityBag 中有唯一高置信历史值：
+       例如用户上一轮给过保单号，本轮只补充“001028”，compact entities 里暂时没有
+       policy_no 时，可以从 EntityBag 唯一值补齐。
+    2. 当前轮缺失、EntityBag 中有多个候选：
+       例如上下文里同时出现两个历史保单号，但本轮没有明确指代哪一个，这里转澄清，
+       避免后续 Skill 或工具误用实体。
+    3. 当前轮明确多值：
+       例如“查询保单 A 和保单 B”，Query Rewrite 会把它保留为集合；当前实现只要
+       compact entities 中存在非空 list，就认为 required_entities 已满足。是否允许多值
+       应继续由 Skill 语义和 Tool 参数 schema 判断，后续可增加 cardinality 配置细化。
+    4. 状态投影异常：
+       正常情况下 entities 应由 entity_bag.to_compact_dict() 派生；如果调用方传入的
+       compact entities 为空但 EntityBag 仍有值，这里只允许唯一高置信值补齐，多值转澄清。
     """
 
+    # 用于把内部实体 key 转成面向用户的澄清文案。比如缺少 policy_no 时，
+    # 不直接问“请补充 policy_no”，而是问“请补充保单号 policy_no”。
     DISPLAY_NAMES = {
         "apply_seq": "保全受理号 apply_seq",
         "policy_no": "保单号 policy_no",

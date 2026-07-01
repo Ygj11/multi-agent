@@ -203,31 +203,47 @@ class AgentGraphFactory:
                 ClarificationRoute.CONTINUE: GraphNode.DISPATCH_AGENT.value,
             },
         )
-        graph.add_edge(GraphNode.DISPATCH_AGENT.value, GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value) # 有没有写工具需要审批
+        # 子 Agent 执行结束后不能立刻外发答案。Tool Loop 可能已经遇到写工具并返回
+        # human_approval_required，此时任务还没有真正完成；也可能已经完成了一轮查询/
+        # 通知，需要进入任务完成度验收。这里先统一检查审批状态，再决定是暂停审批、
+        # 跳过 completion verify，还是进入 Runtime Verify Loop。
+        graph.add_edge(GraphNode.DISPATCH_AGENT.value, GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value)
         graph.add_edge(GraphNode.BUILD_CLARIFICATION_ANSWER.value, GraphNode.PRE_ANSWER_VERIFY.value)
         graph.add_conditional_edges(
             GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value,
             self.human_approval_route,
             {
+                # 需要人工审批时，工具尚未真正执行，不能做“任务完成度验收”。
                 ApprovalRequiredRoute.REQUIRED: GraphNode.CREATE_APPROVAL_REQUEST.value,
+                # 不需要审批时，子 Agent 已经给出一轮结果，进入 completion verify。
                 ApprovalRequiredRoute.NOT_REQUIRED: GraphNode.COLLECT_VERIFICATION_EVIDENCE.value,
+                # 澄清、审批 pending、人工接管等中间回答只需要最终外发校验。
                 ApprovalRequiredRoute.SKIP_COMPLETION: GraphNode.PRE_ANSWER_VERIFY.value,
             },
         )
+        # Runtime Verify Loop 的第一步：把子 Agent 的回答、工具调用、EvidenceStore
+        # 记录、状态探针结果和完整 Skill SOP 组装成 Verifier 可读的验收上下文。
         graph.add_edge(GraphNode.COLLECT_VERIFICATION_EVIDENCE.value, GraphNode.VERIFY_TASK_COMPLETION.value)
         graph.add_conditional_edges(
             GraphNode.VERIFY_TASK_COMPLETION.value,
             self.task_completion_route,
             {
+                # PASS 只表示“任务按 Skill SOP 完成且证据足够”，还必须经过最终外发合规。
                 TaskCompletionRoute.PASSED: GraphNode.PRE_ANSWER_VERIFY.value,
+                # CONTINUE 表示任务还可由原子 Agent 继续完成；不能重新选 Agent/Skill。
                 TaskCompletionRoute.CONTINUE: GraphNode.BUILD_REPAIR_TASK.value,
+                # NEED_USER 是缺少用户补充信息，不进入 repair，直接构造澄清回答。
                 TaskCompletionRoute.NEED_USER: GraphNode.BUILD_VERIFICATION_CLARIFICATION.value,
+                # HUMAN_HANDOFF 是风险、不确定性或无进展保护触发，停止自动修复。
                 TaskCompletionRoute.HANDOFF: GraphNode.BUILD_HANDOFF_ANSWER.value,
+                # FAILED 是结构化结果异常或安全降级路径。
                 TaskCompletionRoute.FAILED: GraphNode.FALLBACK_ANSWER.value,
             },
         )
         graph.add_edge(GraphNode.BUILD_REPAIR_TASK.value, GraphNode.DISPATCH_REPAIR_AGENT.value)
-        graph.add_edge(GraphNode.DISPATCH_REPAIR_AGENT.value, GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value) # 有没有写工具需要审批
+        # Repair 仍然走同一套 ToolExecutor/审批/完成度验收链路；如果 repair 过程中
+        # 再次触发写工具审批，仍必须暂停审批，不能绕过原有安全边界。
+        graph.add_edge(GraphNode.DISPATCH_REPAIR_AGENT.value, GraphNode.CHECK_HUMAN_APPROVAL_REQUIRED.value)
         graph.add_edge(GraphNode.BUILD_VERIFICATION_CLARIFICATION.value, GraphNode.PRE_ANSWER_VERIFY.value)
         graph.add_edge(GraphNode.BUILD_HANDOFF_ANSWER.value, GraphNode.PRE_ANSWER_VERIFY.value)
         graph.add_conditional_edges(

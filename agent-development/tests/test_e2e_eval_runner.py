@@ -11,7 +11,7 @@ class RecordingLLMProvider:
         self.calls = []
 
     async def chat(self, *, messages, tools=None, scene=None, **kwargs):
-        self.calls.append({"scene": scene, "tools": tools or []})
+        self.calls.append({"scene": scene, "tools": tools or [], "messages": messages})
         if scene == LLMScene.QUERY_REWRITE:
             return LLMResponse(
                 content=json.dumps(
@@ -118,6 +118,14 @@ async def test_dynamic_e2e_runner_uses_injected_real_provider_without_fake_repla
     assert report.passed
     assert "真实模型回答：ok" in (report.trace.answer or "")
     assert report.trace.state_summary["llm_mode"] == "real"
+    rendered = "\n".join(
+        message["content"]
+        for call in provider.calls
+        for message in call["messages"]
+        if isinstance(message.get("content"), str)
+    )
+    assert "Output contract: QueryRewriteLLMOutput" in rendered
+    assert "Output contract: IntentRecognitionLLMOutput" in rendered
 
 
 async def test_dynamic_e2e_runner_can_enter_through_http_api(tmp_path):

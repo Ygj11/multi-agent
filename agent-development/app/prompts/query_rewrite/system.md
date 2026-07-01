@@ -47,21 +47,6 @@ Examples:
   current user: 那这个一般是谁的问题？
   rewritten_query: 基于上一轮 REQ_001 的 E102 签名校验失败排查结论，判断该问题一般属于调用方、平台方还是配置问题。
 
-Return strict JSON only with these keys:
-- is_follow_up
-- rewritten_query
-- rewrite_type
-- entities
-- inherited_entities
-- missing_required_entities
-- need_clarification
-- clarification_question
-- confidence
-- reason
+Return strict JSON only according to this output contract:
 
-rewrite_type must be one of:
-- direct
-- contextual_follow_up
-- clarification_reply
-- new_request
-- clarification_required
+{output_contract}
